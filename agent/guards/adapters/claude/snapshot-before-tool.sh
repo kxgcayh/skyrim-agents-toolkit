@@ -16,7 +16,7 @@
 HOOK_NAME="snapshot-before-tool"
 HOOK_TIMEOUT_S=60     # this hook's timeout in agent/targets/claude/settings.json (tests/test_hook_deadline.py)
 PY='{{PYTHON_PATH}}'
-T0="${EPOCHREALTIME:-}"; T0="${T0/,/.}"; [ -n "$T0" ] || printf -v T0 '%(%s)T' -1 2>/dev/null || :
+T0="${EPOCHREALTIME:-}"; T0="${T0/,/.}"; [ -n "$T0" ] || printf -v T0 '%(%s)T' -1 2>/dev/null || T0=$(date +%s)
 NOPAY=""
 INPUT=$(cat)
 
@@ -45,7 +45,7 @@ BACKUP_DIR="$PROJECT_DIR/.claude/backups"
 AUDIT_LOG="$BACKUP_DIR/AUDIT_LOG.txt"
 HB_DIR="$BACKUP_DIR/.hook-heartbeat/claude"
 [ -d "$HB_DIR" ] || mkdir -p "$HB_DIR" 2>/dev/null
-printf -v NOW '%(%Y%m%d_%H%M%S)T' -1
+printf -v NOW '%(%Y%m%d_%H%M%S)T' -1 2>/dev/null || NOW=$(date +%Y%m%d_%H%M%S)
 
 # Stage records (see tools/skyguard/health.py): invoked -> received -> evaluated (engine) -> emitted, and
 # `failed` from any stage. `_done` also writes the latency line; a payload-less call keeps a `failed`
@@ -139,7 +139,7 @@ _to_ms() {
     case "$f" in *[!0-9]*) return 1 ;; esac
     MS=$(( 10#$s * 1000 + 10#$f ))
 }
-_now() { local n="${EPOCHREALTIME:-}"; [ -n "$n" ] || printf -v n '%(%s)T' -1; _to_ms "$n"; }
+_now() { local n="${EPOCHREALTIME:-}"; [ -n "$n" ] || printf -v n '%(%s)T' -1 2>/dev/null || n=$(date +%s); _to_ms "$n"; }
 _secs_ms() { { _to_ms "$1" && [ "$MS" -gt 0 ]; } || _to_ms "$2"; }
 _to_ms "$T0" || _now
 T0_MS=$MS

@@ -199,7 +199,15 @@ case "$(uname -s 2>/dev/null)" in
             /mnt/[a-zA-Z]/*)
                 echo "  WARNING: this looks like WSL bash on a Windows drive. The toolkit's hooks run under Git Bash on"
                 echo "  Windows; run setup.sh from Git Bash (Git for Windows), not WSL." ;;
-            *) echo "  bash $BASH_VERSION ($(uname -s 2>/dev/null))" ;;
+            *) echo "  bash $BASH_VERSION ($(uname -s 2>/dev/null))"
+               # The hooks run under the `bash` first on PATH, and need 4.4+ (a time-limited child process): on an
+               # older one (macOS ships 3.2) they cannot run the engine and REFUSE every call. Say so now.
+               read -r BV_MAJOR BV_MINOR <<<"$(bash -c 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"' 2>/dev/null)"
+               if [ "${BV_MAJOR:-0}" -lt 4 ] || { [ "${BV_MAJOR:-0}" -eq 4 ] && [ "${BV_MINOR:-0}" -lt 4 ]; }; then
+                   echo "  WARNING: the bash the hooks will use (first on PATH) is ${BV_MAJOR:-?}.${BV_MINOR:-?}; they need bash 4.4 or newer."
+                   echo "  Until then every guarded call is refused. On macOS: brew install bash, then put its folder"
+                   echo "  (/opt/homebrew/bin) before /bin in PATH and restart your agent. See docs/macos-crossover.md."
+               fi ;;
         esac ;;
 esac
 
@@ -391,7 +399,8 @@ fi
 # ReSaver CLI compiles its small driver on first run, so it needs a JDK (javac), 17 or newer; 21 is tested.
 echo ""
 echo "Checking for a JDK..."
-if which java >/dev/null 2>&1; then
+# macOS ships a `java` stub that exists but finds no runtime, so run it: `which` alone is not proof.
+if which java >/dev/null 2>&1 && java -version >/dev/null 2>&1; then
     JAVA_LINE=$(java -version 2>&1 | tr -d '\r' | head -n1)
     echo "  Found Java: $JAVA_LINE"
     JAVA_MAJOR=$(printf '%s' "$JAVA_LINE" | sed -n 's/.*version "\(1\.\)\{0,1\}\([0-9][0-9]*\).*/\2/p')
@@ -459,13 +468,14 @@ if [ -f "$GAME_DIR/SkyrimVR.exe" ] && [ ! -f "$GAME_DIR/SkyrimSE.exe" ]; then
     SKYRIM_FOLDER="Skyrim VR"
 elif [ -f "$GAME_DIR/SkyrimSE.exe" ] && [ ! -f "$GAME_DIR/SkyrimVR.exe" ]; then
     SKYRIM_FOLDER="Skyrim Special Edition"
-elif [ -d "$DOCUMENTS_DIR/My Games/Skyrim Special Edition" ] && [ ! -d "$DOCUMENTS_DIR/My Games/Skyrim VR" ]; then
-    SKYRIM_FOLDER="Skyrim Special Edition"
-else
+elif [ -d "$DOCUMENTS_DIR/My Games/Skyrim VR" ] && [ ! -d "$DOCUMENTS_DIR/My Games/Skyrim Special Edition" ]; then
     SKYRIM_FOLDER="Skyrim VR"
+else
+    SKYRIM_FOLDER="Skyrim Special Edition"
 fi
-CONFIG_DIR="$DOCUMENTS_DIR/My Games/$SKYRIM_FOLDER"
-LOADORDER_DIR="$LOCALAPPDATA_DIR/$SKYRIM_FOLDER"
+# Set these when the game runs somewhere setup cannot see, e.g. a CrossOver/Wine bottle on macOS (docs/macos-crossover.md).
+CONFIG_DIR="${SKYRIM_CONFIG_DIR:-$DOCUMENTS_DIR/My Games/$SKYRIM_FOLDER}"
+LOADORDER_DIR="${SKYRIM_LOADORDER_DIR:-$LOCALAPPDATA_DIR/$SKYRIM_FOLDER}"
 
 # --- Detect Mod Organizer 2 -------------------------------------------------
 # MO2 has NO flat Data/ folder on disk. It builds a virtual one at launch by merging each enabled

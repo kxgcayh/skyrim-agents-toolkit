@@ -15,7 +15,7 @@
 HOOK_NAME="protect-files"
 HOOK_TIMEOUT_S=60     # this hook's timeout in agent/targets/claude/settings.json (tests/test_hook_deadline.py)
 PY='{{PYTHON_PATH}}'
-T0="${EPOCHREALTIME:-}"; T0="${T0/,/.}"; [ -n "$T0" ] || printf -v T0 '%(%s)T' -1 2>/dev/null || :
+T0="${EPOCHREALTIME:-}"; T0="${T0/,/.}"; [ -n "$T0" ] || printf -v T0 '%(%s)T' -1 2>/dev/null || T0=$(date +%s)
 NOPAY=""
 INPUT=$(cat)
 
@@ -138,7 +138,7 @@ _to_ms() {
     case "$f" in *[!0-9]*) return 1 ;; esac
     MS=$(( 10#$s * 1000 + 10#$f ))
 }
-_now() { local n="${EPOCHREALTIME:-}"; [ -n "$n" ] || printf -v n '%(%s)T' -1; _to_ms "$n"; }
+_now() { local n="${EPOCHREALTIME:-}"; [ -n "$n" ] || printf -v n '%(%s)T' -1 2>/dev/null || n=$(date +%s); _to_ms "$n"; }
 _secs_ms() { { _to_ms "$1" && [ "$MS" -gt 0 ]; } || _to_ms "$2"; }
 _to_ms "$T0" || _now
 T0_MS=$MS

@@ -90,7 +90,7 @@ def _render_claude(src: Path) -> dict[str, bytes]:
                              _lf((ins / "core.md").read_bytes()) + _lf((ins / "claude.md").read_bytes()), ".md"),
     }
     for f in sorted((src / "skills").rglob("*")):
-        if f.is_file():
+        if f.is_file() and f.name != ".DS_Store":   # Finder litter on macOS is not a skill file
             rel = f.relative_to(src / "skills").as_posix()
             out[f".claude/skills/{rel}"] = _headed(f"agent/skills/{rel}", f.read_bytes(), f.suffix)
     for f in sorted((src / "guards" / "adapters" / "claude").glob("*.sh")):
@@ -119,7 +119,7 @@ def _render_codex(src: Path) -> dict[str, bytes]:
                              _lf((ins / "core.md").read_bytes()) + _lf((ins / "codex.md").read_bytes()), ".md"),
     }
     for f in sorted((src / "skills").rglob("*")):
-        if f.is_file():
+        if f.is_file() and f.name != ".DS_Store":   # Finder litter on macOS is not a skill file
             rel = f.relative_to(src / "skills").as_posix()
             out[f".agents/skills/{rel}"] = _headed(f"agent/skills/{rel}", f.read_bytes(), f.suffix)
     for f in sorted((src / "guards" / "adapters" / "codex").iterdir()):
@@ -198,7 +198,7 @@ def check(outputs: dict[str, bytes], root: Path) -> list[str]:
         if base.is_dir():
             for f in sorted(base.rglob("*")):
                 rel = f.relative_to(root).as_posix()
-                if f.is_file() and rel not in outputs:
+                if f.is_file() and rel not in outputs and f.name != ".DS_Store":
                     problems.append(f"{rel}: not generated -- add it under agent/ or delete it")
     return problems
 

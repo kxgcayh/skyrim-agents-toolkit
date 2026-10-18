@@ -76,14 +76,24 @@ prior_copy() {
 # was slowest in precisely the state it exists for, and the ALARM was the thing most
 # likely never to arrive. ~92% of that cost was one `wc` fork per file per comparison
 # inside the rotation. `wc -c` takes many files at once, so this is one fork, not ~190.
-declare -A STORE_SIZE=()
+# Two parallel indexed arrays, not `declare -A`: macOS ships bash 3.2, which has no associative arrays.
+STORE_PATHS=(); STORE_SIZES=()
 scan_store() {
-    STORE_SIZE=()
+    STORE_PATHS=(); STORE_SIZES=()
     local sz path
     while read -r sz path; do
         case "$path" in ""|total) continue ;; esac
-        STORE_SIZE["$path"]=$sz
+        STORE_PATHS[${#STORE_PATHS[@]}]=$path
+        STORE_SIZES[${#STORE_SIZES[@]}]=$sz
     done < <(find "$STORE" -mindepth 2 -maxdepth 2 -type f -exec wc -c {} + 2>/dev/null)
+}
+# The scanned size of stored file $1, in $SZ (0 when it is not in the store). A linear scan: the store holds
+# a few hundred files, and no fork is spent.
+store_size_of() {
+    local i; SZ=0
+    for i in "${!STORE_PATHS[@]}"; do
+        if [ "${STORE_PATHS[$i]}" = "$1" ]; then SZ=${STORE_SIZES[$i]}; return 0; fi
+    done
 }
 
 # The BIGGEST stored copy of $1, which is not always the newest and is what someone
@@ -96,7 +106,7 @@ largest_copy_of() {
     LARGEST_PATH=""; LARGEST_SIZE=0
     for d in "$STORE"/*/; do
         [ -f "$d$name" ] || continue
-        sz=${STORE_SIZE["$d$name"]:-0}
+        store_size_of "$d$name"; sz=$SZ
         if [ "$sz" -gt "$LARGEST_SIZE" ]; then LARGEST_SIZE=$sz; LARGEST_PATH="$d$name"; fi
     done
 }
@@ -254,7 +264,7 @@ prune_store() {
         best=""; bestsize=0
         for d in "${dirs[@]}"; do
             [ -f "$d$name" ] || continue
-            sz=${STORE_SIZE["$d$name"]:-0}
+            store_size_of "$d$name"; sz=$SZ
             if [ "$sz" -ge "$bestsize" ]; then bestsize=$sz; best="$d"; fi
         done
         [ -n "$best" ] && protected+=("$best")
