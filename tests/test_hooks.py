@@ -1034,3 +1034,29 @@ def test_an_unreadable_declared_env_file_fails_closed(tmp_path, ostype):
     got = _declared_fire(root, {"MSYS2_ARG_CONV_EXCL": "*"}, "ls", ostype)
     # The ENGINE's refusal naming the file -- the wrapper's own "engine failed" GUARD INERT is a different defect.
     assert got[0] == "deny" and "found skyrim-paths.env but could not read it" in got[1], got
+
+
+def _fire_env(project, hook, payload, **extra):
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(project), **extra)
+    return subprocess.run(
+        [_bash(), str(project / ".claude" / "hooks" / hook)],
+        input=json.dumps(payload), capture_output=True, text=True, env=env, timeout=60,
+    )
+
+
+_DELETE = {"tool_name": "Bash", "tool_input": {"command": f'rm -rf "{GAME}/Data"'}}
+
+
+@pytest.mark.parametrize("var", ["SKYGUARD_DEV", "SKYGUARD_DISABLED"])
+def test_the_dev_bypass_allows_and_says_so(project, var):
+    r = _fire_env(project, "protect-bash.sh", _DELETE, **{var: "1"})
+    assert r.returncode == 0 and r.stdout.strip() == "", r
+    assert "SKYGUARD BYPASSED" in r.stderr, r.stderr
+
+
+def test_a_git_checkout_without_the_game_exe_is_still_guarded(project):
+    (project / ".git").mkdir(exist_ok=True)
+    try:
+        assert fire(project, "protect-bash.sh", _DELETE)[0] == "deny"
+    finally:
+        (project / ".git").rmdir()

@@ -84,38 +84,36 @@ Common paths look like:
 
 1. Download the toolkit from Nexus Mods (click **Manual Download**)
 2. Find the downloaded `.zip` file (usually in your Downloads folder)
-3. Right-click the zip file
-4. Click **Extract All...**
-5. In the "Extract to" box, **paste your Skyrim folder path** from Step 2
-6. Click **Extract**
+3. Choose where to extract:
+   - **Option A (Recommended — Keeps Skyrim folder clean):** Extract into its own dedicated folder (e.g. `C:\Modding\skyrim-toolkit`). Your Skyrim game folder stays clean.
+   - **Option B (In-Place):** Extract directly into your Skyrim game folder.
+4. Right-click the zip file > **Extract All...** > choose your destination folder > **Extract**.
 
-The toolkit files blend in alongside your existing game files. ⚠ Files the toolkit ships ARE replaced on a later update -- `CLAUDE.md`, `KNOWLEDGEBASE.md`, `.claude/hooks/`. Your own notes belong in `KNOWLEDGEBASE.local.md`, which the toolkit never ships. On a FIRST install it only adds new files (CLAUDE.md, KNOWLEDGEBASE.md, setup.sh, and the .claude/ folder).
+⚠ Files the toolkit ships ARE replaced on an update (`CLAUDE.md`, `AGENTS.md`, `KNOWLEDGEBASE.md`, `.claude/hooks/`). Your own notes belong in `KNOWLEDGEBASE.local.md`, which the toolkit never ships.
 
 ---
 
-## Step 4: Open Claude Code in Your Skyrim Folder
+## Step 4: Open Your Agent in the Toolkit Folder
 
 ### Desktop App:
 
-1. Open Claude Code
-2. You'll see a text input at the bottom
-3. Type this (paste YOUR path from Step 2 between the quotes):
+1. Open Claude Code / your agent
+2. Navigate to your toolkit folder (Option A) or Skyrim folder (Option B):
    ```
-   cd "C:\Steam\steamapps\common\SkyrimVR"
+   cd "C:\Modding\skyrim-toolkit"
    ```
-4. Press Enter
 
 ### Command Line:
 
-1. Open Windows Terminal
-2. Type this (paste YOUR path):
+1. Open Windows Terminal (Git Bash or PowerShell)
+2. Navigate to your folder and start your agent:
    ```
-   cd "C:\Steam\steamapps\common\SkyrimVR"
+   cd "C:\Modding\skyrim-toolkit"
+   claude
    ```
-3. Press Enter
-4. Type `claude` and press Enter
+   *(If you kept Skyrim clean with Option A, run `bash setup.sh --game "C:\Path\To\Skyrim"`)*
 
-You should see Claude Code's interface -- a text area where you can type messages.
+You should see your agent's interface ready to receive instructions.
 
 ---
 

@@ -19,7 +19,7 @@
 HOOK_NAME="session-kb-guard"
 HOOK_TIMEOUT_S=120    # this hook's timeout in agent/targets/claude/settings.json (tests/test_hook_deadline.py)
 PY='{{PYTHON_PATH}}'
-T0="${EPOCHREALTIME:-}"; T0="${T0/,/.}"; [ -n "$T0" ] || printf -v T0 '%(%s)T' -1
+T0="${EPOCHREALTIME:-}"; T0="${T0/,/.}"; [ -n "$T0" ] || printf -v T0 '%(%s)T' -1 2>/dev/null || :
 NOPAY=""
 INPUT=$(cat)
 
@@ -40,6 +40,10 @@ case "$_MSYS:$ROOT" in
     1:/*)          ROOT_WIN="$(CDPATH= cd -- "$ROOT" 2>/dev/null && pwd -W 2>/dev/null)" ;;
 esac
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$ROOT}"
+if [ -n "${SKYGUARD_DISABLED:-}" ] || [ -n "${SKYGUARD_DEV:-}" ]; then
+    echo "SKYGUARD BYPASSED (SKYGUARD_DEV/SKYGUARD_DISABLED is set): this hook allows everything" >&2
+    exit 0
+fi
 BACKUP_DIR="$PROJECT_DIR/.claude/backups"
 AUDIT_LOG="$BACKUP_DIR/AUDIT_LOG.txt"
 HB_DIR="$BACKUP_DIR/.hook-heartbeat/claude"

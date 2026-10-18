@@ -6,11 +6,17 @@ A modding workspace with engine knowledge, coding-agent instructions, safety hoo
 
 Optional modding tools are installed separately. The toolkit configures paths and hooks through `setup.sh`; check the canary after real agent calls to confirm that the hooks ran.
 
-| Agent | Integration |
-|---|---|
-| Claude Code | Generated instructions, skills and hooks |
-| Codex CLI on Windows | Generated instructions, skills and hooks; approval in `/hooks` required |
-| Other coding agents | Instructions and tools; [ADAPTING.md](ADAPTING.md) describes how to add hooks |
+| Agent | Integration | Guards |
+|---|---|---|
+| Claude Code | `CLAUDE.md`, `.claude/skills/`, `.claude/hooks/` | | yes |
+| Codex CLI on Windows | `AGENTS.md`, `.agents/skills/`, `.codex/hooks/`; approval in `/hooks` required | | yes |
+| OpenCode | `opencode.json`, `AGENTS.md`, `.agents/skills/` | | no: instructions only |
+| Cursor | `.cursorrules`, `.cursor/rules/skyrim.mdc`, `AGENTS.md`, `.agents/skills/` | | no: instructions only |
+| Windsurf | `.windsurfrules`, `AGENTS.md`, `.agents/skills/` | | no: instructions only |
+| GitHub Copilot | `.github/copilot-instructions.md`, `AGENTS.md`, `.agents/skills/` | | no: instructions only |
+| Gemini / Antigravity | `GEMINI.md`, `AGENTS.md`, `.agents/skills/` | | no: instructions only |
+| Cline / Roo Code | `.clinerules`, `AGENTS.md`, `.agents/skills/` | | no: instructions only |
+| Other coding agents | Plain-text instructions (`AGENTS.md`), skills (`.agents/skills/`) and CLI tools (`tools/`); [ADAPTING.md](ADAPTING.md) describes how to add hooks | | no: instructions only |
 
 The optional Windows file lock is off by default. Its limits and the hook coverage are described below. Earlier release announcements are in [CHANGELOG.md](CHANGELOG.md).
 
@@ -128,23 +134,42 @@ the recorded API/docs reference remains 1.24.0. The VR Address Library metadata 
 **newest seen: 0.276.1** (2026-10-08). These sightings do not change pins or recommend an upgrade;
 follow [installing-tools.md](docs/installing-tools.md) for verification and installation guidance.
 
-### Step 2: Extract This Toolkit Into Your Skyrim Folder
+### Step 2: Extract This Toolkit
 
-1. Download this mod from Nexus (Manual Download)
-2. Find your Skyrim folder:
-   - Open **Steam** > **Library** > right-click **Skyrim VR** (or **Skyrim SE**) > **Properties** > **Installed Files** > **Browse**
-   - A folder opens -- this is your Skyrim folder
-3. **Extract the zip directly into that folder**
-   - Right-click the downloaded zip > Extract All > paste your Skyrim folder path > Extract
-   - The files blend in alongside your existing game files. ⚠ **Files the toolkit ships ARE replaced** -- on a fresh install that costs you nothing, but on an UPDATE it replaces `CLAUDE.md`, `KNOWLEDGEBASE.md` and the hooks. Keep your own notes in `KNOWLEDGEBASE.local.md`, which is never shipped.
+You have two choices:
+- **Option A (Clean / Recommended — Keeps Skyrim clean):** Extract the zip into its own dedicated folder (e.g. `C:\Modding\skyrim-toolkit`). Your Skyrim folder stays completely clean — no scripts, configs, or dev tools are added to your game directory.
+- **Option B (In-Place):** Extract the zip directly into your Skyrim folder (e.g. `C:\Steam\steamapps\common\SkyrimVR`).
 
-### Step 3: Open your agent in the Skyrim folder
+To find your Skyrim folder:
+- Open **Steam** > **Library** > right-click **Skyrim VR** (or **Skyrim SE**) > **Properties** > **Installed Files** > **Browse**.
 
-Open a terminal in the folder containing your game's executable, then start `claude` or `codex`. For Codex, starting in a subfolder silently skips the project hooks.
+> ⚠ **On toolkit updates:** Files the toolkit ships are replaced (`CLAUDE.md`, `AGENTS.md`, `KNOWLEDGEBASE.md`, and hooks). Keep your own notes in `KNOWLEDGEBASE.local.md`, which is never shipped or overwritten.
 
-Setup accepts `bash setup.sh --agent claude|codex|all|auto`. Choose one value; `auto` is the default and detects agents on PATH, and `both` aliases `all`. An unselected agent keeps its files but is reported NOT CONFIGURED. The optional file lock is off unless you select `--lock`.
+### Step 3: Open your agent and configure
+
+Open a terminal in the toolkit folder (Option A) or your Skyrim folder (Option B), then start your agent (or run `setup.sh` directly in Git Bash):
+
+- If you kept Skyrim clean (**Option A**), pass `--game`:
+  ```bash
+  bash setup.sh --game "C:/Path/To/Your/Skyrim"
+  ```
+- If you extracted directly into Skyrim (**Option B**):
+  ```bash
+  bash setup.sh
+  ```
+
+`setup.sh` accepts `--game <dir>` (points to game; keeps Skyrim clean), `--agent claude|codex|all|auto` (default `auto` detects agents on PATH), and `--lock` (optional read-only lock on vanilla masters/archives).
 
 After setup, Codex needs you to run `/hooks` and approve the toolkit's two hooks. Make real tool calls, then run `bash tools/hook-canary.sh` to check their invocation records. Unrendered templates in a source checkout are NOT CONFIGURED; approval alone does not render them.
+
+#### Working on the toolkit itself (dev checkout)
+
+A fresh git clone has unrendered hooks (`{{PYTHON_PATH}}`), so the guards refuse every command until `setup.sh` has run. To edit the toolkit without that, start your agent with `SKYGUARD_DEV=1` (or `SKYGUARD_DISABLED=1`) set in the environment, for example `SKYGUARD_DEV=1 claude`.
+
+- Every hook then allows everything and prints `SKYGUARD BYPASSED` on stderr. Nothing else records it, and `hook-canary.sh` does not report it.
+- Never set it in a shell profile or on a machine where you play or mod. Close the agent and start it again without the variable to get the guards back.
+- A folder is never treated as a dev checkout on its own. Without the variable, a clone with no game files is guarded like any other install.
+- Editing a guard file changes its hash, so regenerate the manifest with `python scripts/gen-guard-hashes.py` before you commit.
 
 ### Step 4: Paste This Prompt
 
