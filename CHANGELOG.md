@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Knowledge moved in from the retired `Skyrim Agents` workspace:** `docs/papyrus-caprica-crossover.md` (Caprica verified under CrossOver), `docs/crossover-d3d11-swapchain.md`, `docs/crossover-loot-and-qt6.md`, `docs/crossover-bodyslide-opengl.md`, `docs/skse-cross-compile-macos.md`, `docs/windows-exe-cross-compile-macos.md`, `docs/ae-1-7-104-plugin-fixes.md` (per-plugin fixes and hook maps, every offset tagged with its build), `docs/binary-patcher-guide.md` and `docs/licensing-and-delta-patching.md`; `docs/skse-internals.md` gains the pre-load gate in detail and the QJO load-phase case study; `docs/macos-crossover.md` links them and gains the bottle, USVFS and profile-INI notes.
+- **Skills:** `skyrim-skse` (SKSE plugin projects through the AutoMod wrapper) and nine toolchain skills used for cross-compiling and reverse engineering: `clang`, `cmake`, `ninja`, `conan-vcpkg`, `binutils`, `assembly-x86`, `abi-and-calling-conventions`, `core-dumps`, `reverse-engineering`.
+
 ## v4.0.0 — 2026-10-08
 
 ### Added

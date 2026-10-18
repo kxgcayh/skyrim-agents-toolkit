@@ -166,6 +166,8 @@ Open a terminal in the toolkit folder (Option A) or your Skyrim folder (Option B
 
 **On a Mac with CrossOver:** set `SKYRIM_CONFIG_DIR` and `SKYRIM_LOADORDER_DIR` before running setup, or the guards protect Windows paths that do not exist on your machine. See [docs/macos-crossover.md](docs/macos-crossover.md).
 
+Deeper pages for that setup, each with the root cause and the fix: [Caprica / Papyrus under CrossOver](docs/papyrus-caprica-crossover.md), [D3D11 swapchain crash](docs/crossover-d3d11-swapchain.md), [LOOT, Qt 6 and MO2 TLS](docs/crossover-loot-and-qt6.md), [BodySlide OpenGL](docs/crossover-bodyslide-opengl.md), [cross-compiling SKSE plugins](docs/skse-cross-compile-macos.md) and [Windows `.exe` tools](docs/windows-exe-cross-compile-macos.md). For SKSE plugin failures on AE 1.7.99+: [internals](docs/skse-internals.md), [per-plugin fixes](docs/ae-1-7-104-plugin-fixes.md), [binary patcher guide](docs/binary-patcher-guide.md) and [licensing and delta patching](docs/licensing-and-delta-patching.md).
+
 `setup.sh` accepts `--game <dir>` (points to game; keeps Skyrim clean), `--agent claude|codex|all|auto` (default `auto` detects agents on PATH), and `--lock` (optional read-only lock on vanilla masters/archives).
 
 After setup, Codex needs you to run `/hooks` and approve the toolkit's two hooks. Make real tool calls, then run `bash tools/hook-canary.sh` to check their invocation records. Unrendered templates in a source checkout are NOT CONFIGURED; approval alone does not render them.

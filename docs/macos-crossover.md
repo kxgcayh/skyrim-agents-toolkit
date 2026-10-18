@@ -23,11 +23,12 @@ and MO2 instance on an external volume. Versions of Wine-side tools move; treat 
 | The safety hooks (`.claude/hooks/*.sh`) | macOS, natively, **but only under bash 4.4+** | **Measured today**: the hooks need bash 4.4 for a time-limited child process; on bash 3.2 they cannot run the engine and **refuse every guarded call** (their source returns 126). macOS ships 3.2. See the next section |
 | Codex hooks | n/a | The toolkit's Codex support is Windows-only (`setup.sh` says so) |
 | `XEditLib.dll` (xelib, `skyrim-winner`) | Windows only | **Inferred**: a Delphi-built Windows DLL cannot load into a native macOS process, the same reason it cannot run in the Linux container (`container-vs-windows.md`) |
-| `Caprica.exe`, `Champollion.exe` | Windows `.exe` | **Inferred**: would need to run under CrossOver's `wine` (section 6). Not tried |
+| `Caprica.exe` | Windows `.exe` | **Measured today**: compiles a `.psc` to a valid `.pex` under CrossOver's `wine`; the traps are in `papyrus-caprica-crossover.md` |
+| `Champollion.exe` | Windows `.exe` | **Inferred**: should run the same way. Not tried |
 | Spriggit, AutoMod CLI | .NET 10 | **Inferred**: .NET runs on macOS, but AutoMod downloads Windows tools for some modules. Not tried |
 | ReSaver CLI | Java | **Inferred**: needs a real JDK 17+ on the Mac |
 | DevBench (live in-game) | inside the game, in the bottle | **Inferred**: its localhost server is reachable from macOS only if CrossOver exposes the port. Not tried |
-| Mod Organizer 2, LOOT, BodySlide, Wabbajack | Windows apps in the bottle | **Measured (notes)**: they run, with the fixes in section 5 |
+| Mod Organizer 2, LOOT, BodySlide, Wabbajack | Windows apps in the bottle | **Measured (notes)**: they run, with the fixes in section 5 and the pages it links |
 
 ## 2. Bash 4.4 or newer is required for the hooks
 
@@ -113,7 +114,29 @@ instance: use them for tools that only read. A tool that writes through them wri
 
 Do not run `.bat` files natively on macOS. Use the equivalent Unix command or a Python script.
 
+More about the bottle, all **Measured (notes)**:
+
+- `drive_c/users/crossover/{Documents,Downloads,Music,Pictures,Videos}` are symlinks to the matching Mac home folders.
+- A tool that locates MO2 data through `...\AppData\Local\ModOrganizer\<Instance>\` finds there only
+  `ModOrganizer.ini`, `categories.dat`, `nexuscatmap.dat`, `logs/` and `crashDumps/`. That is why the two symlinks above
+  are needed.
+- **MO2's virtual filesystem (USVFS)** is `usvfs_x64.dll`: it intercepts Win32 file calls (`CreateFileW`,
+  `FindFirstFileW`) and redirects `Data/` to `mods/<ModName>/`. Paths must respect Wine's casing. A file you change in
+  the real game folder is overridden by MO2 if the same relative path exists in `mods/` or `overwrite/`; inspect the
+  profile's `modlist.txt`, not the game folder.
+- **Profile-specific INIs.** Each MO2 profile can hold its own `skyrimprefs.ini` (and `skyrim.ini`) next to
+  `modlist.txt` and `plugins.txt`. When the profile uses local INIs, those, not the ones under `My Games`, are what
+  the game reads. Check the profile before you advise an INI change (INI hierarchy: `CLAUDE.md`).
+- **Verified read-only use** (2026-10-15): Radium Textures, a Rust/iced Windows GUI that optimizes textures, loaded the
+  MO2 profile `...\ModOrganizer\SSEAE\profiles\Overhaul 1.4` through those symlinks: 1128 mods, 863 enabled, 61596 VFS
+  file entries, 10579 loose textures, 544 BSAs, 31121 BSA textures. Its `wgpu` DXGI factory logs
+  `create_factory_media failed: 0x80004002` under Wine; that is harmless and the GUI proceeds.
+
 ## 5. Known Wine/CrossOver failures and fixes (**notes**)
+
+Each row has a full page with the root cause and the fix: `crossover-d3d11-swapchain.md`, `crossover-loot-and-qt6.md`
+(LOOT, the MO2 TLS crash and `bsplugins.dll`), `crossover-bodyslide-opengl.md`, and section 9 of
+`windows-exe-cross-compile-macos.md` (Wabbajack).
 
 | App / symptom | Cause | Fix |
 |---|---|---|
@@ -124,8 +147,8 @@ Do not run `.bat` files natively on macOS. Use the equivalent Unix command or a 
 | BodySlide / Outfit Studio: `OpenGL context is not OK` | macOS only gives forward-compatible 3.2+ core contexts; BodySlide requests one without the forward-compatible bit | Source fix: add `.ForwardCompatible()` to the context attributes and skip `glShadeModel` on Apple. Build via the project's CI or cross-compile (section 7) |
 | Wabbajack (Avalonia): GUI "does nothing" | `winewrapper --new-console` stays resident; orphaned single-instance mutex; slow first network calls behind a host firewall; Wine has no storage WMI classes (`KeyNotFoundException 'C'`) | Launch with CrossOver's `wine` directly (section 6); kill leftover `winewrapper`/app processes before relaunch; use `wabbajack-cli.exe` for automation |
 
-Details such as the exact byte patches for LOOT 0.29.2 binaries belong to that release only. Take them from the
-maintainer's notes if you need them; do not apply them to another version.
+The exact byte patches for the LOOT 0.29.2 binaries are in `crossover-loot-and-qt6.md` section 3. They belong to that
+release only; do not apply them to another version.
 
 ## 6. Running a Windows tool in the bottle from the Mac shell (**notes**)
 
@@ -151,12 +174,14 @@ from `xwin`, using a vcpkg triplet that forces pure Windows mode and a static ru
 - A transitive port can add `/MD`; force `/MT` for every port or the link fails with `/failifmismatch RuntimeLibrary`.
 - .NET tools: `dotnet publish -c Release -r win-x64 --self-contained`.
 
-SKSE plugin cross-compiling has its own page (`skse-cross-compile.md`, written for Linux, and unvalidated).
+Full pipelines: `windows-exe-cross-compile-macos.md` for `.exe` tools and `skse-cross-compile-macos.md` for SKSE plugin
+DLLs. `skse-cross-compile.md` is the Linux/devcontainer variant, written for Linux and unvalidated.
 
 ## 8. Not covered / still to verify
 
 - Whether `XEditLib`-based tools can be driven from the Mac at all, e.g. by running them under CrossOver's `wine`.
-- Caprica, Champollion, Spriggit and AutoMod on macOS; DevBench reachability from the Mac side.
+- Champollion, Spriggit and AutoMod on macOS; DevBench reachability from the Mac side. (Caprica was tried:
+  `papyrus-caprica-crossover.md`.)
 - A macOS test run of the toolkit's own suite: many tests assume Git Bash and Windows paths (145 failures in the five
   hook/setup suites, identical to the upstream commit, on Python 3.15).
 - Anything about CrossOver versions other than the maintainer's.

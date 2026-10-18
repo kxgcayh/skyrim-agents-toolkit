@@ -219,6 +219,7 @@ A living document of quirks, gotchas, and hard-won lessons about Skyrim modding 
 - CommonLibSSE NG supports SE, AE, and VR in a single multi-runtime build
 - **#1 mod breakage cause**: mods requiring SKSE64 (not SKSEVR) won't load
 - Entry points, Address Library files, runtime targeting and what is AE-only (not VR): `docs/skse-internals.md`
+- The SKSE 2.3.1 pre-load gate and the exported version struct: `docs/skse-internals.md` section 7. Per-plugin AE 1.7.104 fixes and hook maps: `docs/ae-1-7-104-plugin-fixes.md`. Patching a DLL you may not redistribute: `docs/binary-patcher-guide.md`, `docs/licensing-and-delta-patching.md`
 
 ### Animation System
 

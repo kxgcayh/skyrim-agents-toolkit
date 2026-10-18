@@ -12,7 +12,8 @@ Adapted from the maintainer's own AE 1.7.104 notes (a separate workspace). Every
 | **VR** | Inherited from upstream and public sources. **Not tested by this fork** (no VR setup) |
 
 Hook offsets, RVAs and vtable addresses from the AE notes are deliberately NOT carried over: each belongs to one
-game build and is wrong on any other. Re-derive them per build (section 6) and keep them with the plugin.
+game build and is wrong on any other. Re-derive them per build (section 6) and keep them with the plugin. The per-plugin values the maintainer did keep are
+in `ae-1-7-104-plugin-fixes.md`, each tagged with the one build it is valid for.
 
 ## 1. Entry points
 
@@ -45,6 +46,17 @@ not the ID, so one DLL survives updates as long as the database for that exact g
 
 The game version is the 4-part file version of the exe (`1.7.104.0`). The plugin's CommonLib build must know how to
 read the format and how to map that version to a database name; an old build that does neither fails at load.
+
+SKSE builds by game era (**SE/AE**, from the maintainer's notes), and two IDs that are the same on every build because
+they are IDs, not addresses:
+
+| Era | Game | SKSE |
+|---|---|---|
+| Pre-AE | 1.5.97 and earlier | 2.0.20 |
+| AE 1.6 | 1.6.318 to 1.6.1170 | 2.1.x to 2.2.6 |
+| Creation Update 1.7 | 1.7.99, 1.7.104 | 2.3.1 (has the pre-load gate, section 7) |
+
+`SleepWaitMenu::Vtbl` is ID `215936`; `FrameTimer` (the delta frame timer) is ID `410199`.
 
 ## 3. CommonLibSSE-NG runtime targeting
 
@@ -98,7 +110,116 @@ bounds from the `.pdata` RUNTIME_FUNCTION table, and walk calls from the export.
 to one function without running the game, and verifies a hook site on a new build (the bytes at `ID + offset` must
 be the instruction the hook expects). Pair it with the crash logger report (`tools/crash-triage.py`).
 
-## 7. VR (inherited, not tested here)
+## 7. The SKSE 2.3.1 pre-load gate in detail (SE/AE, measured)
+
+Fixing a plugin's own CommonLib logic (sections 3 and 4) is not enough on 1.7.104 with SKSE 2.3.1: SKSE validates every
+plugin before `SKSEPlugin_Load` runs. In `PluginManager::ScanPlugins()` it maps each `Data\SKSE\Plugins\*.dll` with
+`LoadLibraryEx(..., LOAD_LIBRARY_AS_IMAGE_RESOURCE)`, reads the exported `SKSEPlugin_Version` data symbol and calls
+`PluginManager::CheckPluginCompatibility()` (`skse64/PluginManager.cpp`), which does this:
+
+```cpp
+const UInt32 kKnownVersionIndependent =
+    kVersionIndependent_AddressLibraryPostAE | kVersionIndependent_Signatures | kVersionIndependent_StructsPost629;
+
+if (version.versionIndependence & kVersionIndependent_AddressLibraryPostAE) {
+    if (!CheckAddressLibrary())            // opens Data\SKSE\Plugins\versionlib-<ver>.bin
+        return "disabled, address library needs to be updated";
+
+    // the address library changed encoding incompatibly in 1.7.99+
+    if (!(version.versionIndependenceEx & kVersionIndependentEx_AddressLibraryV5)) {
+        UInt32 buildTime = GetBuildTime(plugin);                      // PE header TimeDateStamp
+        if ((buildTime >= 520128000) && (buildTime < 1748217600)) {   // before 2025-05-26 GMT
+            errorMsg = "must be recompiled for new address library";
+            versionIndependent = false;    // falls into the compatibleVersions[] check, which old plugins fail
+        }
+    }
+}
+```
+
+Consequences:
+
+- Any CommonLibSSE-NG plugin built before 2025-05-26 that uses the Address Library is rejected with
+  `"<Plugin>.dll: must be recompiled for new address library"`, even if it would run once loaded, because old CommonLib
+  never sets `kVersionIndependentEx_AddressLibraryV5`.
+- SKSE 2.3.1 no longer calls `SKSEPlugin_Query`. Only `SKSEPlugin_Load` (and an optional `SKSEPlugin_Preload`) run.
+- Diagnostic shortcut: the modal titled `SKSE Plugin Loader (2.3.1)` with that text is this gate, **not** `REL/ID.h(219)`.
+  The latter appears in `skse64.log` or crash output only when the plugin actually executes.
+
+### 7.1 The exported `SKSEPluginVersionData` struct
+
+Layout of the `SKSEPlugin_Version` export, offsets from the symbol start. The maintainer's notes say CommonLibSSE-NG
+`include/SKSE/Interfaces.h` and skse64 `PluginAPI.h` agree on it.
+
+| Offset | Size | Field | Notes |
+|---|---|---|---|
+| `+0x000` | 4 | `dataVersion` | must be `1` |
+| `+0x004` | 4 | `pluginVersion` | packed `(maj<<24)\|(min<<16)\|(pat<<8)\|rev` |
+| `+0x008` | 256 | `name` | NUL-terminated ASCII |
+| `+0x108` | 256 | `author` | |
+| `+0x208` | 252 | `supportEmail` | |
+| `+0x304` | 4 | `versionIndependenceEx` | bit 0 `NoStructUse = 1<<0`, bit 1 **`AddressLibraryV5 = 1<<1`** |
+| `+0x308` | 4 | `versionIndependence` | bit 0 `AddressLibraryPostAE`, bit 1 `Signatures`, bit 2 `StructsPost629` |
+| `+0x30C` | 64 | `compatibleVersions[16]` | zero-terminated list of packed `RUNTIME_VERSION` |
+| `+0x34C` | 4 | `seVersionRequired` | compared with `PACKED_SKSE_VERSION` |
+| total | `0x350` (848) | | |
+
+**Binary fix without a recompile:** OR bit 1 into `versionIndependenceEx`. Find the struct by its signature
+(`dataVersion = 1`, then `pluginVersion`, then the name), never by a fixed file offset. Case study,
+`QuestJournalOverhaul.dll` v1.2.0 (built February 2025): `versionIndependenceEx` `0x01` to `0x03` (CommonLib had
+already set `NoStructUse`), struct at file offset `0xB3150`, patch at `0xB3454`. Method:
+`binary-patcher-guide.md` section 2.3.
+
+## 8. Load-phase failure after the gate passes (QJO case study, static analysis 2026-10-12)
+
+**Measured (notes).** With the gate, runtime-check and `versionl2b` patches in place, QJO passes the gate and
+`SKSEPlugin_Load` starts, but SKSE's `SafeCallLoadPlugin` `__except` catches an exception (error code 0) and reports
+`"disabled, fatal error occurred while loading plugin"`; loading then continues. Static disassembly (`llvm-objdump` plus
+`.pdata` function bounds) mapped the whole window. RVAs below are into that one DLL.
+
+| # | RVA | Function | Notes |
+|---|---|---|---|
+| 1 | `0x46660` | `SKSE::Init` | calls `Module::get()` (`0x14C10` to `0x15410` to `load_version 0x179E0`, PE parse `0x44420`), then `IDDatabase::get()` (`0x14B80` to `load 0x15E00` to `load_file 0x172B0`). **The Address Library load happens here** |
+| 2 | `0x37580` | QJO `SetupLog()` | creates `<SKSE log dir>\<name>.log`; its failure path is fatal (`report_and_fail`) |
+| 3 | `0x574b0` | spdlog `set_level` | |
+| 4-10 | `0x465xx`, `0x463a0` | serialization (`SetUniqueID 0x5153544D`, save/load/revert) and messaging listener | pure interface calls, no `REL` |
+| 11 | `0x35210` | `LoadAllQuestsSupplementalData` | quest-location JSON |
+| 12 | `0x36a50` | `LoadQuestsCategoriesData` | category JSON |
+| 13 | `0xc560` | hook install | 2 relocations, `VirtualProtect(..., 8, PAGE_EXECUTE_READWRITE)`, patches game bytes; originals saved at `0x1800B83E8` / `0x1800B83F0` |
+| 14 | `0x51630` and tail | final spdlog line `"Quest Journal is in Player's pocket!"` (`main.cpp:59`), returns true | never reached |
+
+**What was eliminated**
+
+1. **No QJO log file was ever created** (checked Documents `SKSE\`, the mod folder and MO2 overwrite, also by a time
+   window around the crash run). `SetupLog` is call 2 and would create it, so the exception fires **inside call 1**,
+   during `Module` / `IDDatabase` initialization.
+2. **Every checked failure in this loader is fatal with a dialog.** `report_and_error` (body at `0x18B70`) ends in
+   `MessageBoxW(NULL, body, caption, MB_OK)` (`0x442B0`) and `TerminateProcess(GetCurrentProcess(), 1)` (`0x442E0`); this
+   build is not the `ENABLE_COMMONLIBSSE_TESTING` (throw) variant. Open-fail and format-mismatch go through `0x18DD0`
+   (hardcoded `a_fail = true`); version-mismatch, mmap-create-fail and the `catch(std::system_error)` path call `0x18B70`
+   with the caller's `a_failOnError = true`. So if the file open, header, version or mapping had failed, a CommonLib
+   dialog would have appeared and the game would have exited. Only SKSE's dialog appeared and the process survived, so
+   those steps passed.
+3. The open path is statically correct with the patches: `Data/SKSE/Plugins/versionl2b-{1-7-104-0}.bin`, format 2, and
+   the file was verified byte-exact (435162 entries, 0 trailing).
+
+**Remaining hypothesis.** The one unguarded phase left is the **shared-memory database mapping** in `load_file`:
+`OpenFileMappingW` / `CreateFileMappingW` (`PAGE_READWRITE`, 6.96 MB, name `CommonLibSSEOffsets-v2-<version>`) and
+`MapViewOfFile`, then an in-place unpack and `std::sort` over that view. An access violation there (a Wine/CrossOver
+mapping quirk, for example) is caught by SKSE's `__except` and gives no dialog and no log, and loading continues, which
+matches every observation. The mapping is **named and process-wide**: the first old-CommonLib plugin to run creates
+`CommonLibSSEOffsets-v2-<version>` and later ones only open it, with no content validation, so a stale or corrupt
+section left by another plugin is also a possible trigger.
+
+**Experiments that would decide it (not yet run)**
+
+1. Re-enable QJO and watch for any dialog that appears before SKSE's. The exact CommonLib text
+   (`REL/Relocation.h(<line>): <msg>`) names the failure.
+2. Temporarily rename `versionl2b-1-7-104-0.bin`. Expect CommonLib `failed to open address library file` and a game exit;
+   that confirms the dialog and kill path works under CrossOver and that the loader reaches the open.
+3. Set `WINEDEBUG=+seh` in the bottle environment. The exception code (`0xC0000005` access violation or `0xE06D7363`
+   C++ throw) and the faulting address pin the site.
+
+## 9. VR (inherited, not tested here)
 
 - **VR.** SKSEVR reads `SKSEPlugin_Query`. A build that exports only `SKSEPlugin_Version` is silently skipped.
 - **VR.** The Address Library for 1.4.15 is a separate mod and a CSV (`version-1-4-15-0.csv`), not the binary
