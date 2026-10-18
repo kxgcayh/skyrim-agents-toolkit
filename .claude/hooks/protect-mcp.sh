@@ -41,10 +41,6 @@ case "$_MSYS:$ROOT" in
     1:/*)          ROOT_WIN="$(CDPATH= cd -- "$ROOT" 2>/dev/null && pwd -W 2>/dev/null)" ;;
 esac
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$ROOT}"
-if [ -n "${SKYGUARD_DISABLED:-}" ] || [ -n "${SKYGUARD_DEV:-}" ]; then
-    echo "SKYGUARD BYPASSED (SKYGUARD_DEV/SKYGUARD_DISABLED is set): this hook allows everything" >&2
-    exit 0
-fi
 HB_DIR="$PROJECT_DIR/.claude/backups/.hook-heartbeat/claude"
 [ -d "$HB_DIR" ] || mkdir -p "$HB_DIR" 2>/dev/null
 # Stage records (see tools/skyguard/health.py): invoked -> received -> evaluated (engine) -> emitted, and

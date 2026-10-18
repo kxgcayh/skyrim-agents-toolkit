@@ -319,11 +319,6 @@ function Invoke-Main {
     if ($root.Length -gt 3) { $root = $root.TrimEnd('/') }
     $script:RunPy = $root + '/tools/skyguard/run.py'
 
-    if ($env:SKYGUARD_DISABLED -or $env:SKYGUARD_DEV) {
-        if ($script:Role -ceq 'session-start') { Send-Text 'SKYGUARD: DEV-BYPASS' } else { Send-Text '' }
-        return
-    }
-
     # Telemetry: invoked -> received -> (engine: evaluated) -> emitted; failed from any stage.
     $hb = $root + '/.claude/backups/.hook-heartbeat/codex'
     try { [void][System.IO.Directory]::CreateDirectory($hb); $script:HB = $hb } catch { }

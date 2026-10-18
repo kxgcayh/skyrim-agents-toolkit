@@ -222,13 +222,6 @@ def main(argv=None) -> int:
     _ARGS.append(a)
     if a.nonce:
         _NONCE.append(a.nonce)
-    if os.environ.get("SKYGUARD_DISABLED") or os.environ.get("SKYGUARD_DEV"):
-        sys.stderr.write("SKYGUARD BYPASSED (SKYGUARD_DEV/SKYGUARD_DISABLED is set)\n")
-        if a.agent == "codex":
-            sys.stdout.write("SKYGUARD-OK\n")
-            return 0
-        sys.stdout.write("{}\n")
-        return 0
     if a.agent == "neutral":
         # Plan 7: the agent-neutral role, for an adapter living outside this package (no ADAPTERS module).
         # _neutral refuses every role but pre-tool with exit 1 (broken wiring, never a decision).

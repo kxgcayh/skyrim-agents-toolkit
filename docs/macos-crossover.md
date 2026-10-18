@@ -146,6 +146,7 @@ Each row has a full page with the root cause and the fix: `crossover-d3d11-swapc
 | MO2 2.5.2 crashes building the plugin pane | `bsplugins.dll` (built for MO2 2.5.0) calls into changed internals | Rename `plugins/bsplugins.dll` to `.disabled`; MO2's built-in plugin list is stable |
 | BodySlide / Outfit Studio: `OpenGL context is not OK` | macOS only gives forward-compatible 3.2+ core contexts; BodySlide requests one without the forward-compatible bit | Source fix: add `.ForwardCompatible()` to the context attributes and skip `glShadeModel` on Apple. Build via the project's CI or cross-compile (section 7) |
 | Wabbajack (Avalonia): GUI "does nothing" | `winewrapper --new-console` stays resident; orphaned single-instance mutex; slow first network calls behind a host firewall; Wine has no storage WMI classes (`KeyNotFoundException 'C'`) | Launch with CrossOver's `wine` directly (section 6); kill leftover `winewrapper`/app processes before relaunch; use `wabbajack-cli.exe` for automation |
+| WPF apps (Synthesis, etc.): black/empty window | WPF renders via D3D9; DXVK/MoltenVK hardware acceleration produces an empty client area | In the bottle's Regedit: create `HKEY_CURRENT_USER\Software\Microsoft\Avalon.Graphics` → DWORD `DisableHWAcceleration` = `1`. Forces software rasterization. **Measured today.** |
 
 The exact byte patches for the LOOT 0.29.2 binaries are in `crossover-loot-and-qt6.md` section 3. They belong to that
 release only; do not apply them to another version.
@@ -181,7 +182,7 @@ DLLs. `skse-cross-compile.md` is the Linux/devcontainer variant, written for Lin
 
 - Whether `XEditLib`-based tools can be driven from the Mac at all, e.g. by running them under CrossOver's `wine`.
 - Champollion, Spriggit and AutoMod on macOS; DevBench reachability from the Mac side. (Caprica was tried:
-  `papyrus-caprica-crossover.md`.)
+  `papyrus-caprica-crossover.md`; Synthesis WPF black-window fix is now in section 5.)
 - A macOS test run of the toolkit's own suite: many tests assume Git Bash and Windows paths (145 failures in the five
   hook/setup suites, identical to the upstream commit, on Python 3.15).
 - Anything about CrossOver versions other than the maintainer's.

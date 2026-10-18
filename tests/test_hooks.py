@@ -1047,12 +1047,6 @@ def _fire_env(project, hook, payload, **extra):
 _DELETE = {"tool_name": "Bash", "tool_input": {"command": f'rm -rf "{GAME}/Data"'}}
 
 
-@pytest.mark.parametrize("var", ["SKYGUARD_DEV", "SKYGUARD_DISABLED"])
-def test_the_dev_bypass_allows_and_says_so(project, var):
-    r = _fire_env(project, "protect-bash.sh", _DELETE, **{var: "1"})
-    assert r.returncode == 0 and r.stdout.strip() == "", r
-    assert "SKYGUARD BYPASSED" in r.stderr, r.stderr
-
 
 def test_a_git_checkout_without_the_game_exe_is_still_guarded(project):
     (project / ".git").mkdir(exist_ok=True)

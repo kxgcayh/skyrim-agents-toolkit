@@ -174,11 +174,8 @@ After setup, Codex needs you to run `/hooks` and approve the toolkit's two hooks
 
 #### Working on the toolkit itself (dev checkout)
 
-A fresh git clone has unrendered hooks (`{{PYTHON_PATH}}`), so the guards refuse every command until `setup.sh` has run. To edit the toolkit without that, start your agent with `SKYGUARD_DEV=1` (or `SKYGUARD_DISABLED=1`) set in the environment, for example `SKYGUARD_DEV=1 claude`.
+A fresh git clone has unrendered hooks (`{{PYTHON_PATH}}`), so the guards refuse every command until `setup.sh` has run. Run `setup.sh` first, then make your changes.
 
-- Every hook then allows everything and prints `SKYGUARD BYPASSED` on stderr. Nothing else records it, and `hook-canary.sh` does not report it.
-- Never set it in a shell profile or on a machine where you play or mod. Close the agent and start it again without the variable to get the guards back.
-- A folder is never treated as a dev checkout on its own. Without the variable, a clone with no game files is guarded like any other install.
 - Editing a guard file changes its hash, so regenerate the manifest with `python scripts/gen-guard-hashes.py` before you commit.
 
 ### Step 4: Paste This Prompt
