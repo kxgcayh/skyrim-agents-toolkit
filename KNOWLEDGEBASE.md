@@ -2,6 +2,8 @@
 
 A living document of quirks, gotchas, and hard-won lessons about Skyrim modding (SE / AE / VR). Everything here was either discovered through debugging or verified via web research. VR-specific behavior is called out as such. Always consult this before making changes.
 
+> **Fork note.** This fork targets Skyrim SE and AE on PC. Sections about VR (VR vs SSE differences, VR controller input, VR weapon collision, VR Playroom, OpenComposite) are inherited from upstream and have not been tested here. Treat them as unverified; everything else applies to flat Skyrim.
+
 ---
 
 ## Papyrus Scripting
@@ -216,6 +218,7 @@ A living document of quirks, gotchas, and hard-won lessons about Skyrim modding 
 - Manual offset updates required when porting SE plugins to VR
 - CommonLibSSE NG supports SE, AE, and VR in a single multi-runtime build
 - **#1 mod breakage cause**: mods requiring SKSE64 (not SKSEVR) won't load
+- Entry points, Address Library files, runtime targeting and what is AE-only (not VR): `docs/skse-internals.md`
 
 ### Animation System
 

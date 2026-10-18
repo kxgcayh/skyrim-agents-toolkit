@@ -1,6 +1,6 @@
 ---
 name: skyrim-context
-description: Skyrim modding context and VR-specific gotchas. Auto-loads when working with Papyrus scripts, ESP-related files, or Data/ contents.
+description: Skyrim modding context (SE/AE first; VR gotchas inherited from upstream). Auto-loads when working with Papyrus scripts, ESP-related files, or Data/ contents.
 user-invocable: false
 paths: "**/*.psc,**/*.pex,Data/**,**/*.ini"
 ---
@@ -15,20 +15,20 @@ You are working in a modded Skyrim installation with a full modding toolkit. Con
 1. **RemoveSpell doesn't fire OnEffectFinish** — use `DispelSpell` when cleanup logic exists (but DispelSpell excludes abilities)
 2. **All effects on a spell must have the same casting type** — mismatches cause silent failure
 3. **VMAD editing is fragile** — use `GetFormFromFile()` on your OWN plugin's forms to minimize properties (never another mod's — see *Own Your Records*), and check the result for `None`; xEdit can't add scripts to VMAD
-4. **PlayIdle fails in VR** — VRIK overrides skeleton IK; bypass with timed Papyrus scripts
+4. **PlayIdle fails in VR (VR only)** — VRIK overrides skeleton IK; bypass with timed Papyrus scripts
 5. **Wait() unreliable under 100ms** — merge sub-100ms gaps; use `RegisterForSingleUpdate` when possible
-6. **SSE != VR** for: camera, skeleton, collision, UI, input, SKSE addresses, physics (60Hz→90Hz)
+6. **SE/AE != VR** for: camera, skeleton, collision, UI, input, SKSE addresses, physics (60Hz→90Hz)
 7. **ESL FormIDs must be in xx000800-xx000FFF** — exceeding = crash or data corruption
 8. **Loose files always override BSAs** — check for loose file conflicts before assuming BSA content wins
 9. **Condition OR has precedence over AND** — `A AND B OR C` != what you'd expect
 10. **Non-auto properties don't restore from master on save/load** — they stay blank
-11. **PreWEAPON/PreSHIELD skeleton nodes cause CTD in VR** — must be removed
+11. **PreWEAPON/PreSHIELD skeleton nodes cause CTD in VR (VR only)** — must be removed
 12. **ONAM required for ESM temp record overrides** — missing ONAM = game silently ignores overrides
-13. **SetVehicle causes HMD desync in VR** — avoid entirely
+13. **SetVehicle causes HMD desync in VR (VR only)** — avoid entirely
 14. **GoToState("") in OnUnload → Self=None crash** — move to OnLoad instead
 15. **Navmesh creation is CK-only** — xEdit can only delete, never recreate
 
-## Key VR Differences
+## VR-only differences (inherited from upstream, untested in this fork)
 
 - SKSEVR is a **completely separate build** from SKSE64 — address libraries differ entirely
 - `DisablePlayerControls()` does NOT prevent VR thumbstick movement — use `SetDontMove(true)` in addition

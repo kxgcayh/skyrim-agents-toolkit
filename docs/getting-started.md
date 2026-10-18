@@ -8,7 +8,7 @@ This is the extended version of the setup instructions. If the README was enough
 
 You're giving Claude Code (an AI assistant) a "brain upgrade" for Skyrim modding. After setup, you can talk to it in plain English and it will:
 
-- Know 1,300+ Skyrim quirks, pitfalls, and workarounds (including VR-specific sections)
+- Know 1,300+ Skyrim quirks, pitfalls, and workarounds (VR sections are inherited from upstream and untested in this fork)
 - Protect your game files from accidental damage
 - Decompile and analyze Papyrus scripts
 - Inspect ESP/ESM mod files
@@ -63,7 +63,7 @@ Claude Code is made by Anthropic (the company behind Claude AI). It's like ChatG
 
 1. Open **Steam**
 2. Click **Library** (at the top)
-3. Find **Skyrim VR** (or **Skyrim Special Edition**) in your game list
+3. Find **Skyrim Special Edition** (or **Skyrim VR**) in your game list
 4. Right-click it > **Properties**
 5. Click **Installed Files** (on the left side)
 6. Click **Browse...**
@@ -74,9 +74,9 @@ Claude Code is made by Anthropic (the company behind Claude AI). It's like ChatG
 Write this path down or keep the window open. You'll need it in the next steps.
 
 Common paths look like:
-- `C:\Steam\steamapps\common\SkyrimVR`
-- `D:\SteamLibrary\steamapps\common\SkyrimVR`
-- `C:\Program Files (x86)\Steam\steamapps\common\SkyrimVR`
+- `C:\Steam\steamapps\common\Skyrim Special Edition`
+- `D:\SteamLibrary\steamapps\common\Skyrim Special Edition`
+- `C:\Program Files (x86)\Steam\steamapps\common\Skyrim Special Edition`
 
 ---
 
@@ -196,7 +196,7 @@ replace this file. For example:
 ```markdown
 ## My preferences
 - Always show me a dry run before writing to any plugin.
-- I play in VR; never suggest SSE-only mods.
+- I play on AE; never suggest mods that only support SE 1.5.97.
 - Keep answers short; I know my way around xEdit.
 ```
 

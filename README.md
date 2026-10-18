@@ -2,7 +2,13 @@
 
 For coding agents (Claude Code, Codex, …), not an AI NPC mod (SkyrimNet, Mantella, CHIM).
 
-A modding workspace with engine knowledge, coding-agent instructions, safety hooks and wrappers for optional tools. Use it to inspect plugins, debug scripts, port mods and author meshes. Skyrim VR informed the workflow; check the version-specific guidance for SE, AE and LE.
+> **About this fork.** This is a fork of [WingedGuardian/skyrimvr-claude-toolkit](https://github.com/WingedGuardian/skyrimvr-claude-toolkit), which did nearly all of the work here: the knowledgebase, the safety guards, the tool wrappers and the test suite. The original is built around **Skyrim VR**.
+>
+> This fork is focused on **Skyrim on PC (SE and AE), not VR**. The VR material inherited from upstream (VR controller input, VRIK, `vr-headless`, `port-to-vr`, the VR sections of `KNOWLEDGEBASE.md`) is still in the tree, but this fork does not test or maintain it. Treat it as upstream's, and check it against upstream before relying on it. New material here targets flat Skyrim, and `docs/skse-internals.md` marks what is AE-only and what is VR.
+>
+> It is released under the same MIT license, with the original copyright notice kept in [LICENSE](LICENSE). Fixes that are not specific to this fork belong upstream.
+
+A modding workspace with engine knowledge, coding-agent instructions, safety hooks and wrappers for optional tools. Use it to inspect plugins, debug scripts, port mods and author meshes. Built for Skyrim SE and AE on PC. Guidance for VR and LE is inherited from upstream and is not tested here.
 
 Optional modding tools are installed separately. The toolkit configures paths and hooks through `setup.sh`; check the canary after real agent calls to confirm that the hooks ran.
 
@@ -37,9 +43,9 @@ These are real, shipped results — proof the pipeline works end to end:
 - An extending / telescoping blade effect (length-only, no fat-blade scaling)
 - A self-spinning cone attack that loops on its own with no script driving it
 - A partial-blade glow (emissive blade, non-glowing hilt) via a slot-2 glow map
-- A custom weapon with a glow, a matching inventory icon, and a correct in-hand render in VR
+- A custom weapon with a glow, a matching inventory icon, and a correct in-hand render
 - Diagnosing and fixing a broken combat-music setup at the record level
-- Porting an SSE-only combat mod to VR end to end
+- Porting an SSE-only combat mod to VR end to end (inherited from upstream, untested here)
 
 ### Things you *could* build — feasible, just not tried by us yet
 
@@ -64,7 +70,7 @@ This isn't a guide that tells you what to install and configure yourself. It's a
 
 ### A Toolset Built and Tested for Skyrim
 
-Skyrim modding is full of undocumented engine quirks, version-specific differences, and tools that silently fail. This toolkit was built and tested on a live **Skyrim VR** install, but the knowledge, hooks, and scripts work across all versions — SE, AE, VR, and even LE where applicable. The knowledgebase includes version-specific sections so Claude knows what differs and what doesn't.
+Skyrim modding is full of undocumented engine quirks, version-specific differences, and tools that silently fail. This fork is built for **Skyrim SE and AE on PC**. The upstream toolkit was built and tested on a live **Skyrim VR** install, so the VR sections are inherited and untested here; the knowledge, hooks, and scripts apply across versions, and the knowledgebase has version-specific sections so Claude knows what differs and what doesn't.
 
 The clearest example: **xeditlib**. XEditLib.dll is the engine inside SSEEdit/xEdit -- the most powerful ESP editing tool in the Skyrim modding ecosystem. Getting it working from Node.js (so Claude Code could actually read and write ESP files) required cracking open the Delphi FFI layer and fixing a cascade of subtle bugs: strings encoded as UCS-2 instead of UTF-8, `InitXEdit()` silently corrupting the call stack when declared wrong, booleans that are actually 2-byte integers, a non-obvious two-step string-return pattern. None of this is documented anywhere. We debugged it, fixed it, and open-sourced the working wrapper as [xeditlib](https://github.com/WingedGuardian/xeditlib) so you never have to deal with any of it. Claude Code can now read any ESP file and write new ones -- something that wouldn't work at all before this toolkit.
 
@@ -138,10 +144,10 @@ follow [installing-tools.md](docs/installing-tools.md) for verification and inst
 
 You have two choices:
 - **Option A (Clean / Recommended — Keeps Skyrim clean):** Extract the zip into its own dedicated folder (e.g. `C:\Modding\skyrim-toolkit`). Your Skyrim folder stays completely clean — no scripts, configs, or dev tools are added to your game directory.
-- **Option B (In-Place):** Extract the zip directly into your Skyrim folder (e.g. `C:\Steam\steamapps\common\SkyrimVR`).
+- **Option B (In-Place):** Extract the zip directly into your Skyrim folder (e.g. `C:\Steam\steamapps\common\Skyrim Special Edition`).
 
 To find your Skyrim folder:
-- Open **Steam** > **Library** > right-click **Skyrim VR** (or **Skyrim SE**) > **Properties** > **Installed Files** > **Browse**.
+- Open **Steam** > **Library** > right-click **Skyrim Special Edition** (or **Skyrim VR**) > **Properties** > **Installed Files** > **Browse**.
 
 > ⚠ **On toolkit updates:** Files the toolkit ships are replaced (`CLAUDE.md`, `AGENTS.md`, `KNOWLEDGEBASE.md`, and hooks). Keep your own notes in `KNOWLEDGEBASE.local.md`, which is never shipped or overwritten.
 
@@ -157,6 +163,8 @@ Open a terminal in the toolkit folder (Option A) or your Skyrim folder (Option B
   ```bash
   bash setup.sh
   ```
+
+**On a Mac with CrossOver:** set `SKYRIM_CONFIG_DIR` and `SKYRIM_LOADORDER_DIR` before running setup, or the guards protect Windows paths that do not exist on your machine. See [docs/macos-crossover.md](docs/macos-crossover.md).
 
 `setup.sh` accepts `--game <dir>` (points to game; keeps Skyrim clean), `--agent claude|codex|all|auto` (default `auto` detects agents on PATH), and `--lock` (optional read-only lock on vanilla masters/archives).
 
@@ -212,25 +220,24 @@ This toolkit fits best as a **power user tool** — particularly strong for inve
 - *"Author a NIF for a rune that slowly spins on its own when I place it in the world, and show me a render"*
 - *"Take this sword mesh and make the blade telescope out to twice its length, length-only, no fat-blade scaling"*
 - *"Give this blade an emissive glow on the steel but not the hilt, then render it so I can check"*
-- *"Build a custom weapon with a glowing mesh, a matching inventory icon, and a correct in-hand render in VR"*
+- *"Build a custom weapon with a glowing mesh, a matching inventory icon, and a correct in-hand render"*
 - *"Render this NIF to a PNG so I can see if your last edit actually fixed the hole in the mesh"*
 
-**Porting mods across Skyrim versions (SSE to VR, Oldrim to SSE, SSE to AE, etc.):**
-- *"This mod was made for SSE. Examine every VR incompatibility and fix each one"*
-- *"Decompile this script and tell me what breaks in VR and how to fix it"*
-- *"This mod uses PlayIdle() on the player -- that doesn't work in VR. Rewrite it to use timed Papyrus instead"*
-- *"Port this SSE combat script to VR -- check the knowledgebase for anything that behaves differently"*
+**Porting mods across Skyrim versions (Oldrim to SSE, SSE to AE, etc.):**
+- *"This mod was made for SSE 1.5.97. Examine every AE incompatibility and fix each one"*
+- *"Decompile this script and tell me what breaks on AE and how to fix it"*
+- *"Port this SSE combat script to AE -- check the knowledgebase for anything that behaves differently"*
 
 **Debugging and troubleshooting:**
-- *"I'm getting a CTD when I equip this weapon in VR. Can you fix it?"*
+- *"I'm getting a CTD when I equip this weapon. Can you fix it?"*
 - *"NPC dialogue stopped showing up after I installed a mod. Help me debug it."*
-- *"Check my SkyrimVR.ini for settings that might cause problems"*
+- *"Check my Skyrim.ini for settings that might cause problems"*
 - *"Decompile Data/Scripts/MyScript.pex and explain how it works"*
 - *"These two mods both touch the same magic effect -- which one wins?"*
 
 **Investigating and understanding mods:**
 - *"Inspect all the records in Data/MyMod.esp and explain what this mod actually does under the hood"*
-- *"What does the mod at nexusmods.com/skyrimspecialedition/mods/12345 do? Are there any known VR issues?"*
+- *"What does the mod at nexusmods.com/skyrimspecialedition/mods/12345 do? Are there any known issues on AE?"*
 - *"Compare the original and my patched version of this ESP and show me exactly what changed"*
 
 **Building new mods from scratch (simpler ones work best):**
@@ -242,9 +249,9 @@ This toolkit fits best as a **power user tool** — particularly strong for inve
 
 **Whatever else you want:**
 - *"Add a FOMOD installer to my mod"*
-- *"Write a MCM menu config for my mod using SkyUI VR"*
-- *"Scan my load order for mods known to break in VR"*
-- *"My mod works in SSE but crashes in VR on startup -- let's figure out why"*
+- *"Write a MCM menu config for my mod using SkyUI"*
+- *"Scan my load order for mods known to break on AE"*
+- *"My mod works in SSE but crashes on AE at startup -- let's figure out why"*
 
 If it involves Skyrim, Papyrus, ESPs, INI files, scripts, meshes, or mod files of any kind, just ask. Claude has the full context of how the engine works and will figure out the path forward. It's significantly faster than doing it yourself — especially for the tedious parts.
 
@@ -561,8 +568,8 @@ Any agent that reads files gets the toolkit's instructions, skills and tools, wi
 
 ## FAQ
 
-**Q: Does this work with flat Skyrim SE (non-VR)?**
-A: Yes! The knowledgebase covers both. VR-specific sections only apply to VR. Safety hooks and workflow work for either. Just tell Claude Code to adapt your environment to your specific Skyrim version.
+**Q: Does this work with Skyrim VR?**
+A: This fork is focused on SE and AE. The VR sections of the knowledgebase and the VR-only tools (`vr-headless`, `bench-vr`, `/port-to-vr`) come from upstream and are not tested here, because the maintainer has no VR setup. The safety hooks and workflow are version-independent. For VR, prefer the [upstream repository](https://github.com/WingedGuardian/skyrimvr-claude-toolkit). Tell Claude Code your Skyrim version so it adapts.
 
 **Q: Can Claude break my mods or save files?**
 A: The safety hooks refuse the destructive cases outright rather than asking you to confirm them: writing a plugin or archive (through the edit tools or a shell write such as `>`, `tee`, `Set-Content`), deleting inside the game, config or Mod Organizer folders, and deleting Bethesda's registry keys are all denied. The delete rule is anchored on the *program that runs* (`rm`, `rmdir`, `del`, `Remove-Item`, `shutil.rmtree`, `find -delete`, in Bash and PowerShell) and on where its operand **resolves**, relative paths against the working directory Claude reports, in either slash direction and either path dialect -- an earlier version keyed on one spelling of `rm` and eleven others walked past it, and matched the words of a `grep` as if they were a delete. The install is *resolved*, from the hooks' own location plus the paths `setup.sh` records in `skyrim-paths.env` at the toolkit root (a 3.x install's `.claude/skyrim-paths.env` is still read); it is not "any path containing the word Skyrim", which used to match a temp folder, a checkout of this toolkit, and even a git URL, refusing ordinary work as though it were deleting your game. If the hooks cannot work out where the install is, they **refuse rather than allow** -- a guard that checked nothing must not answer "fine". **It is still pattern matching, not a sandbox**, so treat it as a guard against accidents rather than a guarantee against everything. Ordinary edits proceed with a warning in Claude's context instead of a prompt at you, and files it edits through the Edit/Write tools are copied to `.claude/backups/` first with an audit-log entry -- work done by external tools through Bash is covered by the `.psc`/`.pex` snapshot instead. Verify the hooks are actually live with `bash tools/hook-canary.sh`, and keep your own backups regardless.
@@ -659,6 +666,7 @@ MIT -- see [LICENSE](LICENSE).
 
 ## Credits
 
+- [WingedGuardian/skyrimvr-claude-toolkit](https://github.com/WingedGuardian/skyrimvr-claude-toolkit) -- the parent repository this fork is built on, and its contributors (see its commit history). Everything not marked as added by this fork comes from there.
 - [xeditlib](https://github.com/WingedGuardian/xeditlib) -- Node.js wrapper for XEditLib.dll
 - [zEdit](https://github.com/z-edit/zedit) -- Source of XEditLib.dll
 - [Spriggit](https://github.com/Mutagen-Modding/Spriggit) -- ESP to YAML serialization by Mutagen

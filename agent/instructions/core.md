@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this Skyrim install. Agent-specific not
 
 ## What This Is
 
-A modded Skyrim installation. Adapt paths and version-specific notes to your Skyrim version: SE, AE, VR, or LE. VR-specific behavior is flagged throughout — never assume SSE behavior equals VR behavior.
+A modded Skyrim installation. This fork targets Skyrim on PC (SE and AE). Adapt paths and version-specific notes to your Skyrim version: SE, AE, VR, or LE. VR notes are inherited from upstream and untested here; VR-specific behavior is flagged throughout — never assume SSE behavior equals VR behavior.
 
 `setup.sh` detects your mod manager and fills in the Key Paths below accordingly. **If it detected Mod Organizer 2, read the MO2 note in Key Paths before reading or writing any mod file** — MO2 has no real `Data/` folder, so the obvious path is the wrong one. See "Mod Manager Layout" in `KNOWLEDGEBASE.md`.
 
@@ -131,19 +131,19 @@ These are the most dangerous/common pitfalls. Consult `KNOWLEDGEBASE.md` for ful
 1. **RemoveSpell doesn't fire OnEffectFinish** -- use `DispelSpell` when cleanup logic exists (but `DispelSpell` excludes ability-type spells)
 2. **All effects on a spell must have the same casting type** -- mismatches cause silent failure
 3. **VMAD editing is fragile** -- use `GetFormFromFile()` on your OWN plugin's forms to minimize properties (never another mod's — see *Own Your Records*), and check the result for `None`; xEdit can't add scripts to VMAD
-4. **PlayIdle fails in VR** -- VRIK overrides skeleton IK; bypass with timed Papyrus scripts
+4. **PlayIdle fails in VR (VR only)** -- VRIK overrides skeleton IK; bypass with timed Papyrus scripts
 5. **Wait() unreliable under 100ms** -- merge sub-100ms gaps; use `RegisterForSingleUpdate` when possible
-6. **SSE != VR** for: camera, skeleton, collision, UI, input, SKSE addresses, physics (60Hz->90Hz)
+6. **SE/AE != VR** for: camera, skeleton, collision, UI, input, SKSE addresses, physics (60Hz->90Hz)
 7. **ESL FormIDs must be in xx000800-xx000FFF** -- exceeding = crash or data corruption
 8. **Loose files always override BSAs** -- check for loose file conflicts before assuming BSA content wins
 9. **Condition OR has precedence over AND** -- `A AND B OR C` != what you'd expect
 10. **Non-auto properties don't restore from master on save/load** -- they stay blank
-11. **PreWEAPON/PreSHIELD skeleton nodes cause CTD in VR** -- must be removed
+11. **PreWEAPON/PreSHIELD skeleton nodes cause CTD in VR (VR only)** -- must be removed
 12. **ONAM required for ESM temp record overrides** -- missing ONAM = game silently ignores overrides
-13. **SetVehicle causes HMD desync in VR** -- avoid entirely
+13. **SetVehicle causes HMD desync in VR (VR only)** -- avoid entirely
 14. **GoToState("") in OnUnload -> Self=None crash** -- move to OnLoad instead
 15. **Navmesh creation is CK-only** -- xEdit can only delete, never recreate
-16. **VR controller input is not on the SKSE Input API** -- use the VRIK API for trigger/grip/button detection
+16. **VR controller input is not on the SKSE Input API (VR only)** -- use the VRIK API for trigger/grip/button detection
 17. **Spell effect Area is in FEET, not game units** -- Area=60 ≈ 18m radius
 18. **Papyrus Sound type maps to SOUN, not SNDR** -- passing a SNDR FormID silently returns None
 
@@ -286,7 +286,7 @@ After every session, near-miss or surprise, ask whether a new guard rule, protec
 2. **List assumptions** that the confidence level depends on
 3. **Investigate before acting**: Check the knowledgebase, read relevant source files, and web-search for Skyrim/VR-specific quirks before committing to an approach. Skyrim has many built-in bugs and version-specific differences -- things frequently do NOT work as expected.
 4. **Target >= 90% confidence** before touching anything. If below 90%, document what's uncertain and what additional research would raise it.
-5. **Never assume Skyrim SE behavior = Skyrim VR behavior.** Always verify VR-specific differences.
+5. **Never assume Skyrim SE/AE behavior = Skyrim VR behavior.** VR facts here are inherited and untested; say so when you rely on one.
 
 The confidence scale (95-100% verified, 80-94% strong, 60-79% research more, < 60% do not proceed) is in `docs/safety-philosophy.md`.
 
@@ -345,7 +345,7 @@ Approaches disconnected from how the engine actually works lead to silent failur
 
 **Do the amount of due diligence you need such that the user has to do as little trial-and-error and manual verification as possible.**
 
-- This does **NOT** mean cut corners, and does **NOT** mean skip steps where the user is genuinely needed (e.g. in-game VR testing only they can do).
+- This does **NOT** mean cut corners, and does **NOT** mean skip steps where the user is genuinely needed (e.g. in-game testing only they can do).
 - It means: verify formats, read the actual files, research the established technique (web + Nexus), confirm tool capabilities, and de-risk uncertain steps with a cheap spike — *then* make the change.
 - On any in-game problem, test it yourself through DevBench before asking the user (skill `devbench`).
 - **Catch CTD-class failures in tooling, not the headset** — cross-validate authored assets with an independent parser; don't trust same-tool readback.
