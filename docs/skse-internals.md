@@ -101,7 +101,7 @@ hook "does nothing", check the slot before the logic.
    loading, means a raw access violation or an uncaught exception: SKSE 2.3.1 wraps the load call in a catch-all
    and logs no exception code.
 7. **Mod manager.** Under MO2 the plugin may live in a virtual `Data`; check the profile's mod list, not the real
-   game folder (`KNOWLEDGEBASE.md`: Mod Manager Layout).
+   game folder (`kb/environment-and-guards.md`: Mod Manager Layout).
 
 ## 6. Static analysis when there is no source
 
@@ -229,7 +229,7 @@ section left by another plugin is also a possible trigger.
   accessors such as `GetRuntimeData()`. `RE::PlayerCharacter` is not fully reverse engineered for VR.
 - **VR.** SKSE log: `Documents/My Games/Skyrim VR/SKSE/sksevr.log`. The AE-only failures in section 4 do not apply.
 
-Confirm any VR statement before relying on it; the VR sections of `KNOWLEDGEBASE.md` have the same status.
+Confirm any VR statement before relying on it; `kb/vr.md` have the same status.
 
 ## Sources
 

@@ -101,7 +101,7 @@ so. MCP clients get the same signal as `inspect kind=health`.
 test this myself instead of asking the user to?" Build a *parameterized* harness (a global Papyrus
 function callable via `call`, logging to a file you read off disk) rather than a one-shot, so sweeping
 a value or swapping a mechanism is another DevBench call — not another edit → recompile → user reload.
-Reserve manual testing for the final confirmation gate. See KNOWLEDGEBASE.md for the hazards
+Reserve manual testing for the final confirmation gate. See kb/environment-and-guards.md for the hazards
 (`game save` deadlock, paused-state semantics, heavy console commands) — read them before your first
 live session.
 

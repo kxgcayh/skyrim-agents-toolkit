@@ -42,7 +42,7 @@ merged load order only exists as a *virtual* filesystem while MO2 is actively ru
 through it. Launched outside MO2, xelib sees only the plugins physically present in the stock
 `Data/` folder — and **it does not error**. It silently returns a wrong-but-plausible answer for
 anything involving the override chain or the full load order (see "Mod Manager Layout" in
-`KNOWLEDGEBASE.md`). Run those scripts through MO2's executables list.
+`kb/environment-and-guards.md`). Run those scripts through MO2's executables list.
 
 On a **stock/Vortex** install this second problem doesn't apply — `Data/` really is the merged
 view — but xelib is still Windows-only for the DLL reason above.
@@ -58,7 +58,7 @@ read-only access to the real, per-mod files regardless of manager:
   `SKYRIM_OVERWRITE_DIR` both point at it, and `SKYRIM_PROFILE_DIR` points at the INI folder.
 
 `setup.sh` resolves which case applies and fills in `.devcontainer/devcontainer.json` accordingly —
-see the "Mod Manager Layout" section of `KNOWLEDGEBASE.md` for the detection details.
+see the "Mod Manager Layout" section of `kb/environment-and-guards.md` for the detection details.
 
 Spriggit and ReSaver read files by path, so they work identically either way: they never need the
 MO2 VFS or a running game, only a path to the file.

@@ -82,7 +82,7 @@ Nexus also has a free API (versions, changelogs, dependencies). `bash tools/nexu
 
 ## Knowledgebase
 
-`KNOWLEDGEBASE.md` (project root) is the master reference for all discovered quirks, gotchas, and cross-version differences. **Always consult it before making changes** to avoid repeating past mistakes.
+`KNOWLEDGEBASE.md` (project root) indexes `kb/`, the reference for all discovered quirks, gotchas, and cross-version differences. **Always consult the matching `kb/` file before making changes** to avoid repeating past mistakes.
 
 ### Two files, and which one to WRITE to
 
@@ -126,7 +126,7 @@ no alarm. Details: `docs/safety-philosophy.md`.
 
 ## Top Gotchas (Always In Context)
 
-These are the most dangerous/common pitfalls. Consult `KNOWLEDGEBASE.md` for full details.
+These are the most dangerous/common pitfalls. Consult `kb/` for full details.
 
 1. **RemoveSpell doesn't fire OnEffectFinish** -- use `DispelSpell` when cleanup logic exists (but `DispelSpell` excludes ability-type spells)
 2. **All effects on a spell must have the same casting type** -- mismatches cause silent failure
@@ -291,7 +291,7 @@ After every session, near-miss or surprise, ask whether a new guard rule, protec
 The confidence scale (95-100% verified, 80-94% strong, 60-79% research more, < 60% do not proceed) is in `docs/safety-philosophy.md`.
 
 ### Investigation checklist (before any change)
-- [ ] Consulted `KNOWLEDGEBASE.md` for known quirks
+- [ ] Consulted `kb/` (see `KNOWLEDGEBASE.md`) for known quirks
 - [ ] Read the actual source files involved
 - [ ] Checked if VR differs from SSE for this feature
 - [ ] Web-searched for known issues with this approach

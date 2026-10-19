@@ -9,7 +9,7 @@ Every mod is judged **against the user's save, load order and install**, never i
 Assume the current playthrough continues unless the user says otherwise: most updates happen
 mid-playthrough, and that is where they do damage.
 
-**Read first:** `KNOWLEDGEBASE.md` → *Updating or Adding Mods on an Existing Save: Safety Rubric*.
+**Read first:** `kb/esp-xedit.md` → *Updating or Adding Mods on an Existing Save: Safety Rubric*.
 The rubric maps what an update CHANGES to its save footprint and a verdict. This skill is the
 procedure; the rubric is the law.
 

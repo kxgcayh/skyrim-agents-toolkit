@@ -4,7 +4,7 @@ For coding agents (Claude Code, Codex, …), not an AI NPC mod (SkyrimNet, Mante
 
 > **About this fork.** This is a fork of [WingedGuardian/skyrimvr-claude-toolkit](https://github.com/WingedGuardian/skyrimvr-claude-toolkit), which did nearly all of the work here: the knowledgebase, the safety guards, the tool wrappers and the test suite. The original is built around **Skyrim VR**.
 >
-> This fork is focused on **Skyrim on PC (SE and AE), not VR**. The VR material inherited from upstream (VR controller input, VRIK, `vr-headless`, `port-to-vr`, the VR sections of `KNOWLEDGEBASE.md`) is still in the tree, but this fork does not test or maintain it. Treat it as upstream's, and check it against upstream before relying on it. New material here targets flat Skyrim, and `docs/skse-internals.md` marks what is AE-only and what is VR.
+> This fork is focused on **Skyrim on PC (SE and AE), not VR**. The VR material inherited from upstream (VR controller input, VRIK, `vr-headless`, `port-to-vr`, `kb/vr.md`) is still in the tree, but this fork does not test or maintain it. Treat it as upstream's, and check it against upstream before relying on it. New material here targets flat Skyrim, and `docs/skse-internals.md` marks what is AE-only and what is VR.
 >
 > It is released under the same MIT license, with the original copyright notice kept in [LICENSE](LICENSE). Fixes that are not specific to this fork belong upstream.
 
@@ -258,7 +258,7 @@ If it involves Skyrim, Papyrus, ESPs, INI files, scripts, meshes, or mod files o
 
 ## What's in the Knowledgebase?
 
-Other AI modding setups make you feed Claude information manually or re-explain the same quirks every session. This toolkit ships with a pre-loaded `KNOWLEDGEBASE.md` -- 1,300+ lines of documented knowledge that Claude reads automatically at the start of every session:
+Other AI modding setups make you feed Claude information manually or re-explain the same quirks every session. This toolkit ships with a pre-loaded knowledgebase (`KNOWLEDGEBASE.md` index plus `kb/`) -- 2,000+ lines of documented knowledge that Claude reads automatically at the start of every session:
 
 | Topic | What's Covered |
 |-------|---------------|

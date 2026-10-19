@@ -7,7 +7,7 @@ paths: "**/*.psc,**/*.pex,Data/**,**/*.ini"
 
 # Skyrim Modding Context
 
-You are working in a modded Skyrim installation with a full modding toolkit. Consult `KNOWLEDGEBASE.md` in the project root for the complete reference. Below are the most critical gotchas that cause silent failures or crashes.
+You are working in a modded Skyrim installation with a full modding toolkit. Consult `KNOWLEDGEBASE.md` in the project root (an index to `kb/`) for the complete reference. Below are the most critical gotchas that cause silent failures or crashes.
 
 ## Top 15 Gotchas (Memorize These)
 
@@ -62,4 +62,4 @@ The second `-i` is REQUIRED whenever the base-game sources are not in the curren
 
 ## Before Any Change
 
-Always check `KNOWLEDGEBASE.md` for the full context on whatever you're about to touch.
+Always check `KNOWLEDGEBASE.md` (then the matching `kb/` file) for the full context on whatever you're about to touch.
