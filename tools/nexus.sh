@@ -12,6 +12,8 @@
 #   bash tools/nexus.sh contents <mod_id> [file version] [game_domain]
 #                                                             # what is inside each file (Nexus content previews)
 #   bash tools/nexus.sh validate                              # confirm the key works (prints account name only)
+#   bash tools/nexus.sh collection <slug> [game_domain]       # quick mod-name list of a collection (ordered plan + downloads:
+#                                                             # python tools/nexus-collection.py, docs/nexus-collections.md)
 #   bash tools/nexus.sh raw <api_path>                        # raw GET of any /v1/... path, prints JSON
 #
 # Key resolution order:  tools/.nexus_api_key  ->  $NEXUS_API_KEY
@@ -78,7 +80,7 @@ need_domain() { [[ "$1" =~ ^[a-z0-9]+$ ]] || { echo "usage: a game domain like s
 
 cmd="${1:-}"
 case "$cmd" in
-    validate|mod|raw|find|page|contents) ;;
+    validate|mod|raw|find|page|contents|collection) ;;
     *) usage ;;
 esac
 if [ -z "$KEY" ]; then
@@ -88,7 +90,7 @@ if [ -z "$KEY" ]; then
     could_not_check "no Nexus API key"
 fi
 JQ="$(command -v jq || true)"
-case "$cmd" in find|page|contents) find_python ;; esac
+case "$cmd" in find|page|contents|collection) find_python ;; esac
 shift
 
 case "$cmd" in
@@ -145,6 +147,14 @@ case "$cmd" in
         need_id "${1:-}"; id="$1"; ver="${2:-}"; DOMAIN="${3:-skyrimspecialedition}"; need_domain "$DOMAIN"
         files="$(get "/games/$DOMAIN/mods/$id/files.json")" || could_not_check
         FILES="$files" render contents ${ver:+"$ver"} || could_not_check "the file list could not be read"
+        echo "RESULT: OK"
+        ;;
+    collection)
+        [ -n "${1:-}" ] || { echo "usage: nexus.sh collection <slug> [game_domain]" >&2; exit 2; }
+        slug="$1"; DOMAIN="${2:-skyrimspecialedition}"; need_domain "$DOMAIN"
+        q="$(render gql-collection "$slug")" || could_not_check "could not build the collection request"
+        resp="$(gql "$q")" || could_not_check
+        R="$resp" render collection || could_not_check "the collection response could not be read"
         echo "RESULT: OK"
         ;;
 esac
