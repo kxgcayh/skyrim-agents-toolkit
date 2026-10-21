@@ -131,3 +131,91 @@ mv "<mo2-dir>/plugins/bsplugins.dll" "<mo2-dir>/plugins/bsplugins.dll.disabled"
 
 This is a change inside the user's live MO2 install. State it to the user first, and keep it to the `plugins/` folder;
 the guards protect `mods/` and `overwrite/` and any rename away from the install.
+
+## 7. Self-built MO2 (Qt 6.11+): exits with code 53 and no window (`icuuc.dll` not in `dlls.manifest`)
+
+Tag: **Measured** (CrossOver on Apple Silicon, bottle `SkyGames`, a portable MO2 folder holding a
+cross-compiled `ModOrganizer.exe`, `uibase.dll`, `archive.dll` and Qt 6.11.x DLLs in `dlls/`).
+
+**Symptom.** `ModOrganizer.exe` exits with code 53 after about 1.4 s. No window, no `logs/`, no `ModOrganizer.ini`. The
+previous build of the same exe exits the same way, so a new build is not the cause.
+
+**Cause.** Modern Qt 6 builds (such as Qt 6.11.x) import `icuuc.dll` in `Qt6Core.dll` (earlier builds did not). The exe resolves
+everything in `dlls/` through its embedded `dependentAssembly` named `dlls`, which is `dlls/dlls.manifest`. When that file does
+not list `icuuc.dll`, Wine looks for it nowhere (`looking for L"icuuc.dll" in (null)`, status `c0000135`) and every
+Qt DLL above `Qt6Core` failed in turn:
+
+```
+warn:module:load_dll Failed to load module L"icuuc.dll"; status=c0000135
+err:module:import_dll Library icuuc.dll (which is needed by L"...\dlls\Qt6Core.dll") not found
+err:module:import_dll Library Qt6Core.dll (which is needed by L"...\dlls\Qt6Network.dll") not found
+```
+
+**Fix.** Add one line to `dlls/dlls.manifest`, inside `<assembly>`, next to the other `<file>` entries:
+
+```xml
+<file name="icuuc.dll" />
+```
+
+Every DLL the exe loads from `dlls/` must be listed in that file. After the edit MO2 starts, loads its plugins and
+writes `logs/mo_interface.log`. On a fresh portable folder it then reports
+`Cannot open instance 'Portable', the managed game was not found in the INI file`, which is the normal first-run state.
+
+**`icu.dll` forwards.** `icuuc.dll` forwards its exports to `icu.dll` (the Windows 10 1903+ unified ICU), which the
+bottle does not have. Without it startup logs 20 `find_forwarded_export module not found for forward 'icu.*'` errors.
+They are not fatal at startup. **Measured today**: `Qt6Core.dll` imports exactly 20 ICU symbols, all converters
+(`ucnv_open`, `ucnv_close`, `ucnv_reset`, `ucnv_getMaxCharSize`, `ucnv_getName`, `ucnv_getStandardName`,
+`ucnv_countAvailable`, `ucnv_getAvailableName`, `ucnv_toUnicode`, `ucnv_fromUnicode`, `ucnv_to/fromUCountPending`,
+`ucnv_get/setToUCallBack`, `ucnv_get/setFromUCallBack`, `ucnv_cbToUWriteUChars`, `ucnv_cbFromUWriteUChars`,
+`UCNV_TO_U_CALLBACK_SUBSTITUTE`, `UCNV_FROM_U_CALLBACK_SUBSTITUTE`). Shim: a freestanding `icu.dll` (no CRT, no imports)
+exporting those 20, where `ucnv_open` and `ucnv_getStandardName` set `U_MISSING_RESOURCE_ERROR` and return `NULL`, so Qt
+sees "no ICU converters" and keeps its built-in codecs. Source and build line:
+`<mo2-build>/icu-shim/icu_shim.c`;
+`clang --target=x86_64-pc-windows-msvc -O2 -ffreestanding -fno-stack-protector -c icu_shim.c` then
+`lld-link /dll /noentry /nodefaultlib /machine:x64 /out:icu.dll icu_shim.obj`. Put `icu.dll` in `dlls/` and add
+`<file name="icu.dll" />` to `dlls.manifest`. Result: 0 forward errors, `icu.dll` loaded, MO2 still runs. **Not tested**:
+anything that needs a legacy (non-UTF) text encoding or collation; those would now be unavailable instead of working.
+
+**`QtWebEngineProcess.exe` cannot find `Qt6Core.dll`.** Symptom: `Library Qt6Core.dll (needed by QtWebEngineProcess.exe)
+not found`, `status c0000135`, when MO2 spawns the WebEngine helper (embedded browser, Nexus login). The helper sits in the
+application root and its embedded manifest has no `dlls` assembly dependency, so the loader never looks in `dlls/`.
+Stock MO2 relies on `env::prependToPath(dllsPath)` (`moapplication.cpp:144`) so the child inherits `PATH`. **Measured**: run by hand, the
+helper starts when `PATH` contains `dlls/` (exit 3 on bad arguments) and fails (exit 53) without it; when MO2 spawned it the
+`PATH` did not reach the child, so Wine could not resolve its DLLs.
+
+**An external `QtWebEngineProcess.exe.manifest` does not help**, because an exe with an embedded manifest ignores it.
+**Fix (measured)**: rewrite the embedded manifest in place, replacing the `<trustInfo>` block (214 bytes, `asInvoker` is
+the default) with the 172-byte dependency below and padding with spaces to the original 762 bytes, so the PE resource
+layout does not change:
+
+```xml
+<dependency><dependentAssembly><assemblyIdentity name="dlls" processorArchitecture="x86" version="1.0.0.0" type="win32"></assemblyIdentity></dependentAssembly></dependency>
+```
+
+Python 3, run on a copy (keep `QtWebEngineProcess.exe.prev`): find the single `<assembly xmlns=` block, replace the
+`<trustInfo>...</trustInfo>` text, assert `len(new) <= len(old)`, pad with spaces, write back. After the patch the helper
+run directly with no `PATH` help loads `dlls\Qt6Core.dll` and `Qt6WebEngineCore.dll` and exits 3, with no loader errors.
+The `dlls` assembly must list every DLL in the helper's closure; `dlls.manifest` already did. **Not exercised**: a full MO2
+run did not spawn the helper this time (no embedded-browser action), so the in-MO2 path is unverified.
+
+### 7.1 Launching from the Mac shell and reading Wine's output
+
+The recipe in `macos-crossover.md` section 6 needs three corrections for a folder outside the bottle's `D:` drive.
+
+```bash
+CX_BOTTLE=SkyGames CX_BOTTLE_PATH="$HOME/Bottles" CX_DEBUGMSG="err+all,+loaddll" \
+"/Applications/CrossOver.app/Contents/SharedSupport/CrossOver/bin/wine" --bottle SkyGames --no-convert \
+  'C:\windows\system32\cmd.exe' /c 'cd /d Z:\Volumes\<disk>\Projects\<workspace>\mo2-portable && ModOrganizer.exe'
+```
+
+- **Drive letters.** In this bottle `Z:` is `/` and `D:` is `/Volumes/<disk>/Windows`. Pick the letter from
+  `<bottle>/dosdevices`. A folder under `/Volumes/<disk>/Projects` is only reachable as `Z:\Volumes\<disk>\Projects\...`.
+- **Debug output.** `WINEDEBUG` is ignored by the CrossOver wrapper and the log stays empty. Use `CX_DEBUGMSG` with the
+  same channel syntax.
+- **Working directory.** Start the exe through `cmd /c "cd /d <dir> && <exe>"`. Calling the exe directly, relative or
+  absolute, also exited 53 with no output here.
+- **Exit code 53 and an empty log** mean the process died in the loader. Rerun with `CX_DEBUGMSG` and search the output
+  for `err:module:import_dll` and `c0000135`.
+- **No `timeout` on macOS.** Wrap the call in Python `subprocess.run(..., timeout=N)`.
+- **Check for leftovers first**, as in section 6: `ps -ef | grep -iE "winewrapper|ModOrganizer"`. A running Steam in the
+  same bottle shows up as a `winewrapper.exe` and is not a leftover.

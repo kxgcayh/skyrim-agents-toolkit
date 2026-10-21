@@ -107,12 +107,13 @@ def records_dir() -> Path:
 
 def mo2_mods() -> str:
     """SKYRIM_MO2_MODS from the environment or skyrim-paths.env ("" when not configured)."""
+    if "SKYRIM_MO2_MODS" in os.environ:
+        return os.environ["SKYRIM_MO2_MODS"]
     from skyguard import paths as sg_paths
     try:
         return sg_paths.read_install(str(skyrim_paths.TOOLKIT_ROOT), os.environ).first("SKYRIM_MO2_MODS")
     except (OSError, ValueError):
         return ""
-
 
 def write_replacing(src: Path, target: Path) -> None:
     """Copy src to a temporary file beside target, then swap it in: a hardlinked target is replaced, not written
@@ -285,7 +286,7 @@ def main(argv) -> int:
     if not apply_:
         print("DRY RUN -- nothing written. Re-run with --apply.")
         return 0
-    return install(sevenz, arc, name, group, data, plan, replacing)
+    return install(sevenz, arc, name, group, data, plan, replacing, game=game)
 
 
 def tree_hashes(root: Path):
@@ -315,7 +316,12 @@ def move_verified(src: Path, dst: Path) -> int:
 CARRY_OVER = ("meta.ini",)
 
 
-def install(sevenz, arc, name, group, data: Path, plan, replacing=None) -> int:
+def install(sevenz, arc, name, group, data: Path, plan, replacing=None, game: Path | None = None) -> int:
+    if game is None:
+        try:
+            game = skyrim_paths.game_root()[0]
+        except Exception:
+            game = data.parent
     todo = [p for p in plan if p[2] != "SKIP-GAME-ROOT"]
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     records = records_dir()
@@ -325,9 +331,12 @@ def install(sevenz, arc, name, group, data: Path, plan, replacing=None) -> int:
     try:
         # Names go through a list file, never argv: a large archive overflows Windows' 32K command line.
         # -spd: names are literal, not wildcards; -scsUTF-8: the list file's encoding.
-        listfile = stage / "_files.txt"
+        stage_meta = stage / "meta"
+        stage_meta.mkdir(parents=True, exist_ok=True)
+        listfile = stage_meta / "_files.txt"
         listfile.write_text("\n".join(p[0] for p in todo) + "\n", encoding="utf-8", newline="\n")
         out = stage / "x"
+        out.mkdir(parents=True, exist_ok=True)
         try:
             r = subprocess.run([sevenz, "x", "-y", "-spd", "-scsUTF-8", "-o" + str(out), arc, "@" + str(listfile)],
                                capture_output=True, stdin=subprocess.DEVNULL, timeout=3600)
@@ -340,7 +349,37 @@ def install(sevenz, arc, name, group, data: Path, plan, replacing=None) -> int:
             return 2
         staged = {}
         for inner, dest, action, notes in todo:
-            src = out.joinpath(*[s for s in re.split(r"[\\/]", inner) if s])
+            segs = [s for s in re.split(r"[\\/]", inner) if s]
+            if ".." in segs:
+                print("ERROR: {} contains '..' (path traversal refused)".format(triage.clean(inner)),
+                      file=sys.stderr)
+                return 2
+            try:
+                dest_res = dest.resolve()
+                in_data = (dest_res == data.resolve() or dest_res.is_relative_to(data.resolve()))
+                in_game = (dest_res == game.resolve() or dest_res.is_relative_to(game.resolve()))
+            except (ValueError, AttributeError):
+                in_data = os.path.commonpath([str(dest).lower(), str(data).lower()]) == os.path.normpath(str(data)).lower()
+                in_game = os.path.commonpath([str(dest).lower(), str(game).lower()]) == os.path.normpath(str(game)).lower()
+            if not (in_data or in_game):
+                print("ERROR: {} resolves outside target directory (path traversal refused): {}"
+                      .format(triage.clean(inner), dest), file=sys.stderr)
+                return 2
+
+            src = out.joinpath(*segs)
+            try:
+                src_res = src.resolve()
+                out_res = out.resolve()
+                if not (src_res == out_res or src_res.is_relative_to(out_res)):
+                    print("ERROR: {} extracts outside staging directory; refusing to install"
+                          .format(triage.clean(inner)), file=sys.stderr)
+                    return 2
+            except (ValueError, AttributeError):
+                pass
+            if src.is_symlink():
+                print("ERROR: {} is a symlink in archive; refusing to install"
+                          .format(triage.clean(inner)), file=sys.stderr)
+                return 2
             if not src.is_file():
                 print("ERROR: {} was not staged by 7-Zip; nothing was written".format(triage.clean(inner)),
                       file=sys.stderr)

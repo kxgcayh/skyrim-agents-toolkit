@@ -64,6 +64,7 @@ def env_for(tmp_path, sevenz, game, **extra):
     for k in ("SEVENZIP", "SKYRIM_GAME_ROOT", "SKYRIM_MO2_MODS", "SKYRIM_MANUAL_INSTALLS"):
         e.pop(k, None)
     e.update({"SEVENZIP": str(sevenz), "SKYRIM_GAME_ROOT": str(game),
+              "SKYRIM_MO2_MODS": "",
               "SKYRIM_MANUAL_INSTALLS": str(tmp_path / "records")})
     e.update({k: str(v) for k, v in extra.items()})
     return e
@@ -147,7 +148,7 @@ def test_plugins_are_never_activated(tmp_path, sevenz, game):
 def _in_process(monkeypatch, tmp_path, sevenz, game):
     for k, v in env_for(tmp_path, sevenz, game).items():
         monkeypatch.setenv(k, v)
-    monkeypatch.delenv("SKYRIM_MO2_MODS", raising=False)
+    monkeypatch.setenv("SKYRIM_MO2_MODS", "")
     spec = importlib.util.spec_from_file_location("mod_install", TOOL)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -179,6 +180,18 @@ def test_a_file_7zip_did_not_stage_stops_before_any_write(tmp_path, sevenz, game
     assert (game / "Data" / "ExampleMod.esp").read_bytes() == b"old plugin", "a file was written before the check"
     assert not (game / "d3d11.dll").exists()
 
+
+def test_path_traversal_is_refused_before_any_write(tmp_path, sevenz, game):
+    entries = [
+        {"path": "Data/../../_files.txt", "data": "malicious traversal"},
+        {"path": "Data/ExampleMod.esp", "data": "new plugin"},
+    ]
+    arc = archive(tmp_path, entries)
+    r = run(arc, "--apply", env=env_for(tmp_path, sevenz, game))
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "traversal refused" in r.stderr, r.stderr
+    assert not (tmp_path / "_files.txt").exists()
+    assert (game / "Data" / "ExampleMod.esp").read_bytes() == b"old plugin"
 
 @pytest.mark.parametrize("name", ["a/b", "a\\b", "x:y", "what?", "", "..", "trailing.", "CON", "nul.txt", "tab\there"])
 def test_a_name_that_cannot_be_a_file_name_is_refused(tmp_path, sevenz, game, name):

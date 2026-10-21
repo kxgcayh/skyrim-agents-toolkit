@@ -437,13 +437,8 @@ public class ResaverCLI {
         if (match == null) { b.append(",\"found\":false}"); System.out.println(b); return; }
         b.append(",\"found\":true,\"global\":").append(jstr(str(match)))
          .append(",\"oldValue\":").append(match.getValue()).append(",\"newValue\":").append(newVal);
-        if (!apply) { b.append(",\"dryRun\":true}"); System.out.println(b); return; }
-        if (out == null) { b.append(",\"error\":\"--apply needs <out.ess>\"}"); System.out.println(b); return; }
         match.setValue(newVal);
-        Path outPath = Paths.get(out);
-        ESS.writeESS(ess, outPath, false);
-        b.append(",\"out\":").append(jstr(outPath.toString())).append("}");
-        System.out.println(b);
+        finishWrite(b, ess, apply, out);
     }
 
     // toString() = "([name] )?PLUGIN:FORMIDHEX = value"; match target = formidHex | Plugin:formid
@@ -501,13 +496,8 @@ public class ResaverCLI {
         if (nv == null) { b.append(",\"error\":\"unsupported var type (primitives int/float/bool/str only)\"}"); System.out.println(b); return; }
         b.append(",\"index\":").append(index).append(",\"oldValue\":").append(jstr(str(old)))
          .append(",\"newValue\":").append(jstr(str(nv))).append(",\"apply\":").append(apply);
-        if (!apply) { b.append(",\"dryRun\":true}"); System.out.println(b); return; }
-        if (out == null) { b.append(",\"error\":\"--apply needs <out.ess>\"}"); System.out.println(b); return; }
         hv.setVariable(index, nv);
-        Path outPath = Paths.get(out);
-        ESS.writeESS(ess, outPath, false);
-        b.append(",\"out\":").append(jstr(outPath.toString())).append("}");
-        System.out.println(b);
+        finishWrite(b, ess, apply, out);
     }
 
     static Variable buildVar(Variable old, String type, String val, PapyrusContext ctx) {
@@ -558,13 +548,10 @@ public class ResaverCLI {
         if (undef) rUndef = pap.removeUndefinedElements().size();
         if (term)  rTerm  = pap.terminateUndefinedThreads().size();
         if (out == null) { err("clean --apply needs <out.ess>"); return; }
-        Path outPath = Paths.get(out);
-        ESS.writeESS(ess, outPath, false);
         b.append(",\"removedUnattached\":").append(rUnatt)
          .append(",\"removedUndefined\":").append(rUndef)
-         .append(",\"terminatedThreads\":").append(rTerm)
-         .append(",\"out\":").append(jstr(outPath.toString())).append("}");
-        System.out.println(b);
+         .append(",\"terminatedThreads\":").append(rTerm);
+        finishWrite(b, ess, apply, out);
     }
 
     // ========== CORRUPTION-SAFETY CORE ==========

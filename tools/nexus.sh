@@ -41,6 +41,7 @@ could_not_check() {   # could_not_check [why]: in the main shell only (a $(...) 
 
 KEY=""
 if [ -s "$KEY_FILE" ]; then
+    chmod 600 "$KEY_FILE" 2>/dev/null || true
     KEY="$(tr -d ' \t\r\n' < "$KEY_FILE")"
 elif [ -n "${NEXUS_API_KEY:-}" ]; then
     KEY="$NEXUS_API_KEY"
@@ -60,9 +61,16 @@ render() { $PY "$SCRIPT_DIR/nexus-render.py" "$@"; }
 # Three outcomes, never two: "the API said nothing" and "we never reached the API" must not both arrive as an
 # empty string and print as a blank answer.
 http() {
-    local out code
-    out="$(curl -s --max-time 30 -w $'\n%{http_code}' -H "apikey: $KEY" "$@")" \
-        || { echo "ERROR: the request did not complete (network, DNS or timeout)" >&2; return 3; }
+    local out code cfg
+    cfg="$(mktemp "${TMPDIR:-/tmp}/nexus_curl.XXXXXX")"
+    chmod 600 "$cfg" 2>/dev/null || true
+    printf 'header = "apikey: %s"\n' "$KEY" > "$cfg"
+    out="$(curl -s --max-time 30 -w $'\n%{http_code}' -K "$cfg" "$@")" || {
+        rm -f "$cfg"
+        echo "ERROR: the request did not complete (network, DNS or timeout)" >&2
+        return 3
+    }
+    rm -f "$cfg"
     code="${out##*$'\n'}"
     out="${out%$'\n'*}"
     if [ "$code" != "200" ]; then

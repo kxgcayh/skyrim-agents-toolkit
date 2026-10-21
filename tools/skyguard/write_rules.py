@@ -51,7 +51,14 @@ def decide(file_path: str, audit, roots=None, cwd: str = "", env=None) -> Verdic
         audit.rule(HOOK, "W-INERT-NOPATH", "deny", NO_PATH_LOG, level="REFUSE")
         return Verdict("deny", NO_PATH_DENY)
 
-    if grep(targets.PLUGIN_FILE, file_path):
+    target_check = file_path
+    try:
+        real_p = os.path.realpath(file_path).replace("\\", "/")
+        if real_p and real_p.lower() != file_path.lower():
+            target_check = real_p
+    except (OSError, ValueError):
+        pass
+    if grep(targets.PLUGIN_FILE, file_path) or grep(targets.PLUGIN_FILE, target_check):
         audit.rule(HOOK, "W-PLUGIN", "deny", DENY_PLUGIN)
         return Verdict("deny", DENY_PLUGIN)
 

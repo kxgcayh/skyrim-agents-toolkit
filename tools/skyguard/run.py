@@ -9,10 +9,14 @@ the in-process watchdog: its report goes to stdout and starts `Timeout (`, so a 
 `skyguard-nonce:N`: the run itself proves it is this engine, so a remembered fallback needs no probe."""
 from __future__ import annotations
 
+import sys
+sys.dont_write_bytecode = True
+_here = str(__file__).replace('\\', '/').rsplit('/', 1)[0]
+sys.path = [p for p in sys.path if p not in (_here, '.', '')]
+
 import argparse
 import faulthandler
 import os
-import sys
 import time
 from pathlib import Path
 

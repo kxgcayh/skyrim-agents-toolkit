@@ -1054,3 +1054,30 @@ def test_a_git_checkout_without_the_game_exe_is_still_guarded(project):
         assert fire(project, "protect-bash.sh", _DELETE)[0] == "deny"
     finally:
         (project / ".git").rmdir()
+
+def test_symlink_bypass_is_refused(tmp_path):
+    root = install_hooks(tmp_path / "install", names={"protect-bash.sh", "protect-files.sh"})
+    game_dir = tmp_path / "game"
+    (game_dir / "Data").mkdir(parents=True)
+    (game_dir / "Data" / "Skyrim.esm").write_bytes(b"TES4")
+    (root / ".claude" / "skyrim-paths.env").write_text(
+        f'SKYRIM_GAME_ROOT="{game_dir.as_posix()}"\n', encoding="utf-8", newline="\n"
+    )
+    data_link = tmp_path / "data_link"
+    try:
+        os.symlink(str(game_dir / "Data"), str(data_link))
+        got, reason = fire(root, "protect-bash.sh", cmd(f'rm -rf "{data_link.as_posix()}/foo"'))
+        assert got == "deny", f"deleting through symlink was allowed: {got}, {reason}"
+
+        file_link = tmp_path / "innocent.txt"
+        os.symlink(str(game_dir / "Data" / "Skyrim.esm"), str(file_link))
+        got, reason = fire(root, "protect-files.sh", fpath(str(file_link.as_posix())))
+        assert got == "deny", f"writing plugin through symlink was allowed: {got}, {reason}"
+
+        sg_link = tmp_path / "sg_link"
+        (root / ".skyguard").mkdir(exist_ok=True)
+        os.symlink(str(root / ".skyguard"), str(sg_link))
+        got, reason = fire(root, "protect-bash.sh", cmd(f'echo x > "{sg_link.as_posix()}/state.json"'))
+        assert got == "deny", f"writing state through symlink was allowed: {got}, {reason}"
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this filesystem")

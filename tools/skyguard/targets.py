@@ -50,6 +50,7 @@ to `--` before resolving operands.
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import Mapping, Optional
 
@@ -312,8 +313,17 @@ def zone(abs_path: str, roots) -> str:
         if rel[0] and (tools_cache or
                        rel[0] not in paths.SCRATCH_EXCLUDED_TOP and any(c in paths.SCRATCH_NAMES for c in rel)):
             return "scratch"
+    if best == "outside" and abs_path:
+        try:
+            real_p = os.path.realpath(abs_path).replace("\\", "/")
+            norm_rp = paths.norm_abs(real_p)
+            if norm_rp:
+                real_p = norm_rp
+            if real_p and real_p.lower() != p:
+                return zone(real_p, roots)
+        except (OSError, ValueError):
+            pass
     return best
-
 
 # --------------------------------------------------------------------------------------------- covers_protected
 # Fix round 1 (CRITICAL): zone() answers "where is this path". A delete also destroys everything BELOW its operand,
@@ -451,7 +461,19 @@ def covers_protected(abs_path: Optional[str], roots) -> bool:
             return True
     if len(pc) >= 2 and pc[-1] == "documents":
         return True
-    return len(pc) >= 3 and pc[-1] == "my games" and pc[-2] == "documents"
+    if len(pc) >= 3 and pc[-1] == "my games" and pc[-2] == "documents":
+        return True
+    try:
+        real_p = os.path.realpath(abs_path).replace("\\", "/")
+        if real_p and real_p.lower() != abs_path.lower():
+            rc_p = _split(real_p.lower().rstrip("/") or "/")
+            for root in tuple(roots.install_dirs) + tuple(roots.config_dirs) + tuple(roots.mo2_dirs):
+                rc = _split(root.lower().rstrip("/") or root.lower())
+                if len(rc_p) <= len(rc) and all(_comp_matches(a, b) for a, b in zip(rc_p, rc)):
+                    return True
+    except (OSError, ValueError):
+        pass
+    return False
 
 
 # --------------------------------------------------------------------------------------------- file classes (Task 8)
@@ -475,4 +497,14 @@ def file_class(*spellings: str) -> str:
     for kind, rx, _ in CLASS_RULE:
         if any(s and grep(rx, s) for s in spellings):
             return kind
+    for s in spellings:
+        if s:
+            try:
+                real_s = os.path.realpath(s)
+                if real_s and real_s != s:
+                    for kind, rx, _ in CLASS_RULE:
+                        if grep(rx, real_s):
+                            return kind
+            except (OSError, ValueError):
+                pass
     return ""

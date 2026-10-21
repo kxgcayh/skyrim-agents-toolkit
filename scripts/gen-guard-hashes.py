@@ -51,7 +51,7 @@ def guard_files(repo: Path = REPO):
     kind, guard = _install_kind()
     out = subprocess.run(["git", "-C", str(repo), "ls-files", "-z"], check=True, capture_output=True).stdout
     names = [n for n in out.decode("utf-8").split("\0") if n]
-    return sorted(n for n in names if n not in SETUP_WRITES and kind(n.lower().split("/")) == guard)
+    return sorted(n for n in names if n not in SETUP_WRITES and n != MANIFEST and kind(n.lower().split("/")) == guard)
 
 
 def _sha(path: Path, rel: str) -> str:

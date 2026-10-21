@@ -47,11 +47,14 @@ else echo '[spriggit-cli] spriggit not found: install the Spriggit.CLI dotnet to
 if [ -z "$REAL_IN" ] && [ -z "$REAL_OUT" ]; then exec "${SPRIGGIT[@]}" "$@"; fi
 [ -n "$REAL_IN" ] && [ -n "$REAL_OUT" ] || { echo 'InputPath and OutputPath are both required' >&2; exit 1; }
 "${PY[@]}" "$SCRIPT_DIR/spriggit_publish.py" check "$REAL_IN" "$REAL_OUT"
-DEFAULT_ROOT="${TMPDIR:-/tmp}/spriggit-work"
-case "${OSTYPE:-}" in msys*|cygwin*) DEFAULT_ROOT='C:/Temp/spriggit-work';; esac
+USER_SUFFIX="${USER:-${USERNAME:-default}}"
+DEFAULT_ROOT="${TMPDIR:-/tmp}/spriggit-work-$USER_SUFFIX"
+case "${OSTYPE:-}" in msys*|cygwin*) DEFAULT_ROOT="C:/Temp/spriggit-work-$USER_SUFFIX";; esac
 WORK_ROOT="${SPRIGGIT_WORK_ROOT:-$DEFAULT_ROOT}"
 mkdir -p "$WORK_ROOT"
+chmod 700 "$WORK_ROOT" 2>/dev/null || true
 WORK=$(mktemp -d "$WORK_ROOT/run.XXXXXXXX")
+chmod 700 "$WORK" 2>/dev/null || true
 trap 'rm -rf -- "$WORK"' EXIT
 mkdir -p "$WORK/in" "$WORK/out"
 NEW_IN="$WORK/in/$(basename "$REAL_IN")"; NEW_OUT="$WORK/out/$(basename "$REAL_OUT")"

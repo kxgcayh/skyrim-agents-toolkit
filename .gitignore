@@ -38,3 +38,13 @@ KNOWLEDGEBASE.local.md
 # no licence grants its redistribution (tools/vr-emu-driver/README.md).
 tools/vr-emu-driver/build/
 tools/vr-emu-driver/work/
+
+# Third-party tools downloaded or built locally -- NEVER commit or ship
+tools/Caprica
+tools/Caprica/
+tools/Champollion/
+tools/automod/
+tools/pynifly/
+tools/resaver-cli/ReSaver.jar
+tools/resaver-cli/lib/
+tools/resaver-cli/*.class

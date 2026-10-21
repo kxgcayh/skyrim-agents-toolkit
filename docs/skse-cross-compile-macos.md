@@ -51,7 +51,7 @@ Expected layout:
 ```
 $WINSYSROOT/
   crt/include            <iostream>, <vector>, <format> ...
-  crt/lib/x86_64         msvcrt.lib, vcruntime.lib, msvcp.lib
+  crt/lib/x86_64         msvcrt.lib, vcruntime.lib, msvcprt.lib (the C++ standard library; not msvcp.lib)
   sdk/include/{shared,ucrt,um,winrt}
   sdk/lib/ucrt/x86_64    ucrt.lib
   sdk/lib/um/x86_64      kernel32.lib, user32.lib, d3d11.lib, dxgi.lib

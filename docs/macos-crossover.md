@@ -163,6 +163,8 @@ CX_BOTTLE="<bottle>" CX_BOTTLE_PATH="$HOME/Bottles" \
 
 Use a Windows-style path for the executable. Check for leftovers first: `ps -ef | grep -E -i "winewrapper|<tool>"`.
 Prefer a tool's CLI over its GUI under Wine whenever one exists.
+A tool outside the `D:` drive, or one that exits with no output, needs the launch form and the debug variable in
+`crossover-loot-and-qt6.md` section 7.1.
 
 ## 7. Building Windows tools from the Mac (**notes**)
 
