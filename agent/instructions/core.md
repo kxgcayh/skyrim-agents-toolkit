@@ -23,9 +23,9 @@ All under `tools/`:
 
 | Tool | Purpose | Usage |
 |------|---------|-------|
-| **Champollion** | Decompile Papyrus `.pex` → `.psc` | `tools/Champollion/Champollion.exe input.pex` |
-| **Caprica** | Compile Papyrus `.psc` → `.pex` | `tools/Caprica/Caprica.exe` from `Data/Scripts/Source` with a BARE filename and a second `-i` for the base-game sources: exact command in skill `skyrim-context` |
-| **XEditLib.dll** | Programmatic ESP/ESM reading via FFI | Load with koffi in Node.js (skill `xelib`) |
+| **Champollion** | Decompile Papyrus `.pex` → `.psc` | `champollion input.pex -p <out dir>` |
+| **Caprica** | Compile Papyrus `.psc` → `.pex` | `caprica` (see notes) |
+| **XEditLib.dll** | Programmatic ESP/ESM reading via FFI | koffi in Node.js; skill `xelib` |
 | **Spriggit** | ESP ↔ YAML/JSON conversion (.NET) | `spriggit serialize ...` |
 | **AutoMod CLI** | NIF, BSA, audio, MCM, ESP one-liners | `bash tools/automod-cli.sh <module> <command> --json` |
 | **PyFFI** | NIF geometry edit, **NiTriShape (LE) ONLY** | skill `skyrim-nif` |

@@ -1,5 +1,8 @@
 # Compiling Papyrus (`.psc` to `.pex`) with Caprica on macOS under CrossOver
 
+> **Superseded 2026-11-04**: the toolkit now builds Caprica from the kxgcayh/Caprica fork, which runs natively on
+> macOS as `caprica` (`installing-tools.md`). This page is kept for anyone still running the Windows `Caprica.exe`.
+
 Caprica is a Windows console `.exe` with no macOS build, so on a Mac it runs inside the CrossOver bottle. This page is
 the working command, the traps that make it look like it did not run, and what was and was not tried. The Windows form
 of the command, with the base-game import rules, is in skill `skyrim-context` ("Compiling Papyrus (Caprica)"); the

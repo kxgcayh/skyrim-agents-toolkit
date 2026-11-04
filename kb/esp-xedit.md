@@ -345,7 +345,7 @@ to catch re-mastered / dropped references. If a change is intended, re-run
 - Requires `--flags "TESV_Papyrus_Flags.flg"` or compilation fails with "No user flags defined"
 - `state` is a reserved word in Papyrus — cannot be used as a variable name
 - To import VRIK API: copy `Data/Scripts/VRIK.psc` to `Data/Scripts/Source/VRIK.psc`
-- Command: `../../../tools/Caprica/Caprica.exe --game skyrim --import "." --output "../" --flags "TESV_Papyrus_Flags.flg" "Script.psc"`
+- Command: `caprica --game skyrim --import "." --output "../" --flags "TESV_Papyrus_Flags.flg" "Script.psc"`
 
 ---
 

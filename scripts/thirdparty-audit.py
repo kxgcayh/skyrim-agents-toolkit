@@ -639,13 +639,14 @@ REGISTRY = [
     {"name": "CrashLoggerSSE", "upstream": ("github", "alandtse/CrashLoggerSSE"), "nexus": ("skyrimspecialedition", 59818),
      "not_delivered": "a game mod the user installs with their own mod manager; the toolkit never installs or names a version of it; crash-triage reads the dumps of whatever version is installed"},
     {"name": "SKSE VR", "upstream": ("nexus", "skyrimspecialedition", 30457), "not_delivered": "a game mod the user installs with their own mod manager; the toolkit never installs or names a version of it"},
-    {"name": "Champollion", "pins": [("regex", PINNED_DOWNLOADS, table_row("Champollion"))],
-     "upstream": ("github", "Orvid/Champollion"),
-     "refs": [{"pattern": r"Champollion[. ](?P<v>v\d+\.\d+\.\d+)"}],
-     "checks": [hashes("Champollion")]},
-    {"name": "Caprica", "pins": [("regex", PINNED_DOWNLOADS, table_row("Caprica"))], "upstream": ("github", "Orvid/Caprica"),
-     "refs": [{"pattern": r"Caprica[. ](?P<v>v\d+\.\d+\.\d+)"}],
-     "checks": [hashes("Caprica")]},
+    {"name": "Champollion", "pins": [("regex", PINNED_DOWNLOADS, r"kxgcayh/Champollion>[^\n]*?commit `(?P<v>[0-9a-f]{40})`")],
+     "upstream": ("github-head", "kxgcayh/Champollion"),   # the fork publishes no releases or tags: pinned to a main commit
+     "refs": [{"pattern": r"(?:kxgcayh/Champollion\S*(?: fork)? (?:at |\()?commit |Champollion checkout )(?P<v>[0-9a-f]{7,40})\b",
+               "compare": "prefix"}]},
+    {"name": "Caprica", "pins": [("regex", PINNED_DOWNLOADS, r"kxgcayh/Caprica>[^\n]*?commit `(?P<v>[0-9a-f]{40})`")],
+     "upstream": ("github-head", "kxgcayh/Caprica"),   # like Champollion: a fork with no releases, pinned to a main commit
+     "refs": [{"pattern": r"(?:kxgcayh/Caprica\S*(?: fork)? (?:at |\()?commit |Caprica checkout )(?P<v>[0-9a-f]{7,40})\b",
+               "compare": "prefix"}]},
     {"name": "xeditlib", "pins": [("regex", "package.json", r"xeditlib/tar\.gz/(?P<v>[0-9a-f]{40})"),
                                   ("regex", "package-lock.json", r"xeditlib/tar\.gz/(?P<v>[0-9a-f]{40})")],
      "tag_pins": [("regex", PINNED_DOWNLOADS, r"xeditlib (?P<v>v\d+\.\d+\.\d+) = commit")],
@@ -809,6 +810,8 @@ def latest_of(f, upstream, pinned):
     kind = upstream[0]
     if kind == "github":
         return gh_latest(f, upstream[1])
+    if kind == "github-head":
+        return gh_api(f, "repos/%s/commits/HEAD" % upstream[1])["sha"]
     if kind == "github-pre":
         return gh_latest(f, upstream[1], prerelease=True)
     if kind == "nuget":
@@ -893,7 +896,12 @@ def audit_entry(f, repo, spec, rows, ctx):
                 rows.append(Row(name, "version", None, latest, UNPINNED, "recommended without a pin"))
                 return
             cmp_pin, cmp_latest = shown_pin, latest.split(" ")[0]
-            st, why = (OK, "") if same(cmp_pin, cmp_latest, compare) else version_status(cmp_pin, cmp_latest)
+            if same(cmp_pin, cmp_latest, compare):
+                st, why = OK, ""
+            elif upstream[0] == "github-head":   # commits have no order to compare: any other head means it moved on
+                st, why = NEWER, "branch head moved on (reported, not a failure)"
+            else:
+                st, why = version_status(cmp_pin, cmp_latest)
             if st == NEWER and spec.get("newer_note"):
                 why = spec["newer_note"]
             rows.append(Row(name, "version", shown_pin, latest, st, why))
@@ -1252,7 +1260,9 @@ EXACT_NPM = re.compile(r"(?:@[\w.-]+/)?[\w.-]+@\d+\.\d+\.\d+(?:-[\w.]+)?")
 COMMIT_NPM = re.compile(r"(?:github:)?[\w.-]+/[\w.-]+#[0-9a-f]{40}")
 EXACT_PY = re.compile(r"[\w.\-\[\]]+==\d+(?:\.\d+)+")
 # A clone is pinned when it names a tag AND something checks the commit after cloning: repo -> (file, proof regex).
-VERIFIED_CLONES = {"SpookyPirate/spookys-automod-toolkit": ("tools/automod-cli.sh", r'PIN_COMMIT="[0-9a-f]{40}"')}
+VERIFIED_CLONES = {"SpookyPirate/spookys-automod-toolkit": ("tools/automod-cli.sh", r'PIN_COMMIT="[0-9a-f]{40}"'),
+                   "kxgcayh/Champollion": (PINNED_DOWNLOADS, r"git -C Champollion checkout [0-9a-f]{40}"),
+                   "kxgcayh/Caprica": (PINNED_DOWNLOADS, r"git -C Caprica checkout [0-9a-f]{40}")}
 DOWNLOAD_HOSTS = (r"github\.com/[\w.-]+/[\w.-]+/releases|blender\.org|nodejs\.org|python\.org|git-scm\.com|"
                   r"nexusmods|Nexus mod \d+|FallrimTools page|aka\.ms/|dot\.net/")
 # A download's hash may sit on the same line or the next two (a wrapped string literal or bullet).

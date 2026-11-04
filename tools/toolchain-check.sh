@@ -145,8 +145,10 @@ else
   printf '  %-22s not installed (optional)\n' "spriggit"
 fi
 
-optional "Champollion" "$ROOT/tools/Champollion/Champollion.exe" --help
-optional "Caprica"     "$ROOT/tools/Caprica/Caprica.exe" --help
+if command -v champollion >/dev/null 2>&1; then check "Champollion" "v1\.3\.2" champollion --version
+else printf '  %-22s not installed (optional)\n' "Champollion"; fi
+if command -v caprica >/dev/null 2>&1; then check "Caprica" "Caprica Papyrus Compiler v0\.3\.0" caprica --help
+else printf '  %-22s not installed (optional)\n' "Caprica"; fi
 
 echo "our wrappers (do they reach their dependency?):"
 # wrapper <name> <the dependency the user installs> <what a WORKING wrapper prints for --help>
