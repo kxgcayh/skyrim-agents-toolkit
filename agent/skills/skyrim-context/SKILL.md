@@ -1,8 +1,6 @@
 ---
 name: skyrim-context
 description: Skyrim modding context (SE/AE first; VR gotchas inherited from upstream). Auto-loads when working with Papyrus scripts, ESP-related files, or Data/ contents.
-user-invocable: false
-paths: "**/*.psc,**/*.pex,Data/**,**/*.ini"
 ---
 
 # Skyrim Modding Context

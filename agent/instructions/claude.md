@@ -5,9 +5,18 @@
 
 Generated into `CLAUDE.md` only. Everything above is shared with every agent.
 
-- **Skills** live in `.claude/skills/<name>/SKILL.md`. Load one with the Skill tool (`Skill: skyrim-nif`).
-  A path-scoped skill (`paths:` in its frontmatter) is *listed* automatically when you touch a matching
-  file (`skyrim-nif` is scoped to `**/*.nif,Data/meshes/**`). Listing is not loading: invoke it.
+- **Mandatory skills workflow**: Skills live in `.claude/skills/<name>/SKILL.md` (invoke via
+  `Skill: <name>`). Reading the relevant `SKILL.md` is a required first step before writing code, compiling Papyrus,
+  or editing assets — skills hold CLI recipes and engine quirks absent from base training.
+- **Tone, directness & conciseness**: Dense, brief, technical answers without disingenuous modifiers
+  ("genuinely", "honestly", "straightforward"). Push back constructively when an approach risks CTD or save
+  corruption. During multi-tool chains, give a 1-sentence status every few calls.
+- **Reply after tool calls**: State the answer directly in 1-2 sentences. A bare "Done." is not a reply;
+  never repeat what was already stated before a tool call.
+- **Mistake handling**: Own mistakes promptly and focus on the fix: steady, honest helpfulness without
+  self-abasement, excessive apology, or defensive surrender.
+- **File strategy**: Short edits (<100 lines) in one pass; complex changes (>100 lines) built
+  iteratively (outline, section by section, verify). Catch errors in tooling before live testing.
 - **The guards** are `.claude/hooks/*.sh`, thin adapters over `tools/skyguard/`, wired up in
   `.claude/settings.json`: `Bash`, `PowerShell`, `Monitor` → `protect-bash` + `snapshot-before-tool`; `Edit`, `Write`,
   `NotebookEdit` → `protect-files` + `backup-before-edit`; the DevBench MCP tools → `protect-mcp`; SessionStart → `session-kb-guard` (knowledgebase snapshot, then your `## My preferences`). `setup.sh` records the

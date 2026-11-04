@@ -1,7 +1,6 @@
 ---
 name: skyrim-save
 description: Read, scan and clean Skyrim save files (.ess), including ReSaver CLI writes (reset-havok, cleanse-formlists, remove-created). Use when debugging save issues, searching for orphaned scripts, checking mod footprint in saves, investigating save bloat, or cleaning or repairing a save.
-paths: "**/*.ess"
 ---
 
 # Save File Analysis

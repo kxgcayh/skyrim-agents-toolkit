@@ -27,17 +27,24 @@ All under `tools/`:
 | **Caprica** | Compile Papyrus `.psc` → `.pex` | `tools/Caprica/Caprica.exe` from `Data/Scripts/Source` with a BARE filename and a second `-i` for the base-game sources: exact command in skill `skyrim-context` |
 | **XEditLib.dll** | Programmatic ESP/ESM reading via FFI | Load with koffi in Node.js (skill `xelib`) |
 | **Spriggit** | ESP ↔ YAML/JSON conversion (.NET) | `spriggit serialize ...` |
-| **AutoMod CLI** | NIF meshes, BSA archives, audio, MCM, ESP one-liners | `bash tools/automod-cli.sh <module> <command> --json` |
-| **PyFFI** | NIF geometry edit — **NiTriShape (LE-format) ONLY** (any modern Python with setuptools) | PyFFI / PyNifly below; skill `skyrim-nif` |
-| **PyNifly** | NIF read/write incl. **BSTriShape (SSE)** + **animation/controller authoring** (Python, prebuilt DLL) | PyFFI / PyNifly below; skill `skyrim-nif` |
-| **ReSaver CLI** | Headless `.ess` save parse / query / cross-reference / clean | `bash tools/resaver-cli.sh <op> <save.ess>` — op list and rules: skill `skyrim-save` (write ops are dry-run unless `--apply`, always a NEW file). Needs JDK 17+ + ReSaver's jar (see `docs/installing-tools.md`). |
-| **cosave-info** | READ-ONLY structural survey of an SKSE `.skse` co-save → JSON (which mods stashed co-save data + how much) | `bash tools/cosave-cli.sh <cosave.skse>` (Python 3; the cosave sits next to its `.ess`) |
-| **skyrim-winner** | **"Which plugin actually wins this record?"** Loads the FULL active load order and asks xEdit. No index, no cache -- xEdit is the authority. | `bash tools/skyrim-winner.sh <winner\|chain> <formid> [plugin]` · `... conflicts <plugin>` -- needs **xeditlib**; skill `triage-and-conflicts` |
-| **papyrus-triage** | Turns `Papyrus.N.log` into bucketed, attributed counts. Rows **sum to the entry count**; the not-shown row prints even at zero. | `python tools/papyrus-triage.py [logfile] [--top N] [--all]` -- bundled, Python 3, no install |
-| **crash-triage** | Reduces CrashLogger dumps (~5.5k lines each) to ranked signatures and labels the ones your knowledgebase already ruled on. | `python tools/crash-triage.py [dir\|file] [--frames N] [--all]` -- bundled, Python 3, no install |
-| **DevBench** | **LIVE in-game** inspect / console / Papyrus / scenario via a localhost REST+MCP server — only while the game is actually running | `bash tools/devbench-cli.sh <alive\|health\|ping\|state\|inspect\|exec\|call\|describe\|notify\|tool>` — skill `devbench` |
+| **AutoMod CLI** | NIF, BSA, audio, MCM, ESP one-liners | `bash tools/automod-cli.sh <module> <command> --json` |
+| **PyFFI** | NIF geometry edit, **NiTriShape (LE) ONLY** | skill `skyrim-nif` |
+| **PyNifly** | NIF read/write incl. **BSTriShape (SSE)** + animation authoring | skill `skyrim-nif` |
+| **ReSaver CLI** | Headless `.ess` save parse / query / clean | `bash tools/resaver-cli.sh <op> <save.ess>` |
+| **cosave-info** | READ-ONLY survey of an SKSE `.skse` co-save → JSON | `bash tools/cosave-cli.sh <cosave.skse>` |
+| **skyrim-winner** | Which plugin wins a record, over the FULL load order | `bash tools/skyrim-winner.sh <winner\|chain\|conflicts> ...` |
+| **papyrus-triage** | `Papyrus.N.log` → bucketed, attributed counts | `python tools/papyrus-triage.py [logfile] [--top N] [--all]` |
+| **crash-triage** | CrashLogger dumps → ranked signatures | `python tools/crash-triage.py [dir\|file] [--frames N] [--all]` |
+| **DevBench** | **LIVE in-game** inspect / console / Papyrus / scenario | `bash tools/devbench-cli.sh <command>`; skill `devbench` |
 
-> **Note**: none of these are bundled. How to install and verify each one: `docs/installing-tools.md`.
+- **Caprica**: run from `Data/Scripts/Source` with bare filename and `-i` for base sources (skill `skyrim-context`).
+- **PyFFI / PyNifly**: LE NiTriShape vs SSE BSTriShape limits below; skill `skyrim-nif`.
+- **ReSaver CLI**: headless save queries/cleaning; write ops need `--apply` and write a new file (skill `skyrim-save`).
+- **cosave-info**: SKSE co-save survey (Python 3); sits next to its `.ess`.
+- **skyrim-winner**: authority on record winners across active load order (needs xeditlib; skill `triage-and-conflicts`).
+- **DevBench**: live in-game REST/MCP inspect/exec (commands: `alive health ping state inspect exec call describe notify tool`; skill `devbench`).
+
+> **Note**: only papyrus-triage and crash-triage are bundled (Python 3, no install). How to install and verify the rest: `docs/installing-tools.md`.
 
 ## Where the rest lives
 
@@ -105,15 +112,7 @@ the same text. Read the rest of the file before making changes. When the user st
 preference ("always…", "never…", "from now on…"), add it to that section. When you create the
 file, start it with an empty `## My preferences` section.
 
-**Why the split, and it is not bookkeeping.** The upgrade path is "extract the new zip
-over your install", so any file the toolkit ships is *replaced* on update. A file that
-is both shipped by us and appended to by you loses everything you added, silently, at
-the moment you update — and the README used to promise the opposite. A toolkit must
-never ship a file it also asks you to edit.
-
-⚠ If you already have accumulated notes inside `KNOWLEDGEBASE.md` from an older
-version, move them to `KNOWLEDGEBASE.local.md` now. Anything left in the shipped file
-is lost at the next update.
+**Why the split.** The upgrade path is "extract the new zip over your install", so any shipped file is replaced on update. Keeping user notes and preferences in `KNOWLEDGEBASE.local.md` ensures updates never overwrite them.
 
 ### The copy that covers the install you already have
 
@@ -315,7 +314,7 @@ Approaches disconnected from how the engine actually works lead to silent failur
 **Examples:**
 
 | Mechanic | Wrong (invented) | Vanilla-aligned |
-|----------|-----------------|-----------------|
+|----------|------------------|-----------------|
 | Bleed on hit | ValueModifier MGEF on a Concentration enchantment | FireAndForget bleed spell cast per-swing (mirrors the Bleeding Strikes perk's per-hit application) |
 | Script stagger | Stagger-archetype FireAndForget spell via `Spell.Cast()` (no visible animation) | `PushActorAway(target, 1-3)` — physical stumble, proven engine behavior |
 | Stagger immunity | `ForceActorValue("Stagger", 0)` polling | AddPerk with a ModIncomingStagger ×0 entry |
