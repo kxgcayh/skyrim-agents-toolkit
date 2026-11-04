@@ -1436,6 +1436,10 @@ DELIVERY_EXEMPT = [
     ("tools/verify-release.sh", "gh-release", r"gh release download", _OWN),
     ("tools/skyguard/shellparse.py", "pipe-to-shell", r"An installer piped to sh \(`curl \.\.\. \| sh`\)",
      "skyguard's own rule documentation, describing what that rule does not treat as decoded text"),
+    ("setup.sh", "git-clone", r'git clone -q "\$SURFER_REPO"',
+     "the clone is moved to the pinned commit (SURFER_COMMIT) by surfer_to_pin before setup reports success"),
+    ("docs/installing-tools.md", "package-runner", r"\(`npx playwright install`\)",
+     "runs the playwright that `npm ci` installed from nexusmods-surfer's package-lock.json, not a registry fetch"),
 ]
 
 

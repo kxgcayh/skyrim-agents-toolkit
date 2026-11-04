@@ -4,12 +4,15 @@
 # This script is designed to be run FROM your Skyrim folder, after
 # extracting the toolkit zip into it. It configures everything in-place.
 #
-# Usage: bash setup.sh [--agent claude|codex|all|auto] [--lock]
+# Usage: bash setup.sh [--agent claude|codex|all|auto] [--lock] [--with-surfer]
 #   --agent auto    (the default) every agent found on PATH; when none is found, all of them
 #   --agent claude  Claude Code only      --agent codex  Codex only (Windows only)
 #   --agent all     both (`both` is accepted as another name for it)
 #   --lock          also apply the Layer 2 read-only lock to the vanilla masters and archives.
 #                   OFF unless you pass it (bash tools/skyguard.sh lock unlock <file> lifts it again).
+#   --with-surfer   also clone the PRIVATE nexusmods-surfer repo into tools/nexusmods-surfer (needs access granted
+#                   by the maintainer; without it the clone fails, setup says so and carries on). Re-running it
+#                   moves an existing clean clone's main branch to the pinned commit.
 # Setup never installs software. Every install command it prints is for you to run.
 
 set -e
@@ -17,17 +20,19 @@ set -e
 # --- Options: checked before anything is written ----------------------------------------------------------
 # An unknown option or --agent value is a usage error (exit 2) and nothing is touched.
 usage() {
-    echo "usage: bash setup.sh [--agent claude|codex|all|auto] [--game <dir>] [--lock]"
+    echo "usage: bash setup.sh [--agent claude|codex|all|auto] [--game <dir>] [--lock] [--with-surfer]"
     echo "  --agent auto    the default: every agent found on PATH (claude, codex); all of them when none is found"
     echo "  --agent claude  configure Claude Code only"
     echo "  --agent codex   configure Codex only (Windows only)"
     echo "  --agent all     configure both (\`both\` means the same)"
     echo "  --game <dir>    path to your Skyrim installation (keeps Skyrim clean; defaults to current directory)"
     echo "  --lock          also lock the vanilla masters and archives read-only (off unless you ask)"
+    echo "  --with-surfer   also clone the private nexusmods-surfer (Nexus page scraper); ask the maintainer for access"
 }
 AGENT_ARG="auto"
 GAME_ARG=""
 WANT_LOCK=""
+WANT_SURFER=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --agent)
@@ -43,6 +48,7 @@ while [ $# -gt 0 ]; do
             GAME_ARG="$2"; shift 2 ;;
         --game=*) GAME_ARG="${1#--game=}"; shift ;;
         --lock) WANT_LOCK=1; shift ;;
+        --with-surfer) WANT_SURFER=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "setup.sh: unknown option '$1'. Nothing was changed." >&2; usage >&2; exit 2 ;;
     esac
@@ -1051,6 +1057,73 @@ else
     echo "    or set the NEXUS_API_KEY environment variable. Your agent can do this for you on request."
 fi
 
+# --- Optional: nexusmods-surfer, a PRIVATE repo -- ONLY with --with-surfer ---
+# Pinned like every other tool (docs/installing-tools.md). Access is granted per person by the maintainer.
+# A fresh clone and an existing one both end on local branch main at the pin, tracking origin/main.
+# An existing clone is moved only when that loses nothing: no uncommitted changes, no unpushed commits.
+SURFER_REPO="git@github.com:kxgcayh/nexusmods-surfer.git"
+SURFER_COMMIT="343790fbea34b2bca89f1a32c6ea080c07a12dfa"
+SURFER_DIR="$TOOLKIT_DIR/tools/nexusmods-surfer"
+SURFER_RC=""
+surfer_git() { GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes}" git -C "$SURFER_DIR" "$@"; }
+surfer_denied() {
+    echo "  !! Could not reach $SURFER_REPO."
+    echo "     It is a PRIVATE repository: access is granted per person. Contact the toolkit maintainer"
+    echo "     (GitHub: kxgcayh) to be added, make sure your SSH key is on your GitHub account, then re-run"
+    echo "     bash setup.sh --with-surfer. Everything else in the toolkit works without it."
+}
+# Puts branch main on the pin. Refuses (returns 1, says why) rather than drop anyone's work.
+surfer_to_pin() {
+    if [ "$(surfer_git rev-parse HEAD 2>/dev/null)" = "$SURFER_COMMIT" ] \
+        && [ "$(surfer_git symbolic-ref -q --short HEAD)" = "main" ]; then
+        echo "  Already on main at the pin (${SURFER_COMMIT:0:7}): nothing to do."; return 0
+    fi
+    if [ -n "$(surfer_git status --porcelain --untracked-files=no)" ]; then
+        echo "  !! tools/nexusmods-surfer has uncommitted changes: not moved. Commit or stash them, then re-run."; return 1
+    fi
+    if ! surfer_git fetch -q origin main; then surfer_denied; return 1; fi
+    if ! surfer_git merge-base --is-ancestor "$SURFER_COMMIT" origin/main 2>/dev/null; then
+        echo "  !! The pin ${SURFER_COMMIT:0:7} is not on origin/main: not moved. The maintainer must push it."; return 1
+    fi
+    if surfer_git rev-parse -q --verify refs/heads/main >/dev/null \
+        && [ -n "$(surfer_git rev-list origin/main..main)" ]; then
+        echo "  !! Local main has commits not on origin/main: not moved. Push them (or move them to another branch)."; return 1
+    fi
+    local cur; cur="$(surfer_git rev-parse HEAD)"
+    # A detached HEAD is the only state switching away from can orphan; a branch keeps its commits.
+    if ! surfer_git symbolic-ref -q HEAD >/dev/null && ! surfer_git merge-base --is-ancestor HEAD origin/main; then
+        echo "  !! The checked-out commit ${cur:0:7} is on no pushed branch: not moved. Give it a branch first:"
+        echo "     git -C tools/nexusmods-surfer switch -c <name>"; return 1
+    fi
+    surfer_git -c advice.detachedHead=false switch -q -C main "$SURFER_COMMIT" \
+        && surfer_git branch -q --set-upstream-to=origin/main main \
+        && echo "  On main at the pin (${SURFER_COMMIT:0:7}), tracking origin/main."
+}
+echo ""
+if [ -n "$WANT_SURFER" ]; then
+    echo "Installing nexusmods-surfer (--with-surfer)..."
+    if [ -d "$SURFER_DIR/.git" ]; then
+        surfer_to_pin && SURFER_RC=0 || SURFER_RC=1
+        if [ "$SURFER_RC" = 0 ]; then
+            echo "  If package-lock.json changed: cd tools/nexusmods-surfer && npm ci"
+        fi
+    elif [ -e "$SURFER_DIR" ]; then
+        echo "  !! tools/nexusmods-surfer exists but is not a git clone: not touched."
+        SURFER_RC=1
+    elif GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes}" git clone -q "$SURFER_REPO" "$SURFER_DIR"; then
+        surfer_to_pin && SURFER_RC=0 || SURFER_RC=1
+        if [ "$SURFER_RC" = 0 ]; then
+            echo "  Finish it (needs Node 24 and Brave or a Playwright browser):"
+            echo "    cd tools/nexusmods-surfer && npm ci && npm run auth"
+        fi
+    else
+        SURFER_RC=1
+        surfer_denied
+    fi
+else
+    echo "nexusmods-surfer: not installed (optional, private; bash setup.sh --with-surfer after the maintainer grants access)."
+fi
+
 # --- Layer 2: the read-only lock on the vanilla masters and archives -- ONLY with --lock ---
 # Off by default (Plan 6 R3: layer2.default = "off" until the Final Manual Batch decides). Setup never
 # applies it unasked; --lock runs the same command a user would (tools/skyguard lock lock).
@@ -1166,6 +1239,9 @@ echo "  NifSkope     -- independent visual NIF render gate: v2.0.dev9 from the h
 echo "  ReSaver CLI  -- headless .ess parse/cross-ref/clean: ReSaver 6.0.643 (FallrimTools, Nexus mod 5031); drop"
 echo "                  ReSaver.jar + lib/ into tools/resaver-cli/, then bash tools/resaver-cli.sh verify;"
 echo "                  needs JDK 17+ (21 tested); the wrapper auto-compiles its driver on first run (tools/resaver-cli.sh)"
+echo "  nexusmods-surfer -- reads nexusmods.com pages (description, permissions, bugs, posts) past Cloudflare."
+echo "                  PRIVATE repo: contact the maintainer (GitHub: kxgcayh) for access, then"
+echo "                  bash setup.sh --with-surfer   (steps in docs/installing-tools.md)"
 echo "  cosave-info  -- read-only SKSE .skse co-save survey (bundled): bash tools/cosave-cli.sh <save.skse>"
 echo "  DevBench     -- LIVE in-game inspect/console/Papyrus while you play:"
 echo "                  Nexus mod 181326 (alandtse). This one is a MOD, not a tools/ utility --"
@@ -1194,6 +1270,9 @@ if [ -n "$PATHS_BAD" ]; then
     SETUP_RC=1
 fi
 if [ -n "$WANT_LOCK" ] && [ "$LOCK_RC" != 0 ]; then
+    SETUP_RC=1
+fi
+if [ -n "$WANT_SURFER" ] && [ "$SURFER_RC" != 0 ]; then
     SETUP_RC=1
 fi
 exit "$SETUP_RC"

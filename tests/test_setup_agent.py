@@ -699,3 +699,82 @@ def test_a_stale_hooks_json_new_is_removed_even_when_nothing_renders(game_dir):
     run_setup(game_dir, env_overrides={"PATH": env["PATH"] + os.pathsep + os.path.dirname(BASH)},
               args=("--agent", "codex"))
     assert not (game_dir / ".codex" / "hooks.json.new").exists()
+
+
+# ------------------------------------------------------------------------------------ --with-surfer --
+
+def test_surfer_is_off_by_default_and_a_denied_clone_says_who_to_contact(tmp_path):
+    """The private nexusmods-surfer is cloned only on request; a clone without access fails loudly, exit 1."""
+    game = make_game(tmp_path)
+    r = run_setup(game, args=("--agent", "claude"))
+    assert "nexusmods-surfer: not installed" in r.stdout and not (game / "tools" / "nexusmods-surfer").exists()
+    import shutil
+    real_git = shutil.which("git")
+    stub = stub_bin(tmp_path, git='[ "$1" = clone ] && { echo "Permission denied (publickey)." >&2; exit 128; }\n'
+                                  f'exec "{real_git}" "$@"')
+    r = run_setup(game, env_overrides={"PATH": path_with(stub)}, args=("--agent", "claude", "--with-surfer"))
+    assert r.returncode == 1, r.stdout[-2000:]
+    assert "PRIVATE repository" in r.stdout and "kxgcayh" in r.stdout
+    assert not (game / "tools" / "nexusmods-surfer").exists()
+
+
+def _surfer_origin(tmp_path: Path):
+    """A local stand-in for the private repo: a bare origin whose main has commits A then B."""
+    work = tmp_path / "surfer-src"
+    work.mkdir()
+    g = lambda *a, cwd=work: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=cwd,
+                                            check=True, capture_output=True, text=True).stdout.strip()
+    g("init", "-q", "-b", "main")
+    (work / "f.txt").write_text("a\n"); g("add", "f.txt"); g("commit", "-qm", "A")
+    a = g("rev-parse", "HEAD")
+    (work / "f.txt").write_text("b\n"); g("commit", "-qam", "B")
+    b = g("rev-parse", "HEAD")
+    bare = tmp_path / "surfer.git"
+    g("clone", "-q", "--bare", str(work), str(bare), cwd=tmp_path)
+    return bare, a, b, g
+
+
+def _game_pinned_to(tmp_path: Path, pin: str) -> Path:
+    game = make_game(tmp_path)
+    s = game / "setup.sh"
+    text = s.read_text(encoding="utf-8")
+    import re
+    text, n = re.subn(r'^SURFER_COMMIT="[0-9a-f]{40}"$', f'SURFER_COMMIT="{pin}"', text, flags=re.M)
+    assert n == 1
+    s.write_text(text, encoding="utf-8", newline="\n")
+    return game
+
+
+def test_surfer_rerun_moves_a_clean_clone_to_main_at_the_pin(tmp_path):
+    bare, a, b, g = _surfer_origin(tmp_path)
+    game = _game_pinned_to(tmp_path, b)
+    clone = game / "tools" / "nexusmods-surfer"
+    g("clone", "-q", str(bare), str(clone), cwd=tmp_path)
+    g("checkout", "-q", "--detach", a, cwd=clone)  # what the first --with-surfer left: detached at the old pin
+    r = run_setup(game, args=("--agent", "claude", "--with-surfer"))
+    assert r.returncode == 0, r.stdout[-2000:]
+    assert g("rev-parse", "HEAD", cwd=clone) == b
+    assert g("symbolic-ref", "--short", "HEAD", cwd=clone) == "main"
+    assert g("rev-parse", "--abbrev-ref", "main@{upstream}", cwd=clone) == "origin/main"
+    r = run_setup(game, args=("--agent", "claude", "--with-surfer"))
+    assert r.returncode == 0 and "nothing to do" in r.stdout
+
+
+@pytest.mark.parametrize("state", ["dirty", "unpushed", "detached-local"])
+def test_surfer_rerun_never_moves_a_clone_with_work_in_it(tmp_path, state):
+    bare, a, b, g = _surfer_origin(tmp_path)
+    game = _game_pinned_to(tmp_path, a)
+    clone = game / "tools" / "nexusmods-surfer"
+    g("clone", "-q", str(bare), str(clone), cwd=tmp_path)
+    if state == "dirty":
+        (clone / "f.txt").write_text("mine\n")
+    else:
+        if state == "detached-local":
+            g("checkout", "-q", "--detach", cwd=clone)
+        (clone / "f.txt").write_text("mine\n"); g("commit", "-qam", "local", cwd=clone)
+    before = g("rev-parse", "HEAD", cwd=clone)
+    r = run_setup(game, args=("--agent", "claude", "--with-surfer"))
+    assert r.returncode == 1 and "not moved" in r.stdout, r.stdout[-2000:]
+    assert g("rev-parse", "HEAD", cwd=clone) == before
+    if state == "dirty":
+        assert (clone / "f.txt").read_text() == "mine\n"

@@ -92,6 +92,8 @@ IGNORE = shutil.ignore_patterns(
     # CI tees the running suite's own logs into the checkout (ci.yml: collect.log, behavioral.log); a copy that
     # took them shipped the runner's home path into every verify-release payload (Linux CI run 38187755448).
     "collect.log", "behavioral.log",
+    # A maintainer's own clone of the private surfer repo (gitignored): never part of a pristine copy.
+    "nexusmods-surfer",
 )
 
 

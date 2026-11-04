@@ -86,6 +86,7 @@ Settings load in this order (later overrides earlier):
 **Always search a mod's Nexus mod page before investigating it.** Check the description, tutorials/articles, comments, and bug reports before going in blind. This saves enormous time -- most issues have been seen and documented by other users.
 
 Nexus also has a free API (versions, changelogs, dependencies). `bash tools/nexus.sh mod <id>` wraps it; key setup and the personal-use rules are in `docs/installing-tools.md`. Never echo, log or commit the key.
+For the page itself (comments, bugs, permissions), WebFetch gets a Cloudflare 403: use `tools/nexusmods-surfer/` if installed (optional, private; `docs/installing-tools.md`).
 
 ## Knowledgebase
 
