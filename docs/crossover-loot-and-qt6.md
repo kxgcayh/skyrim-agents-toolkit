@@ -42,44 +42,69 @@ not provide it:
 err:module:find_forwarded_export module not found for forward 'icu.ucnv_open' used by icuuc.dll
 ```
 
-### 1.3 Qt 6 RHI over Direct3D 11 and MoltenVK (tertiary)
+### 1.3 Qt Quick software backend does not apply
 
-Qt 6's rendering layer negotiates DXGI swapchain surfaces over Wine's virtual desktop. MoltenVK on Apple Silicon can
-fail to create the Vulkan surface capabilities silently, so a hardware swapchain may never come up.
+`QSG_RHI_BACKEND` and `QT_QUICK_BACKEND` only affect Qt Quick. LOOT is a Qt Widgets app and uses no Qt Quick, OpenGL or
+RHI code, so these two variables change nothing for it.
+
+### 1.4 Partial downloads treated as success
+
+**Measured (log, 2026-11-04):** an `api.github.com` request reached a 2xx status, then hit the 30 s transfer timeout
+with an empty body. `readHttpResponse()` in `src/gui/qt/helpers.cpp` checked only the status code, so the failed
+transfer was passed on as a valid response. The update check logged `Unexpected number of version parts`, and the same
+path could have written a truncated masterlist or prelude to disk. The cause of the stall inside the bottle is unknown.
 
 ## 2. LOOT: fix by rebuilding
 
-Create the `QApplication` first, set the style after it, and force the software backend. This changes only
-`main()` and loses no GUI or sorting feature:
+Fixed in the `kxgcayh/loot` fork at commit `a270de66`. Request Fusion through the environment, before `QApplication`
+exists, so no style is created early and `-style` still works. This changes only `main()` and loses no GUI or sorting
+feature:
 
 ```cpp
-int main(int argc, char* argv[]) {
 #ifdef _WIN32
-  if (loot::isApplicationMutexLocked()) {
-    HWND hWnd = ::FindWindow(nullptr, L"LOOT");
-    ::SetForegroundWindow(hWnd);
-    return 0;
+  if (qEnvironmentVariableIsEmpty("QT_STYLE_OVERRIDE")) {
+    qputenv("QT_STYLE_OVERRIDE", "fusion");
   }
-  qputenv("QSG_RHI_BACKEND", "software");     // renders reliably over Wine/MoltenVK
-  qputenv("QT_QUICK_BACKEND", "software");
 #endif
 
-  loot::ApplicationMutexGuard mutexGuard;
-  QApplication app(argc, argv);               // first
-
-#ifdef _WIN32
-  auto overrideDefaultStyle = QStyleFactory::create("fusion");   // after
-  if (overrideDefaultStyle) { QApplication::setStyle(overrideDefaultStyle); }
-#endif
-  QCommandLineParser parser;
-  // ... rest unchanged
+  QApplication app(argc, argv);
 ```
 
-Building a Windows Qt app from the Mac: `windows-exe-cross-compile-macos.md`.
+Also make `readHttpResponse()` return `std::nullopt` when `reply->error() != QNetworkReply::NoError`.
+
+### 2.1 Cross-compiling LOOT from the Mac
+
+**Measured (2026-11-04):** clang-cl build on Apple Silicon, then run in the `SkyGames` bottle with 0 page faults; the
+user confirmed it runs better than the patched 0.29.2 package. With `<tools>` as `/Volumes/<disk>/Windows/Build-Tools`:
+
+```bash
+cargo install svg_to_ico --version 1.3.1 --locked --root "$PWD/build/tools"
+export PATH="$PWD/build/tools/bin:$PATH"
+unset LDFLAGS CPPFLAGS PKG_CONFIG_PATH   # shell values for other projects must not reach this build
+
+cmake -S . -B build -G Ninja -Wno-dev -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TOOLCHAIN_FILE="<tools>/winsdk/toolchain/clang-cl-msvc.cmake" \
+  -DCMAKE_PREFIX_PATH="<tools>/Qt/6.11.0/msvc2022_64;<tools>/vcpkg/installed/x64-windows-cross" \
+  -DQT_HOST_PATH="<tools>/Qt-host/6.11.0/macos" \
+  -DLOOT_BUILD_TESTS=OFF -DFETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER
+```
+
+Then append `/C65001` to `CMAKE_RC_FLAGS` in `build/CMakeCache.txt` and run `cmake --build build --target LOOT`.
+
+| Failure | Cause | Fix |
+|---|---|---|
+| `cmake_host_system_information does not recognize <key> VS_18_DIR` | OGDF includes `InstallRequiredSystemLibraries` | After OGDF extracts, comment that line out of `build/external/src/OGDF/cmake/ogdf.cmake` and rebuild |
+| `no matching constructor for initialization of 'loot::CensoringFileSink'` | vcpkg's `spdlog` has no wide filenames | `FETCHCONTENT_TRY_FIND_PACKAGE_MODE=NEVER` |
+| `Non-ASCII 8-bit codepoint` in `resource.rc` | `llvm-rc` needs a UTF-8 code page for the en dash | `/C65001` |
+| `wine: command not found` after linking | Post-build `windeployqt` step | Ignore: `build/LOOT.exe` is already linked. Copy it with the matching `build/_deps/libloot-src/bin/libloot.dll` |
+| New libloot version pinned, but the old DLL is still used | `libloot_DIR` is cached, so CMake skips the download | Delete `build/_deps/libloot-*`, configure with `-Ulibloot_DIR`, and confirm the version in LOOT's log |
+
+Building other Windows Qt apps from the Mac: `windows-exe-cross-compile-macos.md`.
 
 ## 3. LOOT 0.29.2 release package: binary patch (this release only)
 
-For the official package `loot_0.29.2-0-g0402143_0.29.2` when you do not rebuild.
+For the official package `loot_0.29.2-0-g0402143_0.29.2` when you do not rebuild. A rebuild (section 2) makes these
+patches unnecessary for `LOOT.exe`.
 
 | Step | What | Detail |
 |---|---|---|

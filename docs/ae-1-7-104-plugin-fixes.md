@@ -37,6 +37,7 @@ there, not from the old workspace.
 | EngineFixesSkyrim64 | `kxgcayh/EngineFixesSkyrim64` | `master` |
 | CommonLibSSE-NG | `kxgcayh/CommonLibSSE-NG` | `ng` |
 | Dynamic Armor Variants Extended | `kxgcayh/DynamicArmorVariants-Extended` | tag `v1.8.0-pre.1` |
+| Take a Peek Custom IMenu (`keyholepeekmenu.dll`) | `kxgcayh/jayserpa-take-a-peek-imenu` | `ae-1.7.104` |
 | Sprint Swim Redux, Quest Journal Overhaul patcher, Interrupt Package Deadlock Fix | not in any repo | the old workspace records them as reference-machine only, and no copy was found there; sections 6, 7 and 8 hold the facts |
 
 Also forked and used for the CrossOver notes: `kxgcayh/loot` (branch `kxgcayh/macos-crossover-compat`),
@@ -459,6 +460,227 @@ BTPS hooks the horse dismount for "Hold to Dismount" in `src/RevE/Hooks.cpp` at 
 ### 12.5 Build and packaging
 
 Branch `ae-1.7.104`; the release is packaged with `package-release.sh` in the source directory.
+
+## 13. Exit Sneak On Sprint (SprintCancelsSneak.dll)
+
+### 13.1 Root cause on Skyrim AE 1.7.104
+- **Startup dialog rejection**: `SprintCancelsSneak.dll: REL/ID.h(223): failed to open address library file`.
+- Nexus build (v1.2.1, Nexus 138669 by Quantumyilmaz) built against older CommonLibSSE-NG / CommonLibVR. On AE 1.7.104.0 (`minor = 7`), `Module::load_version` fails the `minor == 6` check and falls back to looking for `version-1-7-104-0.bin` (phase 2 in section 1).
+- In addition, the AE 1.7.104 database is Format 5 (dense array, 96-byte header), whereas older CommonLib only parses Format 2.
+- In AE 1.7.99+, two virtual functions were added to `PlayerInputHandler`, shifting `ProcessButton` from vtable slot 4 (`0x20`) to slot 6 (`0x30`). The old binary called vtable index 4 directly without relocation.
+
+### 13.2 Hook verification and implementation (1.7.104)
+- Hook target: `PlayerControls::ProcessInput` dispatcher call site at `RELOCATION_ID(67315, 68617) + 0x7B`.
+  - ID 68617 is RVA `0x0CF95F0`; `+ 0x7B` is RVA `0x0CF966B` (VA `0x140CF966B`).
+  - 1.7.104 bytes at `0x140CF966B`: `E8 E0 0F 00 00` (`callq 0x140CFA650`). Intact 5-byte direct call.
+- Trigger logic:
+  - Intercepts `PlayerControls::ProcessInput(RE::PlayerControls* a_controls, RE::InputEvent** a_event)`.
+  - Checks if `player->IsSneaking()` and player is moving (`moveInputVec != 0`, `autoMove`, or actor movement flags).
+  - Checks if sprint button is held $\ge 0.20\text{s}$ (or $\ge 0.125\text{s}$ for mouse).
+  - Debounces with an internal boolean flag until sprint is released.
+  - Action: If The Ultimate Dodge Mod (`Ultimate Dodge Mod.esp`, Quest `0xD27A1`) is loaded, dispatches Papyrus `UDSKSEFunctionsScript.EndSneakMode()` via VM. Otherwise, if walking triggers `toggleRunHandler->ProcessButton()`, then `sneakHandler->ProcessButton()`, then `sprintHandler->ProcessButton()`.
+  - Key mapping queries `ControlMap::GetMappedKey()` dynamically on dispatch to guarantee full key-remap compatibility without hooking `Journal_SystemTab`.
+
+### 13.3 Build and deployment
+- Port source: `skyrim-workspace/mods/ExitSneakOnSprint`.
+- Submodule: `extern/CommonLibSSE-NG` checked out to tag `v14.0.1`.
+- Built with `clang-cl-msvc.cmake` toolchain targeting `Release` with C++23. Output `SprintCancelsSneak.dll` has `versionIndependenceEx = 0x3` (`AddressLibraryV5 | NoStructUse`).
+- Deployed to `<mo2>/mods/Exit Sneak On Sprint/SKSE/Plugins/SprintCancelsSneak.dll`. Original backed up as `SprintCancelsSneak.dll.bak`.
+
+## 14. Immersive Activate (ImmersiveActivate.dll v1.4.1, dann1)
+
+Upstream `dann1/ImmersiveActivate`. Source: `skyrim-workspace/mods/ImmersiveActivate-src`.
+
+**Cause.** Built on old CommonLibSSE (not NG) with a `SKYRIM_AE` build switch, `SKSEPlugin_Version` without the V5 flag
+and `OFFSET(se, ae)` macros resolved at compile time. Same phase 1/2/3 failures as section 1.
+
+**Port.** Rebuilt against `alandtse/CommonLibSSE-NG` (installed under `tools/CommonLibSSE-NG/build-install`) with
+`add_commonlibsse_plugin`; `SKSEPluginLoad` replaces `SKSEPlugin_Query`/`Load`/`Version`; `OFFSET` became `REL::Relocate`;
+`clib-util` is header-only, pinned in `extern/CLibUtil` to the commit in `cmake/ports/clib-util`. NG renames:
+`HUDData::crossHairRef` -> `crosshairRef`, `HUDData::Type::kUnk0` -> `HUD_MESSAGE_TYPE::kNone`,
+`kActivateNoLabel` -> `kSetCrosshairTargetTextOnly` (both value 3).
+
+**Hook sites checked on 1.7.104.0** (Format 5 database: `rva = u32 at 0x60 + 4*id`; disassembled with `llvm-objdump`):
+
+| Use | ID (AE) | Address | Result |
+|---|---|---|---|
+| Crosshair text | 40621 `+0x280` | RVA `0x757CF0` | 5-byte `call 0x1401B47F0` (UIMessageQueue::AddMessage shape: `rcx` queue, `rdx` menu, `r8d = 0`, `r9` data) |
+| Load-door text | 51622 `+0x255` | RVA `0x935305` | same callee, same argument setup |
+| Inventory count | 19700 | RVA `0x2E8520` | reads `[rcx+0x40]`, tests form type `0x1C`/`0x2B`; matches `(refr, bool, bool)` |
+
+`versionIndependenceEx = 0x3`. **Not tested in game**; the DLL was not copied to the live MO2.
+
+## 15. SkyUI AIO Survival (SAS) 7.4, `SAS AE+.dll` (AE 1.6.640 build, no source)
+
+**Measured (static analysis), not run in game.** Files: `skyrim-workspace/mods/SAS/` (`src/patch_sas.py`, `src/make_versionl2b.py`, `NOTES.md`).
+Only the DLL needs a patch; the SWFs, `.pex` and `SAS.esl` are version independent. Three failures, in load order:
+
+| # | Failure | Evidence | Fix |
+|---|---|---|---|
+| 1 | SKSE 2.3.1 gate | `versionIndependence = 5` (AddressLibraryPostAE, StructsPost629), `versionIndependenceEx = 0` at struct+0x304 | OR `0x02` (struct at file offset `0x4E470`, byte `0x4E774`) |
+| 2 | Format 5 database | IDDatabase accepts only `format == 2` (`cmp eax,2`, RVA `0xFEAB`); path template at RVA `0x3EF90` | same-length `versionlib-` to `versionl2b-`, and generate the Format 2 file from the official one with `make_versionl2b.py` (type byte `0x77`, absolute u32 ID and offset, 9 bytes per entry; round trip checked against the Format 5 table, and the independent packed-delta decoder reproduces the real `versionlib-1-6-640-0.bin`) |
+| 3 | Missing ID in `SKSE::log::log_directory` | `REL::ID(380738)` (a `const char*` holding the My Games subfolder) exists in the 1.6.640 library but not in 1.6.1170 or 1.7.104; a missing ID is fatal (message box + `TerminateProcess`) and this runs on every load | replace the 20-byte `mov [rbp-59h],id / lea / call / mov rcx,[rax]` with `lea rcx,[rip+literal]` plus NOPs; the literal `Skyrim Special Edition` goes in `.rdata` file slack and the section `VirtualSize` is raised (`0x11D12` to `0x11D40`) because the loader maps only `VirtualSize` bytes |
+
+This DLL has no runtime SE/AE/VR switch (no `cmp ax,6` pattern from section 2.1 of `binary-patcher-guide.md`) and no byte patches into
+game code; every other dependency is a `REL::ID` call or global: 82270/82292 (`GFxValue::ObjectInterface`), 68233/68239 (`BSSpinLock`),
+13894, 400269 (`TESDataHandler` singleton), 400507/400517 (`allForms` and its lock). All resolve in the 1.7.104 library. Struct
+layouts and vtable indices the DLL assumes are unverified on 1.7.104. Residual risk: section 8 (the Address Library load itself under CrossOver).
+
+## 16. Skyrim Character Sheet 1.1.4.0 (Nexus 56069), `SkyrimCharacterSheet.dll`
+
+**Measured (static analysis and a clean cross-build), not run in game.** Files: `skyrim-workspace/mods/SkyrimCharacterSheet/`
+(branch `ae-1.7.104`, `NOTES.md`). Built on a pre-AE-1.7 fork of CommonLibSSE-NG (`extern/CommonLibSSE-NG`), so it has the
+section 1 failures. Rebuilt against `alandtse/CommonLibSSE-NG` 14.0.1 (`find_package`, `add_commonlibsse_plugin`,
+`SKSEPluginLoad`); `versionIndependenceEx = 0x3`.
+
+**New class of break: a mod that implements `RE::MenuEventHandler`.** 14.x makes `ProcessKinect/Thumbstick/MouseMove/Button`
+non-virtual and dispatches them through `REL::RelocateVirtual` with a per-build slot, so `bool ProcessButton(...) override;`
+no longer compiles (`only virtual member functions can be marked 'override'`). The 1.7.99+ layout, confirmed on the 1.7.104
+exe from the vtable of `FavoritesHandler` (ID 215785, RVA `0x197C398`; slots 2, 3, 5, 6 are `xor al,al ; ret` stubs, slot 4
+and 7 are overrides):
+
+| Slot | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| 1.7.99+ | dtor | CanProcess | ProcessMotionGesture | ProcessSixaxis | ProcessKinect | ProcessThumbstick | ProcessMouseMove | ProcessButton |
+| before 1.7.99 | dtor | CanProcess | ProcessKinect | ProcessThumbstick | ProcessMouseMove | ProcessButton | | |
+
+Fix: an intermediate class derived from `RE::MenuEventHandler` that declares the six virtuals in the 1.7.99+ order, and menus
+that derive from `RE::IMenu` and that class. The intermediate class is required: with two polymorphic bases MSVC appends a
+derived class's new virtuals to the first base's (`IMenu`'s) vtable, not to `MenuEventHandler`'s. Such a DLL cannot also serve
+runtimes before 1.7.99, so `SKSEPluginLoad` refuses them. Other 14.x breaks met: `INPUT_DEVICE::kVirtualKeyboard` renamed
+`kFlatVirtualKeyboard`; `GetSlotMask()` returns `REX::EnumSet` (`.underlying()`); fmt 11 no longer formats `nlohmann::json`
+through its implicit `std::string` conversion (add a `fmt::formatter<nlohmann::json>`). Hook `TweenMenu::CloseTweenMenu`
+`VariantID(51839, 52711)` resolves to RVA `0x9884A0` on 1.7.104 and has the expected `AddMessage(tweenMenu, kHide)` body.
+
+## 17. Extended UI 1.2.0d (Nexus 57873, MrJack), `Extended UI.bsa`
+
+**Symptom.** CTD at startup, `EXCEPTION_ACCESS_VIOLATION` at `SkyrimSE.exe+0ECAE2D` (1.7.104), on a loader thread, with
+`Extended UI.bsa` on the stack. `mov esi,[rbx+0Ch]` reads the offset field of a 16-byte BSA file record (hash 8, size 4,
+offset 4). Reproduced with Immersive Activate unloaded and with InfinityUI 2.1.0.0, so neither is the cause.
+
+**Archive checked.** BSA v104 (Skyrim LE format), 4 folders, 19 files, uncompressed; header, folder records and every
+file offset/size parsed consistent and inside the file. The archive is not corrupt. Contents are data only: 4 `.psc`, 4
+`.pex`, 9 translation `.txt`, `statsmenu.swf`, `console.swf`. No DLL.
+
+**Fix.** Extract the BSA to loose files and move the BSA aside (community advice for SSE/AE, matches this crash). Extracted
+tree: `skyrim-workspace/mods/ExtendedUI/`. Conflicts: the mod overrides `statsmenu.swf` and `console.swf`; as loose files
+they now beat other mods' BSA copies. Cause of the engine fault on a valid v104 archive is **not** established.
+**Not tested in game.**
+
+**Source.** `github.com/Kapiainen/Extended-UI` (README credits MrJack; no license stated; 50 commits, last 2015-02-24),
+cloned to `skyrim-workspace/mods/ExtendedUI/upstream/`. Holds `Data/` (scripts, SWFs), `Flash source/` (`.fla` +
+ActionScript for `console` and `statsmenu`) and `TranslationGenerator.py`. Compiling the Flash needs Adobe Flash
+Professional CS4 and the Unofficial Skyrim UI SDK. Compared with the shipped 1.2.0d BSA: the 4 `.psc`, both SWFs and
+`Extended UI_ENGLISH.txt` are byte-identical; the other 8 translation files differ (upstream has English placeholders,
+the release has the contributed translations).
+
+**Crash cause, partly examined.** Crash function `SkyrimSE.exe+0ECAD00` (Address Library id 69752 on 1.7.104) walks a parsed
+archive object: folder array at `[archive+0x28]`, 24-byte stride, file-record pointer at `+0x10` of each folder entry, then
+`mov esi,[rbx+0Ch]` on a 16-byte file record. It faulted with `rbx = 0x5464FFFE`. A raw v104-as-v105 misread was tested and
+**does not** reproduce that value (`0x5464FFFE` is not in the file), so the "v104 folder records read as 24 bytes" theory is
+not confirmed. Root cause not established; settling it needs reverse engineering of the loader (REA, only on request).
+
+**1.7 compatibility of the two SWFs (measured).** Extended UI replaces `statsmenu.swf` and `console.swf` with SWF version 10
+files built on LE 1.9.32. The vanilla 1.7.104 ones (extracted from `Skyrim - Interface.bsa`, saved in
+`skyrim-workspace/mods/ExtendedUI/extracted/vanilla-se-1.7.104/`) are SWF version 15 and contain code Extended UI's lacks:
+`statsmenu`: `CrossPlatformButtons`, `PLATFORM_NX/PROSPERO/SCARLETT`, `LegendaryButtonInstance`, `LegendaryCountText`,
+`LegendaryIconInfoInstance`; `console`: `InputDetails` with `controllerIdx` and `navEquivalent`. Loose files win, so the LE
+builds replace those. In-game effect not tested. Port route: recompile vanilla SE ActionScript with the Extended UI edits
+(upstream `Flash source/*/StatsMenu.as`, `Console.as`, 842 and 375 lines, `EXUI_` hooks) using JPEXS FFDec (not installed;
+Java 27 present).
+
+## 18. Take a Peek 1.31 (Nexus 66908, jayserpa), `keyholepeekmenu.dll`
+
+**Built (clang-cl cross-build, clean), not run in game.** Port DLL SHA-256
+`aef7d87b5918974df3ec710d69fca341218954b9a81cc52e41c29bfd0b332c1c`, `versionIndependenceEx = 0x3`,
+`versionIndependence = 0x1`. Files: `skyrim-workspace/mods/TakeAPeek/` is the git checkout itself (branch `ae-1.7.104`, fork in section 2).
+Released 2026-11-01 as `v1.3.1-ae1.7` on the fork (tag on `698f120`), asset `keyholepeekmenu-1.3.1-AE-1.7.zip`
+(`SKSE/Plugins/keyholepeekmenu.dll`), zip SHA-256 `f0c9e7852d7513dac19ae49b4d4d4375bfd43c220cb141a96ef4214edeee758f`.
+Installed DLL SHA-256 `f8d61588f7bb338527fb78784a1f7d98bf1065834acf5d50a5a906c6feec72d5`, built 2022 on vcpkg
+CommonLibSSE-NG, so section 1 phases 1-3. Source: `Osmosis-Wrench/jayserpa-take-a-peek-imenu` (MIT); its strings and RTTI
+match the shipped DLL. The plugin has no game hooks: three Papyrus natives on `Keyhole` and an `IMenu` subclass (not a
+`MenuEventHandler`, so the section 16 slot shift does not apply). Port: `add_commonlibsse_plugin` against NG 14.0.1 and
+`SKSEPluginLoad`; no RVAs to verify. Only the DLL changes.
+
+## 19. dTry's Key Utils 1.1 (Nexus 69944), `DtryKeyUtil.dll`
+
+**Built (clang-cl cross-build), not run in game.** Files: `skyrim-workspace/mods/DtryKeyUtil/` is the git checkout of
+`D7ry/DtryKeyUtil` (no license; personal use only), branch `ae-1.7.104` commit `5e7ac10`, not pushed. Port DLL SHA-256
+`f96803d470956259f42d60a4246e66f12c377251d7f33d3be42df84dccbade6d`. Shipped DLL (SHA-256
+`5261d3459f3c56bd0787d5b2bca9fd57dbc1471c39f8188e312d4d4d6baef777`) exports `SKSEPlugin_Query` only; SKSE 2.3.1 logs
+`plugin DtryKeyUtil.dll (00000000  00000000) no version data 0 (handle 0)` and skips it.
+
+**The one hook is the 1.7.99 `PlayerInputHandler` slot shift** (same class as sections 4.1 item 6, 9 and 10):
+`write_vfunc(0x2, ProcessThumbstick)` and `write_vfunc(0x4, ProcessButton)` on `VTABLE_MovementHandler[0]`. On 1.7.104
+the vtable (ID 208715, RVA `0x19351C8`) has `ret 0` stubs at slots 2, 3, 5 and the real overrides at 4 (`0x7B38C0`,
+Thumbstick) and 6 (`0x7B37C0`, Button). Fix: `REL::VersionShift(slot, RE::PlayerInputHandler::kAE1799AddedVFuncCount,
+SKSE::RUNTIME_SSE_1_7_99)`, which NG 14.0.1 already uses internally. Build fixes: `NOMINMAX`, Windows `ERROR` macro vs
+`ERROR(...)` log calls. Result `versionIndependenceEx = 0x3`.
+
+**Correction to section 10.1.** With the `versionlib-1-7-104-0.bin` installed on 2026-11-01, ID 208715
+(`VTABLE_MovementHandler`) resolves to the verified `0x19351C8`, not the corrupt `0x1935360`. Resolve the ID against the
+installed file before applying a hardcoded RVA override; the corrupt mapping may belong to an older Address Library release.
+
+## 20. Hair Colour Sync NG 1.4.1 (Nexus 156414, kingeric1992), `HairColourSyncNg.dll`
+
+**Measured: the rebuild loads in game (2026-11-02).** Source: `skyrim-workspace/mods/HairColourSyncNG/` (git repo, branch `ae-1.7.104`; rebuild with section 7 of `skse-cross-compile-macos.md`, no CommonLib prefix needed). The binary patch below is documented byte for byte; its script was not kept.
+Source: `kingeric1992/HairColourSyncNg` (old `commonlibsse-ng-fork` vcpkg port).
+Port: `kxgcayh/HairColourSyncNg` branch `ae-1.7.104` (CommonLibSSE-NG v15.5.0 submodule); upstream PR kingeric1992/HairColourSyncNg#1.
+
+- Symptom: `skse64.log` ends at `loading plugin "HairColourSyncNG"` and the game never starts. The SKSE 2.3.1 gate passes
+  (`versionIndependenceEx = 1`, no "must be recompiled" line), so this is phase 2, then phase 3A.
+- Fix: `binary-patcher-guide.md` 2.1 (`0f95` to `0f92` at file `0x4D71`) and 2.2 (`versionlib-` to `versionl2b-`). Two bytes.
+  SHA-256 `3153c565...e5dd` to `05e04571...3df5`. Needs `versionl2b-1-7-104-0.bin` in Data (the SAS one works).
+- One hook, `AttachArmor`, `RELOCATION_ID(15535, 15712)`, `write_branch<5>` at function entry. ID 15712 is RVA `0x21D170` on
+  1.7.104 with the prologue `44 89 4C 24 20 4C 89 44 24 18`, identical to 1.6.1170, which is what the plugin's own AOB check
+  wants. On a mismatch it shows a message box rather than patching.
+- **CTD after the patch was unrelated**: the same crash (`SkyrimSE.exe+1DCB60`) happened with the plugin disabled; it was a
+  missing master in the load order. The binary patch is untested in game, not disproven. The hooked function still takes 7
+  arguments on 1.7.104.
+- **Rebuild:** GitHub HEAD `52c5128` is Nexus **1.3.1**; the Nexus **1.4.1** (hair-physics CTD fixes) has no public source.
+  Built against `alandtse/CommonLibSSE-NG` 15.5.0 with two source fixes (`GetGeometryRuntimeData().properties[kEffect]` is now
+  `.shaderProperty`; clang rejects `[[msvc::forceinline]]` on lambdas). Plugin keeps its own `SKSEPlugin_Version`; the NG default
+  `versionIndependenceEx = AddressLibraryV5` gives `0x3` with `UsesNoStructs()`, so the SKSE 2.3.1 gate passes without `add_commonlibsse_plugin`.
+- **In game (2026-11-02):** the rebuild (SHA-256 `1f89a90d...4c76`) loads (`loaded correctly`, version `01030001`) and the game runs with it. Wig colour sync itself not yet confirmed.
+- **PR build in game (2026-11-02):** the submodule build of branch `ae-1.7.104` (SE+AE+VR, SHA-256 `0dca5b2a...76e8`) loads correctly on 1.7.104; user reports it works.
+- **CTD on save load, upstream 1.3.1 bug (measured 2026-11-02):** `HairColourSyncNg.dll+252B0` (`movzbl (%rdx)`, RDX = 0x30) on
+  the `RSM_Initialized` mod event: `attachPlayer` dereferences RaceMenu's `_hairColor`, which unpacks to None when `_customHair`
+  is true, and does not null-check `Get3D(false)` either. Fix: null-check both before `attach` (port commit `dedd610`). The
+  save that crashed then loaded (user confirmed).
+
+## 21. Porting traps common to every rebuild (CommonLibSSE-NG 12 -> 14/15)
+
+Found across the ports above (2026-10-27 to 2026-11-03); each one cost a failed build or a failed launch.
+
+- **Rebuild the DLL the ENABLED mod ships.** Hash the DLL in the folder that has the `+` line in `modlist.txt` and match its
+  PDB source list to a commit. Apprentice was rebuilt from the 1.1.0 source of a disabled Nexus folder while the enabled
+  folder (`Appprentice`, three p's) shipped 1.3.2; the 1.1.0 build null-dereferenced on New Game.
+- **Two mods shipping the same DLL name.** Tell them apart by the `SKSEPlugin_Version` struct bytes (`+0x304`
+  `versionIndependenceEx`, `+0x308` `versionIndependence`) and the version field in `skse64.log`'s line. A
+  `no version data` line means the DLL exports `SKSEPlugin_Query` but not `SKSEPlugin_Version` (a 1.5.97 build): often
+  another mod bundles an outdated copy (Simply Knock SE ships a pre-AE `PapyrusUtil.dll` that overrode PapyrusUtil AE by
+  priority). Delete the bundled copy in the mod manager. Triage: `grep "no version data" skse64.log`, find every copy in
+  `mods/`, compare exports with `llvm-readobj --coff-exports`.
+- **Manual CommonLibSSE-NG install (no vcpkg port).** `cmake --install` omits `cmake/CommonLibSSE.cmake` (it defines
+  `add_commonlibsse_plugin`) and the generated config lacks `find_dependency(directxtk)`: copy the `.cmake` into
+  `lib/cmake/CommonLibSSE/` and add `find_dependency(directxtk CONFIG)` before the targets include. Configure with
+  `-DENABLE_SKYRIM_VR=OFF -DBUILD_TESTS=OFF` (`extern/openvr` is an empty submodule).
+- **14.x API breaks.** No `UNICODE` (use `GetModuleHandleW` for wide literals); `NOMINMAX` must precede `RE/Skyrim.h`;
+  `ActorValueOwner::RestoreActorValue(modifier, av, v)` is gone (the 2-argument versions force the sign; use the virtual
+  `ModActorValue(modifier, av, v)`); `RE::DebugNotification` is gone (`RE::SendHUDMessage::ShowHUDMessage`).
+- **`SKSE::AllocTrampoline(n)` runs once** (`std::once_flag`) and fixes the total size. A helper that calls
+  `AllocTrampoline(14)` before each `write_call<5>` leaves a 14-byte trampoline, and the second hook fails with
+  `SKSE/Trampoline.cpp(164): Failed to handle allocation request`. Call it once after `SKSE::Init` with 14 x the number of
+  call hooks plus margin.
+- **`add_commonlibsse_plugin(... STRUCT_DEPENDENT)`** emits `versionIndependenceEx = 0x2` and `versionIndependence = 0x1`
+  (no `StructsPost629`), which tells SKSE the plugin uses pre-1.6.629 structs (flag bytes measured; rejection inferred from
+  NG's comment in `SKSE/Interfaces.h`, not tested). Plugins that read version-shifted structs through
+  `RUNTIME_DATA_ACCESSOR`s pick the layout at runtime and should keep the default (`0x3` / `0x1`).
+- **A post-build `copy_if_different` to `$SKYRIM_MODS_FOLDER` / `$SKYRIM_FOLDER`** in a mod's `CMakeLists.txt` writes
+  straight into the live install. Configure with those variables unset.
+- **The 1.6.1170 `SkyrimSE.exe` is SteamStub-encrypted** (`.text` is noise), so code cannot be diffed across builds without
+  an unpacked copy. The 1.7.104 executable is readable. For hardcoded-RVA plugins, map Format 2 (1.6.1170) offset -> ID ->
+  Format 5 (1.7.104) offset; Format 5 is `uint32 rva[id]` from file offset 96.
 
 ## Sources
 

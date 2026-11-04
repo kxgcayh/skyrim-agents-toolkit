@@ -49,7 +49,13 @@ CX_BOTTLE_PATH="$HOME/Bottles" "$W" --bottle <bottle> cmd /c \
 - `--game skyrim` is required: **From `--help`**, the default game is `starfield`.
 - The source file is a **bare filename**, run from inside its folder. **Carried over**; the test did the same.
 - A second `-i` pointing at the base-game `.psc` sources is needed whenever a script extends a vanilla type (without
-  it: `Unable to resolve type`). **Carried over**, not re-run: the test script extended nothing.
+  it: `Unable to resolve type`). **Measured 2026-11-01**: with only MO2's `SKSE - Scripts/Scripts/Source` (62 files, no
+  vanilla `Scripts.zip`), Caprica still stops on 14 types those files reference (Projectile, Package, Scene, VoiceType,
+  Key, WorldSpace, LocationRefType, EncounterZone, ImpactDataSet, Topic, ReferenceAlias, GlobalVariable, Idle,
+  AssociationType). One-line stubs (`Scriptname X extends Form Hidden`; `ReferenceAlias extends Alias`) in an extra `-i`
+  folder resolve the names. A script that EXTENDS one of them still needs the real source.
+- An import path containing spaces breaks inside `cmd /c '...'`: copy the sources to a space-free folder. **Measured
+  2026-11-01.**
 
 ## 3. Other flags worth knowing (From `--help`)
 
@@ -60,13 +66,13 @@ CX_BOTTLE_PATH="$HOME/Bottles" "$W" --bottle <bottle> cmd /c \
 | `-q`, `--quiet` | report failures only |
 | `--anonymize` | anonymize script header information |
 | `--ignorecwd` | do not add the working directory to the import list |
-| `-f <file>` | user-flags file; defaults exist for Skyrim |
+| `-f <file>` | user-flags file; defaults exist for Skyrim. `-f TESV_Papyrus_Flags.flg` fails ("Unable to locate flags file") unless the file is in the working directory; omit it, the built-in Skyrim flags work (**Measured 2026-11-01**) |
 | `--champollion-compat` | on by default; eases compiling Champollion's output |
 
 ## 4. Things to know
 
 - **The `.pex` records the source path.** **Measured today**: the path of the compile (`Z:\private\tmp\...`) is readable
-  in the header bytes. Whether `--anonymize` removes it was not tried; check before you publish a compiled script.
+  in the header bytes. `--anonymize` removes it (**Measured 2026-11-01**, checked with `strings`); use it before you publish a compiled script.
 - Caprica adds the working directory to the import list itself, so `-i .` just makes it log "Imported 2 files" for a
   single script. Harmless. **Measured today**.
 - A `.pex` loads at game startup only; a recompiled script does not hot-reload (`CLAUDE.md`, Safety Rules).

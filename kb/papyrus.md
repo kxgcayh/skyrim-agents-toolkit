@@ -8,6 +8,10 @@ Part of the Skyrim modding knowledgebase; index: `KNOWLEDGEBASE.md`. Covers Papy
 
 **"VM is freezing..." / "VM is frozen"** — These lines appear in **every** Papyrus log on normal game exit and save. They are not a crash, not a script error, and have no diagnostic value. Ignore them completely when troubleshooting.
 
+**"Unable to bind script X to alias Y on quest Z because their base types do not match"** (measured 2026-11-04) — the plugin attaches script `X` to a ReferenceAlias, but `X.psc` does not extend `ReferenceAlias` (for example `Scriptname X Hidden`, a holder of global native functions that extends nothing). The script never runs on that alias; if the mod calls its functions as globals and keeps state elsewhere (SKSE co-save), the line is cosmetic. Fixing it means editing the alias's VMAD in the third-party plugin.
+
+**"Script X does not exist" for a script the plugin references** — check whether that mod's own BSA ships it. When the mod's other scripts are present and this one is not, it is an author-side packaging miss, not a load-order problem.
+
 ### Script Lifecycle
 
 **OnInit vs OnLoad:**
@@ -16,6 +20,7 @@ Part of the Skyrim modding knowledgebase; index: `KNOWLEDGEBASE.md`. Covers Papy
 - For other objects (Topic Infos, Perks, persistent refs): `OnInit` fires at first load into the session
 - All properties and variables are reset to default values before `OnInit` fires
 - There is NO `OnLoad` event — use `RegisterForSingleUpdate`/`OnUpdate` or `OnGameReload` for reload detection
+- SKSE's `ActiveMagicEffect.psc` declares the Actor events, including `OnRaceSwitchComplete`, so an ability's effect script can react to vampire turn, cure and Vampire Lord transform (all race swaps) without a ReferenceAlias script
 - `OnInit` does NOT fire again after save/load (quest must be reset)
 
 **Persistence and Save/Load:**

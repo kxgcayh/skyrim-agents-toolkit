@@ -306,6 +306,18 @@ a denominator can only account for what it was given. Match `crash-*.(txt|log)`
 case-insensitively, and keep the `crash-` prefix so the plugin's own `CrashLogger.log` is not
 counted as a crash.
 
+**Trainwreck** (Nexus 106440) names its dumps by timestamp only (`2026-10-22-22-14-42.log`, no `crash-`
+prefix) and writes them to `SKSE/Crashlogs/`. `crash-triage.py` reads that subfolder and that name shape;
+a `crash-*` glob finds none of them.
+
+**First moves on a new CTD (measured 2026-11-02, AE 1.7.104).** Before porting or patching the plugin that
+changed last: (1) compare the crash signature with and without the suspect, and (2) check every active
+plugin's MAST records against `plugins.txt`. A CTD right after the main menu at `SkyrimSE.exe+1DCB60`
+(`mov rax,[rcx+0x30]`, called from `+2DF22B`, `rcx = [PlayerCharacter+0x40] + 0x30`, i.e. the player's base
+object is null) was identical with and without the blamed DLL; the cause was an enabled patch plugin whose
+master had been deleted. MO2 deleted it: installing an archive into an existing mod folder with **Replace**
+removes that folder's files first.
+
 ---
 
 ## AutoMod BSA extract/repack needs `bsarch.exe`
@@ -335,3 +347,104 @@ same 68 of 69 on net8.0: `ResultTests.ToJson_FailedResult_ContainsSuccessFalse` 
 failed result's JSON omits `"success": false`), so it is upstream's, not .NET 10's. Rebuilding over an
 old net8.0 build needs no clean. A net8.0 build does NOT start on a 10-only machine without
 `DOTNET_ROLL_FORWARD=Major`; the wrapper refuses it and says to `--rebuild`.
+
+## Reading a BSA or plugin header without AutoMod or xEdit (measured 2026-11-04, macOS)
+
+When neither AutoMod's DLL nor `bsarch.exe` is available, an SSE BSA v105 with archive flags 3 (directory and
+file names, no default compression) reads in about 30 lines of Python: header `<4s8I`; folder records `<QIIQ`;
+then per folder a bzstring name plus `<QII` file records; then the file-name block (header field 7 is its
+length). Bit `0x40000000` of a file size toggles compression for that file, and a compressed block starts
+with its uncompressed size (4 bytes), so asset versions compare by size without extracting. Used to pull two
+`.pex` out of a 40,643-file BSA and to compare 44k archive entries across a load order.
+
+Header-level plugin parsing is equally small: TES4 MAST subrecords, a GRUP walk, and zlib for records with
+flag `0x40000`. That was enough for overlap counts, full override chains (767 plugins in a few minutes) and
+LVLO diffs. It does not replace xEdit's field-level conflict view, and it reads files, not the MO2 VFS.
+
+## FOMOD Installers: Authoring and Mod Manager Behaviour (measured 2026-11-01, MO2)
+
+**Archive layout.** `fomod/info.xml` + `fomod/ModuleConfig.xml` + one folder per installable option. Each
+`<folder source="X" destination=""/>` must name a folder that exists in the archive; a build script should assert
+the set of `source=` values equals the folders it packs. Exclude OS litter (`.DS_Store`, `Thumbs.db`).
+
+**Schema validation.** `xsi:noNamespaceSchemaLocation="http://qconsulting.ca/fo3/ModConfig5.0.xsd"` is a thin file
+that `<xs:redefine>`s `http://qconsulting.ca/gemm/ModConfig5.0.xsd`. The gemm schema has `type=" xs:string"`
+(leading space) on one attribute, which libxml2 refuses to compile. To validate offline: download both with
+`curl -L` (the plain URL returns a redirect page), strip the space, point the redefine at the local copy, then
+`xmllint --noout --nonet --schema ModConfig5.0.xsd ModuleConfig.xml`. Well-formed XML is not enough: the schema
+catches misplaced elements that a mod manager may silently ignore.
+
+**One plugin per setup (variants).** When a patch must master a different set of optional plugins depending on
+what the user has (patch A, patch B, both; optional addon or not), build one plugin per combination, all with the
+same file name, each in its own option folder, and let the installer pick. Install exactly one: two copies of
+the same overrides confuse load-order sorting and double-apply. Tell the user to reinstall when they enable or
+disable one of the detected plugins: the old variant is then a missing master or loses to a plugin it no
+longer masters.
+
+**Optional support for another mod: an add-on plugin, not more variants.** When a supported mod is optional
+and only adds fields to a few records the patch overrides, ship a small separate plugin that masters both the
+main patch and that mod and copies just those fields on top of the main patch's records. One add-on fits every
+variant if the main records it touches are identical across variants (assert it in the build). In the FOMOD put
+it in a `SelectAny` group: `defaultType NotUsable` (greyed out, it would be a missing master) and one pattern
+`Recommended` (checked) when the mod's plugin is `Active`. In `SelectAny`, MO2 disables only that option.
+
+**Auto-detecting active plugins: the layout that works in MO2.**
+- One visible step, one `SelectExactlyOne` group, one option per variant. Do not hide the choice entirely in
+  `conditionalFileInstalls`: the user then cannot see which variant is installed, and the archive's identical
+  plugin names in several folders read as "installs all of them".
+- Make **exactly one** option `Recommended` for any setup; every other option `Optional`. Never rely on option
+  order to pick among several Recommended ones: MO2's source checks only the first Recommended, yet a real MO2
+  build preselected the LAST of several.
+- MO2 uses the **first matching pattern** of an option's `dependencyType` (`getPluginDependencyType`). So per
+  option: pattern 1 `Optional` when any detected plugin the option does NOT need is `Active` (an `Or` of
+  `fileDependency state="Active"`), pattern 2 `Recommended` when all plugins it needs are `Active`, default
+  `Optional`. Only positive `Active` checks; no `Missing` / `Inactive` logic needed.
+- **Do not use `Required` for auto-selection** in a `SelectExactlyOne` or `SelectAtMostOne` group: MO2 then
+  disables EVERY option of the group by design, and the user cannot change or even clearly see the selection.
+  `NotUsable` defaults have the same effect on the other options.
+- **Do not gate a patch FOMOD with `moduleDependencies`.** It is a hard gate: one required plugin missing or
+  inactive (no USSEP, Vortex not yet deployed, a merged or renamed plugin) and the installer refuses to run; the
+  user sees only "problem with the fomod". A failing nested `<dependencies operator="Or">` gives MO2's "installation
+  as fomod Failed No conditions were successful in an 'OR' clause" (user report 2026-11-02, both target plugins
+  installed but not active). Let the plugin's masters and the game's missing-master warning do the gating.
+- MO2 answers `fileDependency` for `.esp/.esm/.esl` from its live plugin list: a plugin present but disabled is
+  `Inactive`, so "enable first, then install" belongs in the instructions.
+
+**Two independent choices without duplicating the auto-detect group** (a user pick x an auto-detected setup;
+XSD-valid and simulated for every setup, not yet manager-tested): options install no files and only set
+`conditionFlags`; `conditionalFileInstalls` (after `</installSteps>`, ModConfig 5.0 order) maps each
+`flagDependency` pair to one folder. Options keep their `typeDescriptor` patterns, so preselection is unchanged
+and the choices stay visible. A FOMOD cannot read mod file priority, so a choice that depends on which mod wins
+loose files must be a user pick with the priority rule in its description.
+
+**Self-check before handing it to a user.** Write a small evaluator over `ModuleConfig.xml` (And/Or over
+`fileDependency`, first-match patterns, defaultType) and run it over every Active/Inactive/Missing combination of
+the detected plugins: assert the install is refused exactly when it should be and that exactly one option is
+Recommended, the right one. XSD validation plus this simulation still do not prove a manager's behaviour; one
+real install test per manager does.
+
+**Mod name shown by MO2.** The installer window title is MO2's guess from the archive file name, set before
+`info.xml` is read. For a file name without a Nexus `-<modid>-` part, MO2 keeps only letters, `_` and spaces up to
+the first other character (`Foo - Bar Patch.zip` becomes `Foo`). In a real MO2 build the Name box also kept that
+guess although `info.xml` had `<Name>`. For a Nexus download MO2 uses the `.meta` mod name (the page title), so
+users are unaffected; for local testing, type the name. Fill `<Author>`, `<Version>` and `<Website>`: MO2 shows
+them on the installer page.
+
+**Vortex:** not measured. Its installer evaluates the same XML, but preselection and `Required` behaviour may
+differ; test once before release.
+
+## Releasing: MO2 `meta.ini` and the Nexus API
+
+- (Source-read 2026-11-03, not verified with a real install.) MO2 keeps a `meta.ini` bundled at the archive root, then overwrites only installationFile, repository,
+  author, uploader, uploaderUrl, nexusFileStatus, plus gameName/modid/version when the download's `.meta`
+  supplies them. A manually added zip has a blank `.meta` (`version=0.0.0.0`), so the bundled version is lost.
+  `url` + `hasCustomURL=true` set "Visit web page". Quote values containing commas (QSettings reads them as
+  lists).
+- (Measured 2026-11-01.) Nexus API v1 `/games/<domain>/mods/<id>.json` returns the full description (BBCode) but **not** the
+  Permissions tab; fetching the page itself gets a Cloudflare 403. Permission terms differ between sibling pages
+  by the same author: read each page, never copy one page's terms to another.
+- (Source-read 2026-11-03, not yet run live.) Nexus v3 (`https://api.nexusmods.com/v3`, `apikey` header) can only add a new version to an **existing**
+  file (`POST /mod-files/{file_id}/versions`); the mod page and its first file are made on the website.
+  Upload: `POST /uploads/multipart` -> PUT parts to the presigned URLs (no key) -> POST the completion XML ->
+  `POST /uploads/{id}/finalise` -> poll `GET /uploads/{id}` until `available`. Changelog:
+  `POST /mods/{id}/changelogs` (appends). Source: `Nexus-Mods/upload-action` commit 98532f7.

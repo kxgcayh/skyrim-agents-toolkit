@@ -420,3 +420,20 @@ return (last === path.posix.sep || last === path.win32.sep) ? dir : dir + path.s
 Check **both** separator styles, not `path.sep` alone — game paths are Windows paths even when
 the CI runner testing them is Linux, where `path.sep === '/'` and a backslash-terminated path
 would be "fixed" by appending a second separator.
+
+---
+
+## Two winners: records by plugin order, files by mod priority (measured 2026-11-01..04, MO2)
+
+What the player sees often comes from two independent conflict winners:
+
+- **NPC look.** The NPC_ record is won by plugin order; its loose FaceGen (`meshes/actors/character/FaceGenData/FaceGeom/<plugin>/<FormID>.nif` and the FaceTint DDS) is won by MO2 mod priority. When they come from different mods the head is missing or wrong (a headless NPC: record from mod A names A's head part, FaceGeom from mod B uses B's). Rule: the mod whose plugin wins the record must also win its FaceGen. To survey, list loose FaceGeom per enabled mod, find paths shipped by more than one, then find the record winner by scanning plugins for `NPC_` headers with that FormID.
+  A FaceGen patch that tells users "let mod X win all loose-file conflicts against mod Y" must patch EVERY NPC whose FaceGen both mods ship, not only the ones split in your own setup; measure the shared file set of the two mod folders first. With several mod pairs, every pair must be flipped; diagnose by listing, per patched FormID, the winning FaceGeom/FaceTint mod next to the installed plugin's record source.
+- **Scripts.** A loose `.pex` beats a `.pex` inside any BSA regardless of MO2 priority. Two overhauls that replace the same vanilla scripts, one loose and one in its BSA, give the loose scripts while the later plugin wins the records: a mismatched script/record pair. Pick one mod.
+- **Interface SWFs.** Resource mods sometimes ship stock `interface/*.swf` (Beyond Skyrim Assets: `hudmenu.swf`, `map.swf`, `SkyUI/mapMarkerArt.swf`); placed above a UI reskin they silently revert it. After any sort, diff the file winner of every file the moved mods ship, before vs after.
+
+**A patch must master every plugin that overrides its records, not only today's winner.** With two plugins overriding the same record and neither mastering the other, LOOT's order between them is not guaranteed; a patch mastering both is the only order-proof fix. A FaceGen patch built against the winner alone was beaten when LOOT sorted another overrider after it, and 10 NPCs stayed headless. Build from the live `plugins.txt` (scan every active plugin's headers for the FormIDs), not a remembered load order, and check in game with the console's "Base last changed by". Merge only the fields you mean to change onto the current winner; copying a donor record whole reverts later fixes (USSEP, AI Overhaul).
+
+**A plugin that swaps `.esp` for `.esl` across a major version does not keep its FormIDs.** Changing a dependent patch's master header from the old name to the new one leaves dangling references to records the new version deleted (Tamrielic Distribution 1.x -> 2.0 dropped its `DES_Proxy*` records). Re-target the references to records that still exist.
+
+**Overhauls reuse vanilla FormIDs under new EditorIDs** (Scion, Sacrosanct). Porting a feature from one onto another means copying those records to new FormIDs, never sharing the IDs.

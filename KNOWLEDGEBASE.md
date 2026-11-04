@@ -10,7 +10,7 @@ This file is an index. The content lives in `kb/`; open only the file that match
 |---|---|
 | `kb/papyrus.md` | write, compile, debug or read the log of a Papyrus script; `.pex` loading; VM load problems |
 | `kb/esp-xedit.md` | edit a plugin with xEdit, xelib or Spriggit; FormID, master-count, game-path traps; records reused from vanilla |
-| `kb/tools-and-assets.md` | touch a NIF, audio, music, BSA; parse or edit a save or co-save; read a crash log |
+| `kb/tools-and-assets.md` | touch a NIF, audio, music, BSA; parse or edit a save or co-save; read a crash log; build a FOMOD installer |
 | `kb/environment-and-guards.md` | resolve paths under MO2 or a second `My Games`; use DevBench; understand a hook, guard or lock behaviour |
 | `kb/engine-and-combat.md` | stagger, bleed, knockback, spawned-actor crashes, other engine quirks |
 | `kb/vanilla-reference.md` | judge a gameplay-mod conflict; need vanilla formulas, FormIDs/EditorIDs or the vanilla bug catalogue |
@@ -20,8 +20,8 @@ Sections by file (search a heading with `grep -n '^## ' kb/*.md`):
 
 - `papyrus.md`: Papyrus Scripting; Papyrus Debugging in VR; Papyrus Log cleanup lessons; VM page-policy CTD; recompiled `.pex` loads only at startup; No Papyrus Raycast
 - `vr.md`: VR vs SSE Differences; VR Controller Input Detection; VR Papyrus Confirmed Findings; Havok Units and VR Hit-Detection; Immobilizing in VR; Weapon Manipulation at Runtime
-- `esp-xedit.md`: xEdit / xelib / ESP Editing; ESP Creation via Spriggit; `setFormID` master-count trap; `setGamePath` trailing separator; reused vanilla records carry Conditions
-- `tools-and-assets.md`: Save File Analysis; ReSaver CLI; cosave-info; Music System; Orphaned Extended Skeletons CTD; Audio & Tooling; AutoMod BSA needs `bsarch.exe`; NIF Tooling; NIF Validation; CrashLogger `.LOG`
-- `environment-and-guards.md`: Hook Candidates; DevBench; MO2 virtual filesystem; `sed` and Windows paths; multiple `plugins.txt`; skill `paths:` gating; guard depth; hook timeout economics; verify-release hook floor
+- `esp-xedit.md`: xEdit / xelib / ESP Editing; ESP Creation via Spriggit; `setFormID` master-count trap; `setGamePath` trailing separator; reused vanilla records carry Conditions; two winners (records vs loose files, FaceGen, patch mastering)
+- `tools-and-assets.md`: Save File Analysis; ReSaver CLI; cosave-info; Music System; Orphaned Extended Skeletons CTD; Audio & Tooling; AutoMod BSA needs `bsarch.exe`; NIF Tooling; NIF Validation; CrashLogger `.LOG` and Trainwreck, first moves on a CTD; reading a BSA/plugin header without tools; FOMOD Installers; MO2 `meta.ini` and the Nexus API
+- `environment-and-guards.md`: Hook Candidates; DevBench; MO2 virtual filesystem, `modlist.txt` order, usvfs 0.5.7.1 listing bug; `sed` and Windows paths; multiple `plugins.txt`; skill `paths:` gating; guard depth; hook timeout economics; verify-release hook floor
 - `engine-and-combat.md`: Game Engine Quirks; Stagger & Bleed; Explosion knockback; Spawned-Actor Havok CTD
 - `vanilla-reference.md`: Combat & Defense Formulas; Crafting & Leveling Formulas; Vanilla Record Reference; Vanilla Bug Catalogue

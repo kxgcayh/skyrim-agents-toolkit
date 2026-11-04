@@ -8,7 +8,8 @@ A living list of potential safety hooks identified during work. Evaluated but no
 
 | Candidate | Trigger | What it would do | Priority | Status |
 |-----------|---------|------------------|----------|--------|
-| *None yet* | — | — | — | — |
+| Missing-master preflight | Before a game launch | Read `plugins.txt` and the MAST records of every active plugin; refuse or warn when a master is absent or disabled. A CTD on 2026-11-02 looked like a plugin bug and was a missing master (`kb/tools-and-assets.md`, crash logs) | High | Not implemented |
+| Write guard for the Nexus downloads folder | Bash/Edit/Write into the mod manager's download folder | Refuse like the install and `mods/` guards do. Needs the folder in `skyrim-paths.env` first; check `docs/guard-coverage.md` | Medium | Not implemented |
 
 **When to add entries:** After any near-miss, unexpected outcome, or pattern of risk that current hooks don't cover. Include why the gap was noticed and whether the overhead is justified.
 
@@ -190,6 +191,24 @@ shows every destination (anything outside `Data/` flagged), and `--apply` backs 
 and writes a SHA-256 manifest, which is the record a bare copy lacks. Under MO2 it installs a new mod
 folder in MO2's `mods/` (enable it in MO2) instead of writing to the real `Data/`. Read the
 destinations before `--apply`, and check the result after it (skill `triage-and-conflicts`).
+
+### `modlist.txt` is written in reverse
+
+`<instance>/profiles/<profile>/modlist.txt` (CRLF) lists the **highest** priority first, and a separator line
+(`-<name>_separator`) comes **after** its members: a separator's members are the lines above it, up to the
+previous separator. `+` = enabled, `-` = disabled. "Insert above X" therefore means "higher priority than X".
+Write a sorted copy elsewhere and let the user back up the original and swap the copy in with MO2 closed;
+assert the result has the same line count and the same multiset of lines as the input.
+
+### usvfs 0.5.7.1 corrupts .NET directory listings (measured 2026-10-29)
+
+`hooks/file_information_utils.h` in usvfs 0.5.7.1 maps `FileFullDirectoryInformation` (class 2, the one .NET
+uses) to `FILE_ID_FULL_DIR_INFORMATION`, so the name is read and written at offset 80 instead of 68. Reads break
+duplicate skipping (each entry listed twice); writes land 12 bytes late (names like `1hm_be1hm_be`, `0_mast0_`,
+`info.iin`). Any .NET tool listing a virtual folder is hit; Pandora Behaviour Engine+ showed it as Nemesis mods
+partly ignored, `Event/variable table mismatch` and `DirectoryNotFoundException`. Not Wine-specific; fixed in
+0.5.7.2 (commit de356fb2). **Check the `FileVersion` of `usvfs_x64.dll` itself**: one install had the x86 DLL
+and both proxies at 0.5.7.2 and the x64 DLL still at 0.5.7.1.
 
 ---
 
