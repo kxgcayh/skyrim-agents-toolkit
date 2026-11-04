@@ -203,6 +203,34 @@ def test_crash_rejects_a_directory_with_no_logs(tmp_path):
     assert run(CRASH, str(empty)).returncode == 2
 
 
+def test_crash_reads_trainwreck_dumps_in_the_crashlogs_subfolder(tmp_path):
+    """Trainwreck writes `SKSE/Crashlogs/<date>.log`: no `crash-` prefix, a
+    subfolder, a `[0 ]`-padded index and the instruction on its own line. Each
+    one alone made the tool report no dumps, or only frame 0."""
+    skse = tmp_path / "SKSE"
+    (skse / "Crashlogs").mkdir(parents=True)
+    (skse / "Crashlogs" / "2026-11-03-23-43-13.log").write_text("\n".join([
+        "SkyrimSE v1.7.104",
+        "trainwreck v1.4.0",
+        "",
+        'Unhandled exception "EXCEPTION_ACCESS_VIOLATION" at 0x7FF746AE9843 SkyrimSE.exe+0CE9843',
+        "",
+        "PROBABLE CALL STACK:",
+        "\t[0 ] 0x7FF746AE9843       SkyrimSE.exe+0CE9843",
+        "\t\tcall qword ptr [rdi+10h]",
+        "\t[1 ] 0x7FFD9C4681CB ConsoleUtilSSE.dll+00281CB",
+        "\t\tmov rbx,[rsp+38h]",
+        "",
+        "REGISTERS:",
+        "\tRAX 0x0",
+    ]), encoding="utf-8")
+    r = run(CRASH, str(skse))
+    assert "1 log(s)" in r.stdout, r.stdout
+    assert "SkyrimSE.exe+0CE9843" in r.stdout, r.stdout
+    assert "ConsoleUtilSSE.dll+00281CB" in r.stdout, r.stdout
+    assert r.returncode == 0, r.stdout
+
+
 # --------------------------------------------------------------------------
 # crash-triage -- CrashLoggerSSE 1.2x format
 #

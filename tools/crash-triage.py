@@ -1,4 +1,4 @@
-"""crash-triage -- reduce CrashLoggerSSE dumps to signatures, and say which are known.
+"""crash-triage -- reduce CrashLoggerSSE / Trainwreck dumps to signatures, and say which are known.
 
 A crash log here is ~5,500 lines, of which ~4,600 are the raw STACK dump. The
 part that identifies a crash is the exception line plus the top of PROBABLE CALL
@@ -49,7 +49,8 @@ EXC_RE = re.compile(
 # CrashLoggerSSE 1.2x marks each frame [P]robable or [S]tack-scan; older builds
 # emit no marker at all. Accept both shapes.
 FRAME_RE = re.compile(
-    r"^\s*\[\s*\d+\]"
+    # Trainwreck pads the index on the right: `[0 ]`, `[10]`.
+    r"^\s*\[\s*\d+\s*\]"
     r"(?:\[(?P<kind>[PS])\])?"
     r"\s+0x[0-9A-Fa-f]+\s+(?P<mod>[^\s+]+)\+(?P<off>[0-9A-Fa-f]+)"
 )
@@ -58,7 +59,9 @@ FRAME_RE = re.compile(
 # it reports a confident total made of whichever half it happened to match.
 # Measured on the dev install: 8 `.txt` (June 2025) beside 20 `.log` (2026).
 # `CrashLogger.log` is the plugin's OWN log and is excluded by the `crash-` prefix.
-CRASH_NAME_RE = re.compile(r"^crash-.+\.(txt|log)$", re.I)
+# Trainwreck names its dumps by timestamp alone (`2026-10-22-22-14-42.log`) and
+# writes them to `SKSE/Crashlogs/`, so a `crash-`-only pattern finds none of them.
+CRASH_NAME_RE = re.compile(r"^(?:crash-.+|\d{4}(?:-\d{2}){5})\.(txt|log)$", re.I)
 # Near-miss detector. Keys on the `crash-` PREFIX, not the word "crash" anywhere
 # in the name: the looser form fires on ordinary mod logs like
 # LeveledListCrashPrevention.log and CrashLogger.log, and a guard that trips on
@@ -69,7 +72,7 @@ CRASH_PREFIX_RE = re.compile(r"^crash[-_]", re.I)
 # and the dev install holds 341. The COUNT is the finding; the names are a sample.
 LIST_CAP = 10
 
-VERSION_RE = re.compile(r"^(Skyrim ?VR|Skyrim Special Edition)\s+v?(?P<ver>[\d.]+)", re.I)
+VERSION_RE = re.compile(r"^(Skyrim ?VR|Skyrim Special Edition|SkyrimSE)\s+v?(?P<ver>[\d.]+)", re.I)
 
 # A C++ throw reports the THROW SITE on the exception line -- the same
 # KERNELBASE address for every C++ crash on the machine. What actually
@@ -119,6 +122,9 @@ def parse(path: Path):
         for line in lines[start + 1:]:
             fm = FRAME_RE.match(line)
             if not fm:
+                # Trainwreck prints each frame's instruction on its own indented line.
+                if line[:1] in " \t" and line.strip() and not line.lstrip().startswith("["):
+                    continue
                 break
             if fm.group("kind") == "S":
                 continue
@@ -187,9 +193,12 @@ def main() -> int:
               else skyrim_paths.resolve_dir("SKSE_CRASH_DIR", "SKSE")[0])
     if target.is_file():
         files = [target]
+        population = files
     elif target.is_dir():
-        files = sorted(p for p in target.iterdir()
-                       if p.is_file() and CRASH_NAME_RE.match(p.name))
+        # Trainwreck writes to the `Crashlogs` subfolder of the SKSE folder.
+        dirs = [target] + [d for d in (target / "Crashlogs",) if d.is_dir()]
+        population = sorted(q for d in dirs for q in d.iterdir() if q.is_file())
+        files = [p for p in population if CRASH_NAME_RE.match(p.name)]
     else:
         print(f"Not a file or directory: {target}", file=sys.stderr)
         return 2
@@ -199,10 +208,9 @@ def main() -> int:
         # the reader is told the folder is empty of dumps while dumps sit in it under
         # an extension the pattern does not cover. Refusing with exit 2 was never the
         # problem; the sentence was.
-        missed = (sorted(q.name for q in target.iterdir()
-                         if q.is_file() and CRASH_PREFIX_RE.match(q.name))
-                  if target.is_dir() else [])
-        print(f"No crash-*.txt or crash-*.log found in {target}", file=sys.stderr)
+        missed = [q.name for q in population if CRASH_PREFIX_RE.match(q.name)]
+        print(f"No crash dumps (crash-*.txt / crash-*.log / Trainwreck <date>.log) found in {target}",
+              file=sys.stderr)
         if missed:
             print(f"  but {len(missed)} file(s) there carry the crash-/crash_ prefix and did "
                   f"NOT match the extension pattern -- widen CRASH_NAME_RE if these "
@@ -222,12 +230,9 @@ def main() -> int:
     # it: a denominator can only account for what it was handed.
     near_misses = []
     if target.is_dir():
-        population = [q for q in target.iterdir() if q.is_file()]
-        matched = {q.name for q in files}
+        matched = set(files)
         near_misses = [q.name for q in population
-                       if q.name not in matched and CRASH_PREFIX_RE.match(q.name)]
-    else:
-        population = files
+                       if q not in matched and CRASH_PREFIX_RE.match(q.name)]
 
     parsed, unreadable, no_exception = [], [], []
     for f in files:
@@ -292,7 +297,7 @@ def main() -> int:
 
     if target.is_dir():
         print(f"files in folder : {len(population)}")
-        print(f"  matched       : {len(files)}   (crash-*.txt / crash-*.log)")
+        print(f"  matched       : {len(files)}   (crash-*.txt / crash-*.log / Trainwreck <date>.log)")
         print(f"  near misses   : {len(near_misses)}"
               + ("   <-- LOOK: named like a dump, not matched by the pattern"
                  if near_misses else ""))

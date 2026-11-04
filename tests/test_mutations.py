@@ -624,8 +624,8 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + [
         # writes `.LOG`, so the tool reports a complete-looking total built
         # entirely from years-old logs -- the failure mode with no error.
         "tools/crash-triage.py",
-        'CRASH_NAME_RE = re.compile(r"^crash-.+' + BS + '.(txt|log)$", re.I)',
-        'CRASH_NAME_RE = re.compile(r"^crash-.+' + BS + '.txt$")',
+        "){5})" + BS + '.(txt|log)$", re.I)',
+        "){5})" + BS + '.txt$")',
         "tests/test_triage.py::test_crash_finds_dot_log_files_not_only_dot_txt",
         id="crash-log-extension-half-matched",
     ),
@@ -633,10 +633,19 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + [
         # Match any `.log` in the folder, not just `crash-` dumps. Every SKSE
         # plugin's own log then becomes a phantom crash in the denominator.
         "tools/crash-triage.py",
-        'CRASH_NAME_RE = re.compile(r"^crash-.+' + BS + '.(txt|log)$", re.I)',
-        'CRASH_NAME_RE = re.compile(r".+' + BS + '.(txt|log)$", re.I)',
+        'CRASH_NAME_RE = re.compile(r"^(?:crash-.+|',
+        'CRASH_NAME_RE = re.compile(r"^(?:.+|',
         "tests/test_triage.py::test_crash_ignores_the_crashlogger_plugin_log",
         id="crash-prefix-not-required",
+    ),
+    pytest.param(
+        # Drop the timestamp-only alternative. Trainwreck's dumps are named
+        # `<date>.log` with no `crash-` prefix, so a Trainwreck user gets none.
+        "tools/crash-triage.py",
+        "|" + BS + "d{4}(?:-" + BS + "d{2}){5})",
+        ")",
+        "tests/test_triage.py::test_crash_reads_trainwreck_dumps_in_the_crashlogs_subfolder",
+        id="crash-trainwreck-names-unmatched",
     ),
 
     pytest.param(
