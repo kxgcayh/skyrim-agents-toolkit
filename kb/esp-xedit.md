@@ -269,7 +269,7 @@ not facts.
   ```
 
 ### Spriggit CLI
-- Serialize: `spriggit serialize --InputPath "Data/Mod.esp" --OutputPath "/tmp/output" --GameRelease SkyrimSE --PackageName Spriggit.Yaml --PackageVersion "0.41.0"` (pass what `spriggit --version` prints)
+- Serialize: `spriggit serialize --InputPath "Data/Mod.esp" --OutputPath "/tmp/output" --GameRelease SkyrimSE --PackageName Spriggit.Yaml --PackageVersion "0.41.0"` (pass the translation package version: what `spriggit --version` prints for the pinned CLI, `0.41.0` for a local fork, whose own version makes serialize fail with `PlatformNotSupportedException`)
 - Deserialize: `spriggit deserialize --InputPath "/tmp/yaml_dir" --OutputPath "Data/Mod.esp"` (reads meta from spriggit-meta.json)
 - `--GameRelease` is only for serialize, NOT deserialize
 - **Install pinned: `dotnet tool install Spriggit.CLI --version 0.41.0`** (v4, 2026-10-05; was
