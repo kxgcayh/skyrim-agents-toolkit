@@ -229,3 +229,31 @@ def test_liveness_still_works_without_jq(server):
     r = run_cli("alive", port=server.port, mask_jq=True)
     assert "instance:" in r.stdout, r.stdout + r.stderr
     assert r.returncode in (0, 2, 3), f"unexpected exit {r.returncode}"
+
+
+@pytest.mark.parametrize("server", ["capture", "incomplete"], indirect=True)
+def test_exec_uses_its_own_capture(server):
+    import json
+    command = 'help "quoted"\npath\\file'
+    r = run_cli("exec", command, port=server.port, mask_jq=True)
+    assert r.returncode == (0 if server.proc.args[-1] == "capture" else 3), r.stderr
+    assert json.loads(r.stdout)["lines"] == [command]
+
+
+@pytest.mark.parametrize("server", ["echo"], indirect=True)
+@pytest.mark.parametrize("tool", ["gfx", "dialogue"])
+def test_tool_shortcuts_preserve_arguments(server, tool):
+    import json
+    args = {"action": "inspect", "snapshot": "observed", "index": 2}
+    r = run_cli(tool, json.dumps(args), port=server.port)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == {"path": "/api/tool/" + tool, "args": args}
+
+
+@pytest.mark.parametrize("server", ["echo"], indirect=True)
+def test_notify_escapes_text_without_jq(server):
+    import json
+    message = 'a "quote"\nnext\tpath\\file'
+    r = run_cli("notify", message, port=server.port, mask_jq=True)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout)["args"]["args"] == [message]
