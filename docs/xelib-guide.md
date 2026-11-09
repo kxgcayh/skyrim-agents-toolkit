@@ -14,7 +14,7 @@ Run this **from the toolkit root** (the folder containing `tools/` and `examples
 npm ci --ignore-scripts --no-audit --no-fund
 ```
 
-That installs exactly the shipped `package-lock.json`: xeditlib v1.0.2 (kxgcayh fork, commit `f091fc7`) with koffi 2.15.1, the pair this toolkit was tested with, each checked against its integrity hash; see `docs/installing-tools.md` for why both are pinned and how to verify them.
+That installs exactly the shipped `package-lock.json`: xeditlib v1.0.2 (kxgcayh fork, commit `0221620`) with koffi 2.15.1, the pair this toolkit was tested with, each checked against its integrity hash; see `docs/installing-tools.md` for why both are pinned and how to verify them.
 
 Installing at the root puts `node_modules/xeditlib` where Node's upward module lookup can find it
 from every bundled script — `tools/xelib/*.js`, `tools/resaver-resolve-names.js`, and `examples/*.js`

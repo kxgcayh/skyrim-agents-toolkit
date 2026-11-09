@@ -13,7 +13,7 @@
   },
   "optionalDependencies": {
     "koffi": "2.15.1",
-    "xeditlib": "https://codeload.github.com/kxgcayh/xeditlib/tar.gz/f091fc7c18d28cd78727e773f212083f76642357"
+    "xeditlib": "https://codeload.github.com/kxgcayh/xeditlib/tar.gz/022162079bdfd31b90eadb0be5f85bcbea1bcacf"
   },
   "engines": {
     "node": ">=24"
