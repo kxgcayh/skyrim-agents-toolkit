@@ -312,16 +312,16 @@ if [ "$SCRUBBED" -eq 1 ]; then
   # shellcheck disable=SC2086
   out=$(cd "$GAME" && scrub bash setup.sh ${VERIFY_SETUP_ARGS---agent all} </dev/null 2>&1); rc=$?
   [ $rc -eq 0 ] && ok "setup.sh again: idempotent (exit 0)" || { bad "setup.sh re-run" "exit $rc"; echo "$out" | tail -15; }
-  # setup.sh renders .codex/hooks.json only for a drive-letter root (its CODEX_WIN test on `pwd -W`): the toolkit's
-  # Codex support is Windows-only. Elsewhere (Linux, the CI runner) setup leaves it as shipped -- byte-identical,
-  # placeholders and all -- and that, not a rendered file, is what is checked there.
+  # setup.sh renders .codex/hooks.json for a drive-letter root (its CODEX_WIN test on `pwd -W`) and on macOS
+  # (CODEX_POSIX, via tools/codex-posix-setup.py). Elsewhere (Linux, the CI runner) setup leaves it as shipped --
+  # byte-identical, placeholders and all -- and that, not a rendered file, is what is checked there.
   codex_defs="$GAME/.codex/hooks.json"
-  case "$(cd "$GAME" && { pwd -W 2>/dev/null || pwd; } | tr '\134' '/')" in
-    [A-Za-z]:/*) ;;
+  case "$(uname -s):$(cd "$GAME" && { pwd -W 2>/dev/null || pwd; } | tr '\134' '/')" in
+    *:[A-Za-z]:/*|Darwin:*) ;;
     *) if cmp -s "$GAME/.codex/hooks.json" "$ROOT/.codex/hooks.json"; then
-         ok "Codex hooks left as shipped off Windows (Codex support is Windows-only)"
+         ok "Codex hooks left as shipped off Windows and macOS (Codex support is Windows and macOS only)"
        else
-         bad "Codex hooks off Windows" "setup changed .codex/hooks.json on a root that is not a drive letter"
+         bad "Codex hooks off Windows and macOS" "setup changed .codex/hooks.json on a root that is not a drive letter"
        fi
        codex_defs="" ;;
   esac

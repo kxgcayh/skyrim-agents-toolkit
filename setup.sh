@@ -112,7 +112,7 @@ USERNAME="$(whoami)"
 # filesystem work below -- both forms work there -- and use this one only for substitution.
 GAME_ROOT_WIN="$( { cd "$GAME_DIR" 2>/dev/null && (pwd -W 2>/dev/null || pwd); } || echo "$GAME_DIR" )"
 GAME_ROOT_WIN=$(printf '%s' "$GAME_ROOT_WIN" | tr '\134' '/')
-# The toolkit's Codex support is Windows-only: its hooks are rendered for a drive-letter root.
+# Codex hooks: Windows (rendered for a drive-letter root) and macOS (CODEX_POSIX below).
 case "$TOOLKIT_ROOT_WIN" in [A-Za-z]:/*) CODEX_WIN=1 ;; *) CODEX_WIN="" ;; esac
 # macOS: rendered by tools/codex-posix-setup.py (POSIX root, absolute bash 4.4+). Measured on Darwin only.
 CODEX_POSIX=""; [ -z "$CODEX_WIN" ] && [ "$(uname -s)" = "Darwin" ] && CODEX_POSIX=1
@@ -147,7 +147,7 @@ case "$AGENT_SEL" in
     all) DO_CLAUDE=1; DO_CODEX=1 ;;
 esac
 if [ "$AGENT_SEL" = "codex" ] && [ -z "$CODEX_WIN" ] && [ -z "$CODEX_POSIX" ]; then
-    echo "setup.sh: --agent codex: the toolkit's Codex support is Windows-only (Codex on Linux, macOS or WSL is" >&2
+    echo "setup.sh: --agent codex: the toolkit's Codex support is Windows and macOS only (Codex on Linux or WSL is" >&2
     echo "not supported), and this folder is not a Windows path ($TOOLKIT_ROOT_WIN). Nothing was changed." >&2
     echo "Use --agent claude here." >&2
     exit 3

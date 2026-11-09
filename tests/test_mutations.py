@@ -24,7 +24,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import REPO, login_name
+from conftest import REPO, copy_repo, login_name
 
 BS = chr(92)
 CMD_ONLY = pytest.mark.skipif(sys.platform != "win32", reason="the CMD regression runs on Windows")
@@ -4211,9 +4211,17 @@ def test_a_skipped_anchor_excuses_its_twin_only_off_windows():
     assert _anchor_skipped_off_windows(5, "no tests ran in 0.1s\n", "linux") == ""  # a stale anchor stays red
 
 
+@pytest.fixture(autouse=True)
+def _drop_mutated_copy(tmp_path):
+    """Each mutation test makes a full toolkit copy (tests/ included) and pytest keeps every tmp_path until the
+    session ends: thousands of copies filled a disk. Remove the copy once its test is done; re-run one to inspect."""
+    yield
+    shutil.rmtree(tmp_path / "mutated", ignore_errors=True)
+
+
 def _mutate(tmp_path: Path, relpath: str, find: str, replace: str) -> Path:
     work = tmp_path / "mutated"
-    shutil.copytree(REPO, work, ignore=MUTATION_IGNORE)
+    copy_repo(work, ignore=MUTATION_IGNORE)
     target = work / relpath
     # io.open, not Path.read_text: the `newline` kwarg only exists on Path in
     # 3.13+, and line endings must be preserved or the mutation rewrites the
@@ -7567,7 +7575,7 @@ _T7 = [
      _T7S + "test_auto_configures_the_agents_found_on_path[none-found-means-all]", "t7-auto-none-found-means-all"),
     ("setup.sh", '    which claude >/dev/null 2>&1 && AGENTS_FOUND="claude"', "    true",
      _T7S + "test_auto_configures_the_agents_found_on_path[claude-only]", "t7-auto-detects-claude"),
-    ("setup.sh", '    if [ -n "$CODEX_WIN" ] && which codex >/dev/null 2>&1; then', "    if false; then",
+    ("setup.sh", '    if { [ -n "$CODEX_WIN" ] || [ -n "$CODEX_POSIX" ]; } && which codex >/dev/null 2>&1; then', "    if false; then",
      _T7S + "test_auto_configures_the_agents_found_on_path[codex-only]", "t7-auto-detects-codex"),
     # an unselected agent's files are kept as extracted
     ("setup.sh", '    *) DOC_ON="$DO_CODEX" ;;', "    *) DOC_ON=1 ;;",

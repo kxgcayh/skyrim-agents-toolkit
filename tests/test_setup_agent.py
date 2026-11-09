@@ -7,7 +7,7 @@ Rules under test, from the plan:
     plainly that agent is not configured;
   * every value is idempotent: a second run changes no byte;
   * a partial state (a half-filled CLAUDE.md, a lost paths file, a stale hooks.json.new) is repaired by a re-run;
-  * Codex is Windows-only and never marked trusted;
+  * Codex is Windows and macOS only and never marked trusted;
   * the Layer 2 lock is applied only with --lock (R3: off by default).
 """
 from __future__ import annotations
@@ -26,6 +26,7 @@ from conftest import BASH, BIN, REPO, game_root_win, make_game, run_setup
 WIN = sys.platform == "win32"
 windows_only = pytest.mark.skipif(not WIN, reason="the toolkit's Codex hooks are rendered on Windows only")
 posix_only = pytest.mark.skipif(WIN, reason="needs a non-Windows install root")
+CODEX_OS = WIN or sys.platform == "darwin"   # where setup.sh configures the Codex hooks
 DOC_MARKS = ("{{GAME_ROOT}}", "{{CONFIG_DIR}}", "{{LOADORDER_DIR}}", "{{MOD_MANAGER_PATHS}}")
 GUARD_FILES = [".claude/hooks/" + n for n in ("protect-bash.sh", "protect-files.sh", "protect-mcp.sh",
                                               "backup-before-edit.sh", "snapshot-before-tool.sh",
@@ -84,12 +85,12 @@ def test_help_exits_0_and_writes_nothing(game_dir):
     assert tree(game_dir) == before
 
 
-@posix_only
+@pytest.mark.skipif(CODEX_OS, reason="Codex is configured on Windows and macOS")
 def test_codex_by_name_off_windows_is_refused_before_anything_is_written(game_dir):
     before = tree(game_dir)
     r = run_setup(game_dir, args=("--agent", "codex"))
     assert r.returncode == 3, r.stdout + r.stderr
-    assert "Windows-only" in r.stderr and "Nothing was changed" in r.stderr
+    assert "Windows and macOS only" in r.stderr and "Nothing was changed" in r.stderr
     assert tree(game_dir) == before
 
 
@@ -106,17 +107,17 @@ AGENT_CASES = {
 @pytest.mark.parametrize("value", sorted(AGENT_CASES))
 def test_each_value_configures_exactly_its_agents(game_dir, value):
     claude, codex = AGENT_CASES[value]
-    if value == "codex" and not WIN:
-        pytest.skip("--agent codex off Windows is refused (test_codex_by_name_off_windows_...)")
+    if value == "codex" and not CODEX_OS:
+        pytest.skip("--agent codex off Windows and macOS is refused (test_codex_by_name_off_windows_...)")
     r = run_setup(game_dir, args=("--agent", value))
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
     out = r.stdout
     assert configured(game_dir, "CLAUDE.md") is claude
     # AGENTS.md serves Codex and every other agent: filled whenever Codex is selected, on any OS (T7 review I1).
     assert configured(game_dir, "AGENTS.md") is codex
-    # Only Codex's hooks are Windows-only.
-    assert codex_rendered(game_dir) is (codex and WIN)
-    codex = codex and WIN
+    # Only Codex's hooks are platform-limited (Windows and macOS).
+    assert codex_rendered(game_dir) is (codex and CODEX_OS)
+    codex = codex and CODEX_OS
     # Every guard file runs the one engine on the one interpreter, whichever agent was selected.
     for rel in GUARD_FILES:
         assert "{{PYTHON_PATH}}" not in (game_dir / rel).read_text(encoding="utf-8"), rel
@@ -129,10 +130,10 @@ def test_each_value_configures_exactly_its_agents(game_dir, value):
     if not codex:
         assert "Codex:       NOT CONFIGURED" in out
         assert ("AGENTS.md: not configured by this run" in out) is (not AGENT_CASES[value][1])
-        if WIN:
+        if CODEX_OS:
             assert "WITHOUT the toolkit's hooks" in out and "bash setup.sh --agent codex" in out
         else:
-            assert "Codex support is Windows-only" in out
+            assert "Codex support is Windows and macOS only" in out
         assert "Codex users: Codex runs these hooks only after you approve them" not in out
     else:
         assert "/hooks, and approve the 2 Skyrim toolkit hooks" in out
