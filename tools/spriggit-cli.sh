@@ -47,7 +47,10 @@ if [ "$(uname -s)" = Darwin ] && ! type -P dotnet >/dev/null 2>&1; then
     [ -x "$DOTNET_BIN" ] && PATH="$PATH:${DOTNET_BIN%/*}"
 fi
 SPRIGGIT=()
-if type -P spriggit >/dev/null 2>&1; then SPRIGGIT=(spriggit)
+# A locally built fork (tools/Spriggit, git-ignored, never shipped) wins when present; it runs on macOS as is.
+LOCAL_FORK="$SCRIPT_DIR/Spriggit/publish/Spriggit.CLI"
+if [ -x "$LOCAL_FORK" ]; then SPRIGGIT=("$LOCAL_FORK")
+elif type -P spriggit >/dev/null 2>&1; then SPRIGGIT=(spriggit)
 elif type -P dotnet >/dev/null 2>&1; then SPRIGGIT=(dotnet tool run spriggit --)
 elif [ "$(uname -s)" != Darwin ]; then echo '[spriggit-cli] spriggit not found: install the Spriggit.CLI dotnet tool' >&2; exit 1; fi  # macOS may still run the DLL
 # macOS: the CLI starts its translation helper as "Spriggit.Yaml.Skyrim.exe", which does not exist there
@@ -60,7 +63,7 @@ find_translation_dll() {
         -name Spriggit.Yaml.Skyrim.dll -path "*/${ver:-*}/*" 2>/dev/null || true; } | sort | tail -1
 }
 run_spriggit() {
-    if [ "$(uname -s)" = Darwin ] && type -P dotnet >/dev/null 2>&1; then
+    if [ "$(uname -s)" = Darwin ] && [ "${SPRIGGIT[0]:-}" != "$LOCAL_FORK" ] && type -P dotnet >/dev/null 2>&1; then
         case "${1:-}" in serialize|deserialize)
             local dll; dll="$(find_translation_dll "$@")"
             if [ -z "$dll" ] && [ "${#SPRIGGIT[@]}" -gt 0 ]; then "${SPRIGGIT[@]}" "$@" >/dev/null 2>&1 || true; dll="$(find_translation_dll "$@")"; fi  # one CLI run unpacks the helper
