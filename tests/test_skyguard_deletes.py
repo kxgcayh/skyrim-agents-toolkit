@@ -632,3 +632,75 @@ def test_the_find_parse_keeps_the_start_beside_the_narrowed_name():
     assert [e.argv for e in ex if e.program == "find.delete"] == [("/a/x.esm",)]
     ex = shellparse.parse("find /a -name x.esm -exec cp {} /b \\;", "bash").execs
     assert {e.argv for e in ex if e.program == "cp"} == {("/a/x.esm", "/b")}     # a copy still names the file
+
+
+# ----------------------------------------------------------------------------------------------- temp deletes
+@pytest.mark.parametrize("word,want", [
+    ("/tmp/x.$$", "/tmp/x.0"),
+    ("/tmp/x.${$}", "/tmp/x.0"),
+    ("/private/tmp/x.$RANDOM", "/private/tmp/x.0"),
+    ("/var/tmp/a/x.$!", "/var/tmp/a/x.0"),
+    ("/var/folders/ab/cd/T/x.$$", "/var/folders/ab/cd/T/x.0"),
+    ("/tmp/$$", "/tmp/0"),
+    ("/tmp/$X", None),                            # an arbitrary variable may hold a path
+    ("/tmp/x.$$$X", None),
+    ("/tmp/$$/x", None),                          # the variable is in a directory component
+    ("/tmp/x.$$/../y", None),
+    ("/tmp/x.`id`", None),
+    ("/etc/x.$$", None),                          # outside the temp folders
+    ("/tmp", None),
+    ("x.$$", None),                               # relative
+    ("/tmp/../etc/x.$$", None),                   # leaves the temp folder once normalised
+])
+def test_temp_pid_path(word, want):
+    assert deletes._temp_pid_path(word, "/home/u", "bash", {}) == want, word
+
+
+def test_a_pid_suffix_is_read_in_bash_only():
+    assert deletes._temp_pid_path("/tmp/x.$$", None, "powershell", {}) is None
+    assert deletes._temp_pid_path("/tmp/x.$$", None, "cmd", {}) is None
+
+
+@pytest.mark.parametrize("value,ok", [
+    ("/tmp/.skyguard-mktemp", True),
+    ("/tmp/.skyguard-mktemp/sub", True),
+    ("/tmp/.skyguard-mktemp/a/b.txt", True),
+    ("/tmp/.skyguard-mktemp/*", False),           # a failed mktemp would make this /*
+    ("/tmp/.skyguard-mktemp/", False),
+    ("/tmp/.skyguard-mktemp/..", False),
+    ("/tmp/.skyguard-mktemp/a/../b", False),
+    ("/tmp/.skyguard-mktemp/a b", False),
+    ("/tmp/.skyguard-mktempx", False),
+    ("-f/tmp/.skyguard-mktemp", False),
+    ("/tmp/x", True),                             # not a stand-in: not this function's business
+])
+def test_mktemp_use_ok(value, ok):
+    assert deletes._mktemp_use_ok(value) is ok, value
+
+
+def _decide_in(install, command, cwd="/work"):
+    r = paths.roots(install, "", {"SKYRIM_GAME_ROOT": install})
+    a = audit.Audit("")
+    a.raw = lambda line: None
+    v = shell_rules.decide(command, r, a, cwd=cwd, shell="bash", env=os.environ)
+    return v.decision, {rid for rid, _ in a.fired}
+
+
+def test_a_protected_root_inside_a_temp_folder_still_denies_a_pid_delete():
+    got = _decide_in("/tmp/inst", 'rm -rf /tmp/inst/Data/x.$$; ls /tmp/inst')
+    assert got == ("deny", {"S-DEL-INSTALL"}), got
+
+
+def test_a_protected_root_inside_a_temp_folder_still_denies_a_mktemp_path_climbing_into_it():
+    got = _decide_in("/tmp/inst", 'W=$(mktemp -d); rm -rf "$W"/../inst/Data; ls /tmp/inst')
+    assert got[0] == "deny", got
+
+
+def test_a_temp_delete_is_allowed_when_the_command_names_the_install():
+    assert decide('rm -f /tmp/x.$$; ls "' + GAME + '"', cwd="C:/Temp")[0][0] == "allow"
+    assert decide('W=$(mktemp -d); rm -rf "$W"; ls "' + GAME + '"', cwd="C:/Temp")[0][0] == "allow"
+
+
+def test_the_pid_rule_does_not_touch_a_literal_delete_of_the_install():
+    got = decide('rm -rf "' + GAME + '/Data"; rm -f /tmp/x.$$', cwd="C:/Temp")
+    assert got[0][0] == "deny" and "S-DEL-INSTALL" in got[1], got

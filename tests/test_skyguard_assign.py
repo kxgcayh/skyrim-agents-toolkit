@@ -401,3 +401,64 @@ def test_poison_turns_off_every_variable_in_the_command():
 def test_a_stray_closer_turns_resolution_off():
     assert _subst('fi; if y; then D=/x; fi; rm "$D"') == {}
     assert _subst('}; D=/x; rm "$D"') == {}
+
+
+# ----------------------------------------------------------------------------------------------- mktemp (temp-delete rule)
+@pytest.mark.parametrize("rhs,ok", [
+    ("$(mktemp)", True),
+    ("$(mktemp -d)", True),
+    ('"$(mktemp -d)"', True),
+    ("`mktemp -d`", True),
+    ("$(mktemp -d -t dbx)", True),
+    ("$(mktemp -d --tmpdir)", True),
+    ("$(mktemp -p /tmp x.XXXXXX)", True),
+    ("$(mktemp --tmpdir=/private/tmp x.XXXXXX)", True),
+    ("$(mktemp -d /tmp/x.XXXXXX)", True),
+    ("$(mktemp -d /var/tmp/a/b.XXXXXX)", True),
+    ("$(mktemp -d /var/folders/ab/cd_ef/T/x.XXXXXX)", True),
+    ("$(mktemp -d x.XXXXXX)", False),                    # a relative template, no -t or -p: made in the cwd
+    ("$(mktemp -d /srv/x.XXXXXX)", False),               # a template outside the temp folders
+    ("$(mktemp -p /srv x.XXXXXX)", False),
+    ("$(mktemp -d /tmp/../srv/x)", False),               # a .. component
+    ("$(mktemp -d /tmp/./x)", False),
+    ("$(mktemp -d /tmp/a b)", False),                    # a second template
+    ("$(mktemp -d -p /tmp /tmp/x.XXXXXX)", False),       # -p with an absolute template
+    ("$(mktemp -u)", False),                             # an option outside the list
+    ("$(mktemp --suffix=x)", False),
+    ("$(mktemp -dt dbx)", False),                        # a flag cluster is not read
+    ("$(mktemp -d; echo x)", False),
+    ("$(mktemp -d | cat)", False),
+    ("$(echo /tmp/x)", False),
+    ("$(mktemp -d $X)", False),
+    ("$(mktemp -d $(pwd))", False),
+    ("mktemp -d", False),                                # not a substitution
+    ("$(mktemp", False),
+])
+def test_mktemp_value(rhs, ok):
+    assert assign.mktemp_value(rhs) == (assign.MKTEMP_STANDIN if ok else None), rhs
+
+
+def test_a_mktemp_variable_is_kept_apart_from_literal_ones():
+    s = _subst('W=$(mktemp -d); rm -rf "$W"')
+    assert s == {assign.TMP_KEY + "$W": assign.MKTEMP_STANDIN}
+    assert dict(s).get("$W") is None                      # every reader that looks the word up still sees it unresolved
+
+
+def test_a_mktemp_variable_never_reaches_another_rule():
+    for cmd in ('W=$(mktemp -d); git -C "$W" checkout -- .', 'W=$(mktemp -d); cp a.esp "$W"'):
+        e = [x for x in shellparse.parse(cmd, "bash").execs if x.program in ("git", "cp")][0]
+        assert e.subst and all(w.startswith(assign.TMP_KEY) for w, _ in e.subst), e.subst
+        assert "$W" in e.argv and "$W" not in deletes.substituted(e).argv   # only the delete rules decode it
+
+
+def test_cd_to_a_mktemp_variable_stays_an_unknown_folder():
+    ex = shellparse.parse('W=$(mktemp -d); cd "$W"; rm -rf Data', "bash").execs
+    assert [e.cd_before for e in ex if e.program == "rm"] == ["?"]
+
+
+def test_a_mktemp_variable_is_unresolved_when_tmpdir_is_written_or_the_name_reassigned():
+    assert _subst('TMPDIR=/x; W=$(mktemp -d); rm -rf "$W"') == {}
+    assert _subst('W=$(mktemp -d); W=/y; rm -rf "$W"') == {}
+    assert _subst('W=$(mktemp -d) && x; rm -rf "$W"') != {}
+    assert _subst('echo a | W=$(mktemp -d); rm -rf "$W"') == {}
+    assert _subst('f() { W=$(mktemp -d); }; rm -rf "$W"') == {}

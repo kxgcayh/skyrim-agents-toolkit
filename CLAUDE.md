@@ -36,6 +36,7 @@ All under `tools/`:
 | **skyrim-winner** | Which plugin wins a record, over the FULL load order | `bash tools/skyrim-winner.sh <winner\|chain\|conflicts> ...` |
 | **papyrus-triage** | `Papyrus.N.log` → bucketed, attributed counts | `python tools/papyrus-triage.py [logfile] [--top N] [--all]` |
 | **crash-triage** | CrashLogger dumps → ranked signatures | `python tools/crash-triage.py [dir\|file] [--frames N] [--all]` |
+| **mod-sizes** | MO2 mods by size; search by mod or plugin name (read-only) | `python tools/mod-sizes.py [search] [--enabled] [--top N]` |
 | **DevBench** | **LIVE in-game** inspect / console / Papyrus / scenario | `bash tools/devbench-cli.sh <command>`; skill `devbench` |
 
 - **Caprica**: run from `Data/Scripts/Source` with bare filename and `-i` for base sources (skill `skyrim-context`).

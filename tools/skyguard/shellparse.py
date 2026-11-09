@@ -507,6 +507,8 @@ class _Scanner:
             return v
         split_safe = self.DIALECT != "bash" or self.ctx.writes("IFS") == 0
         s = assign.expand_word(w.raw, self.DIALECT, lambda name: self.lookup(cmd, name), split_safe)
+        if s and assign.MKTEMP_STANDIN in s:
+            return v                    # a mktemp path is a stand-in: a failed mktemp leaves it empty and `cd` stays put
         return s if s and s != "-" else v
 
     # -- Task 7b: literal assignments in the ROOT command's top-level statement list (see assign.py)
@@ -662,6 +664,8 @@ class _Bash(_Scanner):
             if "[" in lhs or lhs.endswith("+="):
                 continue                                        # an element, or an append: not the whole value
             value = assign.bash_value(w.raw[m.end():])
+            if value is None and self.ctx.writes("TMPDIR") == 0:
+                value = assign.mktemp_value(w.raw[m.end():])    # `W=$(mktemp -d)`: a path inside a temp dir
             if value is not None:
                 out.append((_VARNAME.match(lhs).group(), value))
         return out
@@ -2686,7 +2690,8 @@ def _subst(sc: _Scanner, rec: _Cmd, ws, vals) -> Tuple[Tuple[str, str], ...]:
             continue
         s = assign.expand_word(w.raw, sc.DIALECT, lambda name: sc.lookup(rec, name), split_safe)
         got[val] = s if got.get(val, s) == s else None
-    return tuple((k, v) for k, v in got.items() if v is not None and v != k)
+    return tuple(((assign.TMP_KEY + k) if assign.MKTEMP_STANDIN in v else k, v)
+                 for k, v in got.items() if v is not None and v != k)
 
 
 def _records_to_execs(sc: _Scanner, recurse: bool = True) -> None:

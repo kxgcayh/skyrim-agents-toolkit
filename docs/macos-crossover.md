@@ -26,9 +26,9 @@ and MO2 instance on an external volume. Versions of Wine-side tools move; treat 
 | `caprica` | macOS, natively | **Measured 2026-11-04**: built from the kxgcayh/Caprica fork (commit d8f7064, see `installing-tools.md`); compiles a `.psc` to a valid `.pex`. No CrossOver needed. The older CrossOver route for `Caprica.exe` is in `papyrus-caprica-crossover.md` |
 | `champollion` | macOS, natively | **Measured 2026-11-04**: built from the kxgcayh/Champollion fork (commit 23e947a, see `installing-tools.md`); `champollion --version` prints v1.3.2. No CrossOver needed |
 | Spriggit 0.41.0 | macOS, natively, **but not through the CLI** | **Measured 2026-11-04**: `spriggit serialize` fails (`Win32Exception (2)`: it tries to start `Spriggit.Yaml.Skyrim.exe` from `$TMPDIR/Spriggit/Translations/...`); the CLI's deserialize failed 2026-10-28 with `DllNotFoundException: kernel32.dll` from Noggog's `ChildProcessTracker`. Calling the translation DLL directly skips both: `dotnet "$TMPDIR/Spriggit/Translations/Spriggit.Yaml.Skyrim/0.41.0/.store/spriggit.yaml.skyrim/0.41.0/spriggit.yaml.skyrim/0.41.0/tools/net10.0/any/Spriggit.Yaml.Skyrim.dll" serialize -i <esp> -o <dir> -g SkyrimSE -p Spriggit.Yaml.Skyrim -v 0.41.0` (and `deserialize -i <dir> -o <esp>`); a round trip of `tests/fixtures/spriggit/FixLimitsRoundTrip.esp` came back byte-identical. The folder appears after one CLI run. `tools/spriggit-cli.sh` goes through the CLI, so it fails here too |
-| AutoMod CLI | .NET 10 | **Inferred**: .NET runs on macOS, but AutoMod downloads Windows tools for some modules. Not tried |
+| AutoMod CLI (`nif` module) | .NET 10 natively; its `nif-tool.exe` through CrossOver's `wine` | **Measured 2026-11-05**: `bash tools/automod-cli.sh --rebuild` builds v1.11.2 for net10.0 (.NET SDK 10.0.402); `nif info` runs natively. `nif list-textures`, `list-strings`, `shader-info` and `verify` call `tools/automod/tools/nif-tool/nif-tool.exe`, a Windows PE, so put the real binary there as `nif-tool-win.exe` and make `nif-tool.exe` an executable bash shim that runs `"$CX/bin/wine" --bottle SkyGames --no-convert -- "$(dirname "$0")/nif-tool-win.exe" "$@"` (with `CX_BOTTLE_PATH="$HOME/Bottles"`, `WINEDEBUG=-all`). Unix paths in the arguments resolve through Wine's `Z:` drive; about 0.5 s per call. All four commands worked on SSE meshes. Other AutoMod modules not tried |
 | ReSaver CLI | Java | **Inferred**: needs a real JDK 17+ on the Mac |
-| DevBench (live in-game) | inside the game, in the bottle | **Inferred**: its localhost server is reachable from macOS only if CrossOver exposes the port. Not tried |
+| DevBench (live in-game) | inside the game, in the bottle | **Measured** 2026-11-05: 1.32.0 loads on AE 1.7.104 under CrossOver, and wineserver listens on 127.0.0.1:8920, reachable from macOS with no setup |
 | Mod Organizer 2, LOOT, BodySlide, Wabbajack | Windows apps in the bottle | **Measured (notes)**: they run, with the fixes in section 5 and the pages it links |
 
 ## 2. Bash 4.4 or newer is required for the hooks
@@ -184,6 +184,26 @@ Traps hit while doing this (2026-11-01):
 - **Computer-use on a CrossOver window:** typing turns every character into "a" and `ctrl+v` does nothing. Write the
   clipboard, wait about 2 s (or the old clipboard pastes), triple-click the field, then `cmd+v` (CrossOver maps Cmd to Ctrl).
 
+### The same from an MCP client: `tools/crossover-mcp.py`
+
+A stdio MCP server, standard library only, for clients without a shell. Tools: `list_bottles`, `run` (exit code
+and output; `wait=false` for GUI apps), `stop_bottle` (`wineserver -k`, every process in the bottle), `launch_mo2`,
+`mo2_log` and `screenshot`. Register it with, for Claude Code:
+
+```bash
+claude mcp add crossover -e CX_BOTTLE=<bottle> -e CX_BOTTLE_PATH="$HOME/Bottles" -e 'CX_MO2_DIR=D:\Modding\MO2' \
+  -- python3 "$PWD/tools/crossover-mcp.py"
+```
+
+`launch_mo2` starts a portable MO2 folder (one with `portable.txt`) freely. A folder without it opens a global
+instance, which is the live mod setup, and starts only when the call passes `live=true`. Optional `instance` (`-i`),
+`profile` (`-p`) and `executable` (an MO2 executable entry, run through the virtual file system as `moshortcut://`).
+`dry_run=true` returns the exact `wine` command and whether the folder is live, and starts nothing. `screenshot`
+returns the screen as an image (to check a Wine window opened) and deletes the file before returning; it needs Screen
+Recording permission for the app that runs the server.
+Measured 2026-11-05: `run`, `stop_bottle`, the live refusal, `mo2_log`, a detached launch from a portable stand-in
+folder, and a live launch (`live=true`): MO2 2.5.3-beta.12 opened its window on `SSEAE`, profile `Overhaul 1.1`.
+
 ## 7. Building Windows tools from the Mac (**notes**)
 
 Windows `.exe` tools can be cross-compiled on macOS with `clang-cl` + `lld-link` against a Windows SDK/CRT sysroot
@@ -201,7 +221,8 @@ DLLs. `skse-cross-compile.md` is the Linux/devcontainer variant, written for Lin
 ## 8. Not covered / still to verify
 
 - Whether `XEditLib`-based tools can be driven from the Mac at all, e.g. by running them under CrossOver's `wine`.
-- AutoMod on macOS; DevBench reachability from the Mac side. (Champollion, Caprica and Spriggit are measured in section 1;
+- AutoMod modules other than `nif`; DevBench reachability from the Mac side. (Champollion, Caprica, Spriggit and AutoMod
+  `nif` are measured in section 1;
   the Synthesis WPF black-window fix is in section 5.)
 - A macOS test run of the toolkit's own suite: many tests assume Git Bash and Windows paths (145 failures in the five
   hook/setup suites, identical to the upstream commit, on Python 3.15).
