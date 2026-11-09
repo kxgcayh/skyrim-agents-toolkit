@@ -164,7 +164,7 @@ For **creating or editing ESP records**, prefer Spriggit over xelib. Spriggit se
 
 **Serialize → edit the YAML → the user reviews it → deserialize**, always through `bash tools/spriggit-cli.sh` (raw
 `spriggit` fails on nested paths). Spriggit **silently drops unknown YAML fields**: serialize with `-u`, round-trip
-verify every new field, pass `--PackageVersion` as `spriggit --version` prints it. Commands and notes: skill `skyrim-context`.
+verify every new field, pass `--PackageVersion` as the translation package version (`spriggit --version` prints it for the pinned CLI; a local fork prints its own version, so use `0.41.0` there). Commands and notes: skill `skyrim-context`.
 
 ### When to Use Which
 - **Spriggit**: Creating new ESPs, editing existing records, any task where you're modifying specific fields.
