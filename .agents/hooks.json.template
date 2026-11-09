@@ -1,0 +1,44 @@
+{
+  "skyguard-shell": {
+    "PreToolUse": [
+      {
+        "matcher": "run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"{{TOOLKIT_ROOT}}/.agents/hooks/agy-guard.py\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  },
+  "skyguard-files": {
+    "PreToolUse": [
+      {
+        "matcher": "write_file|edit_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"{{TOOLKIT_ROOT}}/.agents/hooks/agy-guard.py\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  },
+  "skyguard-mcp": {
+    "PreToolUse": [
+      {
+        "matcher": "call_mcp_tool",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"{{TOOLKIT_ROOT}}/.agents/hooks/agy-guard.py\"",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}

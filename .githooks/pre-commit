@@ -1,0 +1,12 @@
+#!/bin/sh
+# Refuse to commit machine-local paths. Scans only the lines being added.
+# Bypass for a deliberate case: git commit --no-verify
+hits=$(git diff --cached -U0 --no-color --diff-filter=AM | grep -E '^\+[^+]' \
+  | grep -E '/Users/[A-Za-z0-9._-]+|/Volumes/[A-Za-z0-9._ -]+/|[/]opt/homebrew|C:[/\\]+Users[/\\]+[A-Za-z0-9._-]+|/home/[a-z][a-z0-9_-]+/' \
+  | grep -vE '/home/u"|/Users/(Shared|you|user|name|<)')
+if [ -n "$hits" ]; then
+  echo "pre-commit: local path(s) in staged changes:" >&2
+  echo "$hits" | cut -c1-200 | head -20 >&2
+  echo "Use a placeholder/template (see .agents/hooks.json.template) or ignore the file. Bypass: --no-verify" >&2
+  exit 1
+fi

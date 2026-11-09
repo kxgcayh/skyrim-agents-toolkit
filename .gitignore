@@ -50,3 +50,12 @@ tools/pynifly/
 tools/resaver-cli/ReSaver.jar
 tools/resaver-cli/lib/
 tools/resaver-cli/*.class
+
+# Machine-local agent/MCP config and diagnostics
+.claude/diag/
+
+# Rendered from .agents/hooks.json.template by setup.sh (holds this machine's absolute path)
+/.agents/hooks.json
+
+# This machine's paths for setup.sh (template: setup.local.env.example)
+/setup.local.env

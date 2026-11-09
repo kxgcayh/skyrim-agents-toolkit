@@ -73,6 +73,27 @@ TOOLKIT_DIR="$(pwd)"
 TOOLKIT_ROOT_WIN=$(pwd -W 2>/dev/null || pwd)
 TOOLKIT_ROOT_WIN=$(printf '%s' "$TOOLKIT_ROOT_WIN" | tr '\134' '/')
 
+# Templates setup.sh fills with machine paths. Those with uncommitted edits NOW are remembered, so the
+# skip-worktree step at the end never hides real work.
+FILLED_TEMPLATES="CLAUDE.md AGENTS.md .devcontainer/devcontainer.json .claude/hooks/*.sh .codex/hooks.json .codex/hooks/skyguard-entry.sh .codex/hooks/skyguard-entry.ps1"
+DIRTY_AT_START=" $(cd "$TOOLKIT_DIR" && git diff --name-only HEAD -- $FILLED_TEMPLATES 2>/dev/null | tr '\n' ' ') "
+
+# --- This machine's paths (setup.local.env, gitignored; format: setup.local.env.example) ---
+# For installs setup cannot detect (CrossOver/Wine on macOS). Read as KEY=VALUE data, never sourced; a variable
+# already set in the environment wins.
+LOCAL_ENV_KEYS=" SKYRIM_GAME_DIR SKYRIM_CONFIG_DIR SKYRIM_LOADORDER_DIR SKYRIM_MO2_MODS SKYRIM_MO2_OVERWRITE "
+if [ -f "$TOOLKIT_DIR/setup.local.env" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        case "$line" in *=*) ;; *) continue ;; esac
+        k="${line%%=*}"; v="${line#*=}"
+        case "$LOCAL_ENV_KEYS" in *" $k "*) ;; *) continue ;; esac
+        v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"
+        [ -n "${!k:-}" ] || export "$k=$v"
+    done < "$TOOLKIT_DIR/setup.local.env"
+    echo "Machine paths read from setup.local.env"
+fi
+
 # Where the game lives: either --game <dir>, or $SKYRIM_GAME_DIR, or $SKYRIM_GAME_ROOT, else the toolkit directory.
 if [ -n "$GAME_ARG" ]; then
     GAME_DIR="$GAME_ARG"
@@ -93,6 +114,8 @@ GAME_ROOT_WIN="$( { cd "$GAME_DIR" 2>/dev/null && (pwd -W 2>/dev/null || pwd); }
 GAME_ROOT_WIN=$(printf '%s' "$GAME_ROOT_WIN" | tr '\134' '/')
 # The toolkit's Codex support is Windows-only: its hooks are rendered for a drive-letter root.
 case "$TOOLKIT_ROOT_WIN" in [A-Za-z]:/*) CODEX_WIN=1 ;; *) CODEX_WIN="" ;; esac
+# macOS: rendered by tools/codex-posix-setup.py (POSIX root, absolute bash 4.4+). Measured on Darwin only.
+CODEX_POSIX=""; [ -z "$CODEX_WIN" ] && [ "$(uname -s)" = "Darwin" ] && CODEX_POSIX=1
 # The root as a native Python opens it (every tools/*.py call below): the C:/ form wherever Git Bash's cygpath
 # exists -- the same as `pwd -W` normally -- else the shell's own path (Linux).
 PY_ROOT="$TOOLKIT_ROOT_WIN"
@@ -108,7 +131,7 @@ fi
 AGENTS_FOUND=""
 if [ "$AGENT_ARG" = "auto" ]; then
     which claude >/dev/null 2>&1 && AGENTS_FOUND="claude"
-    if [ -n "$CODEX_WIN" ] && which codex >/dev/null 2>&1; then AGENTS_FOUND="${AGENTS_FOUND:+$AGENTS_FOUND }codex"; fi
+    if { [ -n "$CODEX_WIN" ] || [ -n "$CODEX_POSIX" ]; } && which codex >/dev/null 2>&1; then AGENTS_FOUND="${AGENTS_FOUND:+$AGENTS_FOUND }codex"; fi
     case "$AGENTS_FOUND" in
         claude) AGENT_SEL="claude" ;;
         codex) AGENT_SEL="codex" ;;
@@ -123,7 +146,7 @@ case "$AGENT_SEL" in
     codex) DO_CODEX=1 ;;
     all) DO_CLAUDE=1; DO_CODEX=1 ;;
 esac
-if [ "$AGENT_SEL" = "codex" ] && [ -z "$CODEX_WIN" ]; then
+if [ "$AGENT_SEL" = "codex" ] && [ -z "$CODEX_WIN" ] && [ -z "$CODEX_POSIX" ]; then
     echo "setup.sh: --agent codex: the toolkit's Codex support is Windows-only (Codex on Linux, macOS or WSL is" >&2
     echo "not supported), and this folder is not a Windows path ($TOOLKIT_ROOT_WIN). Nothing was changed." >&2
     echo "Use --agent claude here." >&2
@@ -592,6 +615,18 @@ if [ -f "$MIG_ENV" ]; then
     fi
     # GAME_ROOT is never taken from it: setup runs IN the install, so the detected root is the truth.
 fi
+# Explicit machine paths (setup.local.env or the environment) win over detection: MO2 under CrossOver is not
+# detectable from macOS, and empty MO2 paths would drop the guards' mods/ and overwrite/ protection.
+[ -z "${SKYRIM_CONFIG_DIR:-}" ] || CONFIG_DIR="$SKYRIM_CONFIG_DIR"
+[ -z "${SKYRIM_LOADORDER_DIR:-}" ] || LOADORDER_DIR="$SKYRIM_LOADORDER_DIR"
+if [ -n "${SKYRIM_MO2_MODS:-}" ]; then
+    MO2_MODS="$SKYRIM_MO2_MODS"
+    MO2_OVERWRITE="${SKYRIM_MO2_OVERWRITE:-$(dirname "$MO2_MODS")/overwrite}"
+    [ -n "$MO2_INSTANCE" ] || MO2_INSTANCE="$(dirname "$MO2_MODS")"
+    if [ -n "${SKYRIM_LOADORDER_DIR:-}" ]; then
+        MO2_PROFILE_DIR="$SKYRIM_LOADORDER_DIR"; MO2_PROFILE="$(basename "$MO2_PROFILE_DIR")"
+    fi
+fi
 
 echo ""
 if [ -n "$MO2_INSTANCE" ]; then
@@ -856,6 +891,8 @@ CODEX_STATE="none"
 codex_same_root() {
     if [ -n "$CODEX_WIN" ]; then
         tr 'A-Z' 'a-z' < "$CODEX_DEFS" | grep -qF "$(printf '%s' "$TOOLKIT_ROOT_WIN/.codex/hooks/skyguard-entry.ps1" | tr 'A-Z' 'a-z')"
+    elif [ -n "$CODEX_POSIX" ]; then
+        grep -qF "$TOOLKIT_DIR/.codex/hooks/skyguard-entry.sh" "$CODEX_DEFS"
     else
         grep -qF "$TOOLKIT_ROOT_WIN/.codex/hooks/skyguard-entry.ps1" "$CODEX_DEFS"
     fi
@@ -875,9 +912,20 @@ rm -f "$CODEX_DEFS.new"
 if [ ! -f "$CODEX_DEFS" ]; then
     echo "  MISSING: .codex/hooks.json -- Codex has no toolkit hooks in this folder."
 elif grep -q '{{CODEX_ROOT' "$CODEX_DEFS"; then
-    if [ -z "$CODEX_WIN" ]; then
-        echo "  NOT CONFIGURED: the toolkit's Codex support is Windows-only (Codex on Linux or WSL is not"
-        echo "  supported). Claude Code is configured as usual."
+    if [ -n "$CODEX_POSIX" ]; then
+        CODEX_BASH=$(command -v bash)
+        if CODEX_ERR=$(python3 "$TOOLKIT_DIR/tools/codex-posix-setup.py" --python "${PYTHON_PATH:-$(command -v python3)}" --bash "$CODEX_BASH" --apply 2>&1); then
+            CODEX_STATE="configured"
+            echo "  Configured: .codex/hooks.json for macOS (bash $CODEX_BASH, root $TOOLKIT_DIR)"
+            echo "  Tip: git update-index --skip-worktree .codex/hooks.json .codex/hooks/skyguard-entry.sh keeps these local paths out of commits."
+        else
+            echo ""
+            echo "  !! CODEX HOOKS NOT CONFIGURED -- Codex will run WITHOUT the toolkit's safety hooks here."
+            echo "  !! $CODEX_ERR"
+        fi
+    elif [ -z "$CODEX_WIN" ]; then
+        echo "  NOT CONFIGURED: the toolkit's Codex support is Windows and macOS only (not Linux or WSL)."
+        echo "  Claude Code is configured as usual."
     elif [ -z "$PY_FOUND" ]; then
         echo "  NOT CONFIGURED: rendering the Codex hooks needs Python 3.8+. Install it and re-run setup.sh."
     else
@@ -922,6 +970,32 @@ if [ "$CODEX_STATE" = "configured" ]; then
     echo "Start Codex in the game folder itself, never a subfolder: from a subfolder no hook runs, and Codex does not tell you."
     echo "Check any time with: bash tools/hook-canary.sh"
 fi
+fi
+
+# --- Enable the pre-commit check that refuses machine-local paths (.githooks/pre-commit) ---
+# Left alone when the folder is not a git checkout or core.hooksPath is already set to something else.
+if [ -f "$TOOLKIT_DIR/.githooks/pre-commit" ] && git -C "$TOOLKIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    GH_CUR=$(git -C "$TOOLKIT_DIR" config --get core.hooksPath 2>/dev/null)
+    if [ -z "$GH_CUR" ]; then
+        git -C "$TOOLKIT_DIR" config core.hooksPath .githooks && echo "" && echo "Enabled git pre-commit check for local paths (core.hooksPath=.githooks)."
+    elif [ "$GH_CUR" != ".githooks" ]; then
+        echo "" && echo "  NOTE: core.hooksPath is '$GH_CUR'; the local-path pre-commit check (.githooks/pre-commit) is not enabled."
+    fi
+fi
+
+# --- Render the Antigravity hooks (.agents/hooks.json) from its template ---
+# Antigravity resolves a relative hook command against .agents/ and expands only ~, so the command needs an
+# absolute path; the rendered file is machine-local and gitignored. A root holding " \ or a newline would
+# break the JSON, so it is refused (a hook that cannot start lets every command RUN).
+if [ -f "$TOOLKIT_DIR/.agents/hooks.json.template" ]; then
+    echo ""
+    case "$TOOLKIT_DIR" in
+        *'"'*|*'\'*|*$'\n'*) echo "  !! .agents/hooks.json NOT rendered: the toolkit path holds a quote, backslash or newline." ;;
+        *) AGY_ROOT_ESC=$(printf '%s' "$TOOLKIT_DIR" | sed -e 's/[\\|&]/\\&/g')
+           sed "s|{{TOOLKIT_ROOT}}|$AGY_ROOT_ESC|g" "$TOOLKIT_DIR/.agents/hooks.json.template" > "$TOOLKIT_DIR/.agents/hooks.json.new" \
+               && mv -f "$TOOLKIT_DIR/.agents/hooks.json.new" "$TOOLKIT_DIR/.agents/hooks.json"
+           echo "Rendered .agents/hooks.json for $TOOLKIT_DIR" ;;
+    esac
 fi
 
 # --- Configure CLAUDE.md and AGENTS.md (replace path placeholders) ---
@@ -1174,8 +1248,8 @@ if [ "$CODEX_SUMMARY" = "both" ]; then
     echo "  Codex:       CONFIGURED -- approve the 2 hooks once in Codex's /hooks; until then Codex runs UNGUARDED."
 elif [ "$CODEX_SUMMARY" = "hooks-only" ]; then
     echo "  Codex:       hooks configured, but AGENTS.md has no paths filled in. To finish: bash setup.sh --agent codex"
-elif [ -z "$CODEX_WIN" ]; then
-    echo "  Codex:       NOT CONFIGURED -- the toolkit's Codex support is Windows-only."
+elif [ -z "$CODEX_WIN" ] && [ -z "$CODEX_POSIX" ]; then
+    echo "  Codex:       NOT CONFIGURED -- the toolkit's Codex support is Windows and macOS only."
 else
     echo "  Codex:       NOT CONFIGURED -- .codex/hooks.json is not rendered for this folder, so Codex runs here"
     echo "               WITHOUT the toolkit's hooks, and AGENTS.md may have no paths. To set it up: bash setup.sh --agent codex"
@@ -1274,5 +1348,18 @@ if [ -n "$WANT_LOCK" ] && [ "$LOCK_RC" != 0 ]; then
 fi
 if [ -n "$WANT_SURFER" ] && [ "$SURFER_RC" != 0 ]; then
     SETUP_RC=1
+fi
+# Tracked templates this run filled with machine paths: hide them from git (skip-worktree) so the paths are
+# never committed. Only a file whose committed copy has {{placeholders}} and whose working copy has none.
+# To change such a template later: git update-index --no-skip-worktree <file>
+if git -C "$TOOLKIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    for f in $(cd "$TOOLKIT_DIR" && echo $FILLED_TEMPLATES); do
+        [ -f "$TOOLKIT_DIR/$f" ] || continue
+        case "$DIRTY_AT_START" in *" $f "*) echo "  NOTE: $f had uncommitted edits before setup; not hidden from git -- check it for machine paths before committing."; continue ;; esac
+        git -C "$TOOLKIT_DIR" cat-file -e "HEAD:$f" 2>/dev/null || continue
+        git -C "$TOOLKIT_DIR" show "HEAD:$f" | grep -q '{{' || continue
+        grep -qE '\{\{(GAME_ROOT|CONFIG_DIR|PYTHON_PATH|BASH_PATH|CODEX_ROOT|DEVCONTAINER_)' "$TOOLKIT_DIR/$f" && continue
+        git -C "$TOOLKIT_DIR" update-index --skip-worktree "$f" 2>/dev/null || true
+    done
 fi
 exit "$SETUP_RC"
