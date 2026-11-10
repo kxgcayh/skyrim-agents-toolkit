@@ -599,10 +599,9 @@ def hashes(tool, published=None):
                                                        else "checksums")}]})
 
 REGISTRY = [
-    {"name": "House Carl", "pins": [("regex", PINNED_DOWNLOADS, table_row("House Carl")),
-                                    ("regex", "tools/housecarl_integration/__init__.py", r'UPSTREAM_VERSION = "(?P<v>\d+\.\d+\.\d+)"')],
-     "upstream": ("github", "Avick3110/houseCARL"),
-     "checks": [hashes("House Carl", "https://api.github.com/repos/Avick3110/houseCARL/releases/tags/v{v}")]},
+    # The fork's installing-tools.md has no House Carl row (its setup lives in docs/housecarl.md), so only the version pin is checked.
+    {"name": "House Carl", "pins": [("regex", "tools/housecarl_integration/__init__.py", r'UPSTREAM_VERSION = "(?P<v>\d+\.\d+\.\d+)"')],
+     "upstream": ("github", "Avick3110/houseCARL")},
     {"name": "House Carl MCP SDK", "pins": [("regex", "tools/housecarl-requirements.txt", r"(?m)^mcp==(?P<v>\d+\.\d+\.\d+)"),
                                              ("regex", "tools/housecarl_integration/__init__.py", r'MCP_VERSION = "(?P<v>\d+\.\d+\.\d+)"'),
                                              ("regex", "tools/housecarl-requirements.lock", r"(?m)^mcp==(?P<v>\d+\.\d+\.\d+)")],
@@ -685,23 +684,24 @@ REGISTRY = [
     {"name": "CrashLoggerSSE", "upstream": ("github", "alandtse/CrashLoggerSSE"), "nexus": ("skyrimspecialedition", 59818),
      "not_delivered": "a game mod the user installs with their own mod manager; the toolkit never installs or names a version of it; crash-triage reads the dumps of whatever version is installed"},
     {"name": "SKSE VR", "upstream": ("nexus", "skyrimspecialedition", 30457), "not_delivered": "a game mod the user installs with their own mod manager; the toolkit never installs or names a version of it"},
-    {"name": "Champollion", "pins": [("regex", PINNED_DOWNLOADS, table_row("Champollion"))],
-     "upstream": ("github", "Orvid/Champollion"),
-     "refs": [{"pattern": r"Champollion[. ](?P<v>v\d+\.\d+\.\d+)"}],
-     "checks": [hashes("Champollion")]},
-    {"name": "Caprica", "pins": [("regex", PINNED_DOWNLOADS, table_row("Caprica"))], "upstream": ("github", "Orvid/Caprica"),
-     "refs": [{"pattern": r"Caprica[. ](?P<v>v\d+\.\d+\.\d+)"}],
-     "checks": [hashes("Caprica")]},
+    {"name": "Champollion", "pins": [("regex", PINNED_DOWNLOADS, r"kxgcayh/Champollion>[^\n]*?commit `(?P<v>[0-9a-f]{40})`")],
+     "upstream": ("github-head", "kxgcayh/Champollion"),   # the fork publishes no releases or tags: pinned to a main commit
+     "refs": [{"pattern": r"(?:kxgcayh/Champollion\S*(?: fork)? (?:at |\()?commit |Champollion checkout )(?P<v>[0-9a-f]{7,40})\b",
+               "compare": "prefix"}]},
+    {"name": "Caprica", "pins": [("regex", PINNED_DOWNLOADS, r"kxgcayh/Caprica>[^\n]*?commit `(?P<v>[0-9a-f]{40})`")],
+     "upstream": ("github-head", "kxgcayh/Caprica"),   # like Champollion: a fork with no releases, pinned to a main commit
+     "refs": [{"pattern": r"(?:kxgcayh/Caprica\S*(?: fork)? (?:at |\()?commit |Caprica checkout )(?P<v>[0-9a-f]{7,40})\b",
+               "compare": "prefix"}]},
     {"name": "xeditlib", "pins": [("regex", "package.json", r"xeditlib/tar\.gz/(?P<v>[0-9a-f]{40})"),
                                   ("regex", "package-lock.json", r"xeditlib/tar\.gz/(?P<v>[0-9a-f]{40})")],
-     "refs": [{"pattern": r"WingedGuardian/xeditlib#(?P<v>[0-9a-f]{40})"},
+     "refs": [{"pattern": r"(?:kxgcayh|WingedGuardian)/xeditlib#(?P<v>[0-9a-f]{40})"},
               {"pattern": r"(?:xeditlib/tar\.gz/|commit `)(?P<v>[0-9a-f]{7,40})", "line": r"xeditlib",
                "compare": "prefix"},
               {"pattern": r'(?m)^\s*echo "\s*xeditlib\b[^"\n]*?= commit (?P<v>[0-9a-f]{7,40})',
                "compare": "prefix"},
-              {"pattern": r"\bnpm (?:install|i)\b(?P<tail>[^\n`\"']*WingedGuardian/xeditlib[^\n`\"']*)",
+              {"pattern": r"\bnpm (?:install|i)\b(?P<tail>[^\n`\"']*(?:kxgcayh|WingedGuardian)/xeditlib[^\n`\"']*)",
                "version": r"xeditlib#(?P<v>[0-9a-f]{40})", "unpinned": "xeditlib install without #<commit>"}],
-     "checks": [("commit_package", {"repo": "WingedGuardian/xeditlib", "package": "xeditlib",
+     "checks": [("commit_package", {"repo": "kxgcayh/xeditlib", "package": "xeditlib",
                   "version_sites": [("json", "package-lock.json", ["packages", "node_modules/xeditlib", "version"]),
                                     ("regex", PINNED_DOWNLOADS, r"xeditlib v(?P<v>\d+\.\d+\.\d+) = commit")]})]},
     {"name": "zEdit", "upstream": ("github", "z-edit/zedit"),
@@ -880,6 +880,8 @@ def latest_of(f, upstream, pinned):
     kind = upstream[0]
     if kind == "github":
         return gh_latest(f, upstream[1])
+    if kind == "github-head":
+        return gh_api(f, "repos/%s/commits/HEAD" % upstream[1])["sha"]
     if kind == "github-pre":
         return gh_latest(f, upstream[1], prerelease=True)
     if kind == "github-commit":
@@ -966,11 +968,14 @@ def audit_entry(f, repo, spec, rows, ctx):
                 rows.append(Row(name, "version", None, latest, UNPINNED, "recommended without a pin"))
                 return
             cmp_pin, cmp_latest = shown_pin, latest.split(" ")[0]
-            if upstream[0] == "github-commit":
-                # Commits have no order to compare: the pin is the tip, or upstream has moved on past it.
-                st, why = (OK, "") if same(cmp_pin, cmp_latest, "prefix") else (NEWER, "upstream head moved past the pin")
+            if same(cmp_pin, cmp_latest, "prefix" if upstream[0] == "github-commit" else compare):
+                st, why = OK, ""
+            elif upstream[0] == "github-commit":   # commits have no order to compare: upstream moved on past the pin
+                st, why = NEWER, "upstream head moved past the pin"
+            elif upstream[0] == "github-head":     # a branch-head pin: any other head means it moved on
+                st, why = NEWER, "branch head moved on (reported, not a failure)"
             else:
-                st, why = (OK, "") if same(cmp_pin, cmp_latest, compare) else version_status(cmp_pin, cmp_latest)
+                st, why = version_status(cmp_pin, cmp_latest)
             if st == NEWER and spec.get("newer_note"):
                 why = spec["newer_note"]
             rows.append(Row(name, "version", shown_pin, latest, st, why))
@@ -1442,7 +1447,9 @@ EXACT_NPM = re.compile(r"(?:@[\w.-]+/)?[\w.-]+@\d+\.\d+\.\d+(?:-[\w.]+)?")
 COMMIT_NPM = re.compile(r"(?:github:)?[\w.-]+/[\w.-]+#[0-9a-f]{40}")
 EXACT_PY = re.compile(r"[\w.\-\[\]]+==\d+(?:\.\d+)+")
 # A clone is pinned when it names a tag AND something checks the commit after cloning: repo -> (file, proof regex).
-VERIFIED_CLONES = {"SpookyPirate/spookys-automod-toolkit": ("tools/automod-cli.sh", r'PIN_COMMIT="[0-9a-f]{40}"')}
+VERIFIED_CLONES = {"SpookyPirate/spookys-automod-toolkit": ("tools/automod-cli.sh", r'PIN_COMMIT="[0-9a-f]{40}"'),
+                   "kxgcayh/Champollion": (PINNED_DOWNLOADS, r"git -C Champollion checkout [0-9a-f]{40}"),
+                   "kxgcayh/Caprica": (PINNED_DOWNLOADS, r"git -C Caprica checkout [0-9a-f]{40}")}
 DOWNLOAD_HOSTS = (r"github\.com/[\w.-]+/[\w.-]+/releases|blender\.org|nodejs\.org|python\.org|git-scm\.com|"
                   r"nexusmods|Nexus mod \d+|FallrimTools page|aka\.ms/|dot\.net/")
 # A download's hash may sit on the same line or the next two (a wrapped string literal or bullet).
@@ -1599,11 +1606,25 @@ _SKSE = ("third-party recipe quoted verbatim and labeled 'Not pinned and not ver
          "never runs it")
 _OWN = ("downloads the toolkit's OWN release by its tag in order to verify it: the script itself is the verification "
         "(and a published zip's contents are checked member by member)")
+_HOSTREF = ("recipe for the user's OWN machine in a macOS/cross-compile doc or reference skill: quoted for reading, "
+            "never run or delivered by the toolkit; versions follow the user's package manager")
 _CI = ("CI runner tooling (T10's workflows): never delivered to a user; versions follow the runner image")
 DELIVERY_EXEMPT = [
     ("docs/getting-started.md", "npm", r"npm install -g @anthropic-ai/claude-code", _CLAUDE),
-    ("KNOWLEDGEBASE.md", "dotnet-tool", r"a `dotnet tool update` on an SDK 6/8/9 machine failed",
+    ("kb/esp-xedit.md", "dotnet-tool", r"a `dotnet tool update` on an SDK 6/8/9 machine failed",
      "records the failure that motivated the pin; the instruction two lines up is pinned"),
+    ("setup.sh", "system-package", r"brew install bash, then",
+     "macOS hint to upgrade the user's own system bash (3.2 is too old for the hooks); the toolkit never runs it"),
+    ("*", "git-clone", r"git clone https://github\.com/microsoft/vcpkg\.git",
+     "generic vcpkg recipe in the conan-vcpkg reference skill: shown to the user, never run by the toolkit"),
+    ("*skills/conan-vcpkg/SKILL.md", "pip", r"pip install", _HOSTREF),
+    ("*skills/core-dumps/*", "system-package", r".", _HOSTREF),
+    ("docs/macos-crossover.md", "system-package", r".", _HOSTREF),
+    ("docs/macos-crossover.md", "winget", r".", _HOSTREF),
+    ("docs/skse-cross-compile-macos.md", "system-package", r".", _HOSTREF),
+    ("docs/skse-cross-compile-macos.md", "git-clone", r".", _HOSTREF),
+    ("docs/windows-exe-cross-compile-macos.md", "system-package", r".", _HOSTREF),
+    ("docs/windows-exe-cross-compile-macos.md", "tool-installer", r".", _HOSTREF),
     ("docs/skse-cross-compile.md", "system-package", r"apt-get install -y --no-install-recommends", _SKSE),
     ("docs/skse-cross-compile.md", "pipe-to-shell", r"xmake\.io/shget\.text \| bash", _SKSE),
     ("docs/skse-cross-compile.md", "download-unverified", r"Jake-Shadle/xwin/releases/download", _SKSE),
@@ -1615,6 +1636,10 @@ DELIVERY_EXEMPT = [
     ("tools/verify-release.sh", "gh-release", r"gh release download", _OWN),
     ("tools/skyguard/shellparse.py", "pipe-to-shell", r"An installer piped to sh \(`curl \.\.\. \| sh`\)",
      "skyguard's own rule documentation, describing what that rule does not treat as decoded text"),
+    ("setup.sh", "git-clone", r'git clone -q "\$SURFER_REPO"',
+     "the clone is moved to the pinned commit (SURFER_COMMIT) by surfer_to_pin before setup reports success"),
+    ("docs/installing-tools.md", "package-runner", r"\(`npx playwright install`\)",
+     "runs the playwright that `npm ci` installed from nexusmods-surfer's package-lock.json, not a registry fetch"),
 ]
 
 

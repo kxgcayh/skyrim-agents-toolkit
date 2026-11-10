@@ -7,7 +7,7 @@ Rules under test, from the plan:
     plainly that agent is not configured;
   * every value is idempotent: a second run changes no byte;
   * a partial state (a half-filled CLAUDE.md, a lost paths file, a stale hooks.json.new) is repaired by a re-run;
-  * Codex is Windows-only and never marked trusted;
+  * Codex is Windows and macOS only and never marked trusted;
   * the Layer 2 lock is applied only with --lock (R3: off by default).
 """
 from __future__ import annotations
@@ -26,6 +26,7 @@ from conftest import BASH, BIN, REPO, game_root_win, make_game, run_setup
 WIN = sys.platform == "win32"
 windows_only = pytest.mark.skipif(not WIN, reason="the toolkit's Codex hooks are rendered on Windows only")
 posix_only = pytest.mark.skipif(WIN, reason="needs a non-Windows install root")
+CODEX_OS = WIN or sys.platform == "darwin"   # where setup.sh configures the Codex hooks
 DOC_MARKS = ("{{GAME_ROOT}}", "{{CONFIG_DIR}}", "{{LOADORDER_DIR}}", "{{MOD_MANAGER_PATHS}}")
 GUARD_FILES = [".claude/hooks/" + n for n in ("protect-bash.sh", "protect-files.sh", "protect-mcp.sh",
                                               "backup-before-edit.sh", "snapshot-before-tool.sh",
@@ -98,11 +99,12 @@ def test_portable_targets_configure_shared_instructions_without_codex_trust(game
 
 
 @posix_only
+@pytest.mark.skipif(CODEX_OS, reason="Codex is configured on Windows and macOS")
 def test_codex_by_name_off_windows_is_refused_before_anything_is_written(game_dir):
     before = tree(game_dir)
     r = run_setup(game_dir, args=("--agent", "codex"))
     assert r.returncode == 3, r.stdout + r.stderr
-    assert "Windows-only" in r.stderr and "Nothing was changed" in r.stderr
+    assert "Windows and macOS only" in r.stderr and "Nothing was changed" in r.stderr
     assert tree(game_dir) == before
 
 
@@ -119,17 +121,17 @@ AGENT_CASES = {
 @pytest.mark.parametrize("value", sorted(AGENT_CASES))
 def test_each_value_configures_exactly_its_agents(game_dir, value):
     claude, codex = AGENT_CASES[value]
-    if value == "codex" and not WIN:
-        pytest.skip("--agent codex off Windows is refused (test_codex_by_name_off_windows_...)")
+    if value == "codex" and not CODEX_OS:
+        pytest.skip("--agent codex off Windows and macOS is refused (test_codex_by_name_off_windows_...)")
     r = run_setup(game_dir, args=("--agent", value))
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
     out = r.stdout
     assert configured(game_dir, "CLAUDE.md") is claude
     # AGENTS.md serves Codex and every other agent: filled whenever Codex is selected, on any OS (T7 review I1).
     assert configured(game_dir, "AGENTS.md") is codex
-    # Only Codex's hooks are Windows-only.
-    assert codex_rendered(game_dir) is (codex and WIN)
-    codex = codex and WIN
+    # Only Codex's hooks are platform-limited (Windows and macOS).
+    assert codex_rendered(game_dir) is (codex and CODEX_OS)
+    codex = codex and CODEX_OS
     # Every guard file runs the one engine on the one interpreter, whichever agent was selected.
     for rel in GUARD_FILES:
         assert "{{PYTHON_PATH}}" not in (game_dir / rel).read_text(encoding="utf-8"), rel
@@ -142,10 +144,10 @@ def test_each_value_configures_exactly_its_agents(game_dir, value):
     if not codex:
         assert "Codex:       NOT CONFIGURED" in out
         assert ("AGENTS.md: not configured by this run" in out) is (not AGENT_CASES[value][1])
-        if WIN:
+        if CODEX_OS:
             assert "WITHOUT the toolkit's hooks" in out and "bash setup.sh --agent codex" in out
         else:
-            assert "Codex support is Windows-only" in out
+            assert "Codex support is Windows and macOS only" in out
         assert "Codex users: Codex runs these hooks only after you approve them" not in out
     else:
         assert "/hooks, and approve the 2 Skyrim toolkit hooks" in out
@@ -741,3 +743,82 @@ def test_a_stale_hooks_json_new_is_removed_even_when_nothing_renders(game_dir):
     run_setup(game_dir, env_overrides={"PATH": env["PATH"] + os.pathsep + os.path.dirname(BASH)},
               args=("--agent", "codex"))
     assert not (game_dir / ".codex" / "hooks.json.new").exists()
+
+
+# ------------------------------------------------------------------------------------ --with-surfer --
+
+def test_surfer_is_off_by_default_and_a_denied_clone_says_who_to_contact(tmp_path):
+    """The private nexusmods-surfer is cloned only on request; a clone without access fails loudly, exit 1."""
+    game = make_game(tmp_path)
+    r = run_setup(game, args=("--agent", "claude"))
+    assert "nexusmods-surfer: not installed" in r.stdout and not (game / "tools" / "nexusmods-surfer").exists()
+    import shutil
+    real_git = shutil.which("git")
+    stub = stub_bin(tmp_path, git='[ "$1" = clone ] && { echo "Permission denied (publickey)." >&2; exit 128; }\n'
+                                  f'exec "{real_git}" "$@"')
+    r = run_setup(game, env_overrides={"PATH": path_with(stub)}, args=("--agent", "claude", "--with-surfer"))
+    assert r.returncode == 1, r.stdout[-2000:]
+    assert "PRIVATE repository" in r.stdout and "kxgcayh" in r.stdout
+    assert not (game / "tools" / "nexusmods-surfer").exists()
+
+
+def _surfer_origin(tmp_path: Path):
+    """A local stand-in for the private repo: a bare origin whose main has commits A then B."""
+    work = tmp_path / "surfer-src"
+    work.mkdir()
+    g = lambda *a, cwd=work: subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *a], cwd=cwd,
+                                            check=True, capture_output=True, text=True).stdout.strip()
+    g("init", "-q", "-b", "main")
+    (work / "f.txt").write_text("a\n"); g("add", "f.txt"); g("commit", "-qm", "A")
+    a = g("rev-parse", "HEAD")
+    (work / "f.txt").write_text("b\n"); g("commit", "-qam", "B")
+    b = g("rev-parse", "HEAD")
+    bare = tmp_path / "surfer.git"
+    g("clone", "-q", "--bare", str(work), str(bare), cwd=tmp_path)
+    return bare, a, b, g
+
+
+def _game_pinned_to(tmp_path: Path, pin: str) -> Path:
+    game = make_game(tmp_path)
+    s = game / "setup.sh"
+    text = s.read_text(encoding="utf-8")
+    import re
+    text, n = re.subn(r'^SURFER_COMMIT="[0-9a-f]{40}"$', f'SURFER_COMMIT="{pin}"', text, flags=re.M)
+    assert n == 1
+    s.write_text(text, encoding="utf-8", newline="\n")
+    return game
+
+
+def test_surfer_rerun_moves_a_clean_clone_to_main_at_the_pin(tmp_path):
+    bare, a, b, g = _surfer_origin(tmp_path)
+    game = _game_pinned_to(tmp_path, b)
+    clone = game / "tools" / "nexusmods-surfer"
+    g("clone", "-q", str(bare), str(clone), cwd=tmp_path)
+    g("checkout", "-q", "--detach", a, cwd=clone)  # what the first --with-surfer left: detached at the old pin
+    r = run_setup(game, args=("--agent", "claude", "--with-surfer"))
+    assert r.returncode == 0, r.stdout[-2000:]
+    assert g("rev-parse", "HEAD", cwd=clone) == b
+    assert g("symbolic-ref", "--short", "HEAD", cwd=clone) == "main"
+    assert g("rev-parse", "--abbrev-ref", "main@{upstream}", cwd=clone) == "origin/main"
+    r = run_setup(game, args=("--agent", "claude", "--with-surfer"))
+    assert r.returncode == 0 and "nothing to do" in r.stdout
+
+
+@pytest.mark.parametrize("state", ["dirty", "unpushed", "detached-local"])
+def test_surfer_rerun_never_moves_a_clone_with_work_in_it(tmp_path, state):
+    bare, a, b, g = _surfer_origin(tmp_path)
+    game = _game_pinned_to(tmp_path, a)
+    clone = game / "tools" / "nexusmods-surfer"
+    g("clone", "-q", str(bare), str(clone), cwd=tmp_path)
+    if state == "dirty":
+        (clone / "f.txt").write_text("mine\n")
+    else:
+        if state == "detached-local":
+            g("checkout", "-q", "--detach", cwd=clone)
+        (clone / "f.txt").write_text("mine\n"); g("commit", "-qam", "local", cwd=clone)
+    before = g("rev-parse", "HEAD", cwd=clone)
+    r = run_setup(game, args=("--agent", "claude", "--with-surfer"))
+    assert r.returncode == 1 and "not moved" in r.stdout, r.stdout[-2000:]
+    assert g("rev-parse", "HEAD", cwd=clone) == before
+    if state == "dirty":
+        assert (clone / "f.txt").read_text() == "mine\n"

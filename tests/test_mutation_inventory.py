@@ -20,6 +20,9 @@ def test_all_mutation_source_anchors_are_unique_and_python_mutants_compile():
             if path.is_file():
                 with io.open(path, encoding="utf-8", newline="") as stream:
                     cache[relative] = stream.read()
+                from conftest import _template_forms   # a configured tree holds setup's fill: count the shipped form
+                if relative in _template_forms():
+                    cache[relative] = _template_forms()[relative](cache[relative].encode("utf-8")).decode("utf-8")
             else:
                 cache[relative] = None
         source = cache[relative]

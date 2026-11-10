@@ -1,14 +1,14 @@
 #!/bin/bash
 # devbench-cli.sh -- talk to a RUNNING Skyrim via alandtse's DevBench SKSE plugin.
 #
-# DevBench (Nexus SE 181326) runs a localhost REST+MCP server inside the live game, so Claude can
+# DevBench (Nexus SE 181326) runs a localhost REST+MCP server inside the live game, so agents can
 # inspect state, run console commands AND READ THEIR OUTPUT, call Papyrus functions, and drive
 # scripted scenarios -- instead of you hand-testing and reporting back.
 #
 # NOT bundled: install DevBench yourself from Nexus (GPL-3.0). This wrapper just drives its REST API.
 #
-# The game must be RUNNING with a save loaded. When it isn't, the port is dead and every call here
-# fails fast with a clear message -- fall back to the offline tools (xelib/Spriggit/ReSaver).
+# The game must be running with DevBench loaded. Discovery, input and menu tools can work
+# at the Main Menu; world inspection and Papyrus calls require a loaded game.
 #
 # Usage:
 #   bash tools/devbench-cli.sh ping                       # server self-test (NOT proof of liveness)
@@ -20,6 +20,9 @@
 #   bash tools/devbench-cli.sh exec "player.getav health" # console exec + capture + read output
 #   bash tools/devbench-cli.sh call Utility GetCurrentGameTime
 #   bash tools/devbench-cli.sh call Actor IsInCombat '[]' '{"form":"0x14"}'
+#   bash tools/devbench-cli.sh tools                      # discover installed tools and schemas
+#   bash tools/devbench-cli.sh gfx '{"op":"get","menu":"Dialogue Menu","path":"_root"}'
+#   bash tools/devbench-cli.sh dialogue '{"action":"inspect"}'
 #   bash tools/devbench-cli.sh tool menu '{"action":"accept"}'   # raw escape hatch: any tool, any JSON
 #
 # Port: read from Data/SKSE/Plugins/devbench/runtime.json when present, else the per-runtime default
@@ -32,7 +35,8 @@ set -o pipefail
 
 # This script lives in <game root>/tools, so where you run it from cannot pick the wrong game (it used to pick port 8920).
 GAME_DIR="${GAME_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-RUNTIME_JSON="$GAME_DIR/Data/SKSE/Plugins/devbench/runtime.json"
+# Explicit path also supports a CrossOver bottle or MO2 overwrite directory.
+RUNTIME_JSON="${DEVBENCH_RUNTIME_JSON:-$GAME_DIR/Data/SKSE/Plugins/devbench/runtime.json}"
 TIMEOUT="${DEVBENCH_TIMEOUT:-15}"
 
 command -v curl >/dev/null 2>&1 || { echo "ERROR: curl not found." >&2; exit 1; }
@@ -43,8 +47,21 @@ resolve_port() {
     if [ -n "${DEVBENCH_PORT:-}" ]; then echo "$DEVBENCH_PORT"; return; fi
     # DevBench writes the port it actually bound here (it iterates if the default was taken).
     if [ -f "$RUNTIME_JSON" ]; then
-        p=$(sed -n 's/.*"port"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$RUNTIME_JSON" 2>/dev/null | head -n 1)
-        [ -n "$p" ] && { echo "$p"; return; }
+        p=$(sed -n 's/.*"port"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$RUNTIME_JSON" | head -1)
+        if [ "${p:-0}" -ge 1 ] 2>/dev/null && [ "${p:-0}" -le 65535 ] 2>/dev/null; then
+            echo "$p"; return
+        fi
+    fi
+    # Server.cpp mirrors runtime.json outside the mod manager's virtual filesystem.
+    if [ -z "${DEVBENCH_RUNTIME_JSON:-}" ] && [ -n "${LOCALAPPDATA:-}" ]; then
+        local runtime=se
+        [ -f "$GAME_DIR/SkyrimVR.exe" ] && runtime=vr
+        local external="$LOCALAPPDATA/devbench/$runtime/runtime.json"
+        if [ -f "$external" ] && [ "$external" != "$RUNTIME_JSON" ]; then
+            RUNTIME_JSON="$external"
+            DEVBENCH_RUNTIME_JSON="$external"
+            resolve_port; return
+        fi
     fi
     # Fall back to the deterministic per-runtime default.
     [ -f "$GAME_DIR/SkyrimVR.exe" ] && { echo 8921; return; }
@@ -67,6 +84,16 @@ dead_port() {
 #   504 = the main thread didn't run the task in time (busy load / stalled). The server is fine.
 #   400 = bad arguments (since 1.11.0 arg-type errors are 400, not 500).
 # Treating those as success -- or as a dead port -- sends you debugging the wrong thing.
+json_string() {
+    local value="$1"
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    value=${value//$'\n'/\\n}
+    value=${value//$'\r'/\\r}
+    value=${value//$'\t'/\\t}
+    printf '\"%s\"' "$value"
+}
+
 HTTP_STATUS=""
 http() { # $1=METHOD  $2=path  $3=json body (POST only)  -> body on stdout
     local out rc body
@@ -162,7 +189,7 @@ case "$CMD" in
       # (main menu / still loading). Nothing is wrong -- there is just nothing to drive yet.
       case "$f2" in -*)
           echo "NOT IN GAME (frame $f2) -- server is up, but no save is loaded yet."
-          echo "  Load a save before driving state/console/papyrus tools."
+          echo "  Menu/input tools may work here; load a save for world/Papyrus operations."
           exit 3 ;;
       esac
 
@@ -177,7 +204,7 @@ case "$CMD" in
       if [ "${pend:-0}" -gt 0 ] 2>/dev/null && [ "$t1" = "$t2" ]; then
           echo "HUNG/STARVED (frame stuck at $f1; pendingTasks $pend, lastTaskFrame stuck at $t1)"
           echo "  Main-thread tasks are queued but not completing. Tool calls will 504."
-          echo "  Recovery is usually a force-kill of the game process."
+          echo "  Check window focus and loading first; an unfocused game can stop servicing tasks."
           exit 2
       fi
       echo "NOT ADVANCING (frame stuck at $f1, pendingTasks ${pend:-0}) -- paused (menu/console open)"
@@ -191,21 +218,25 @@ case "$CMD" in
 
   inspect)
       kind="${1:-state}"
-      post inspect "{\"kind\":\"$kind\"}" | pretty ;;
+      post inspect "{\"kind\":$(json_string "$kind")}" | pretty ;;
 
   exec)
-      # Console output capture is a two-step fence: exec with capture, then read the slice.
+      # Current servers return the fenced capture in the exec response.
       [ $# -ge 1 ] || { echo "usage: devbench-cli.sh exec \"<console command>\"" >&2; exit 1; }
       cmd="$*"
-      if [ "$HAVE_JQ" -eq 1 ]; then payload=$(jq -nc --arg c "$cmd" '{action:"exec",command:$c,capture:true}')
-      else payload="{\"action\":\"exec\",\"command\":\"$cmd\",\"capture\":true}"; fi
-      post console "$payload" >/dev/null || exit 1
-      sleep 1   # commands are queued on the game thread; they land on a later frame
-      post console '{"action":"read"}' | pretty
-      # NOTE: many commands (addmusic/removemusic/...) produce NO console output, so count:0 can be
-      # genuine. On DevBench < 1.19 it was also what an empty capture buffer returned (fixed in 1.19, #96;
-      # capture reworked again in 1.24, #117; 1.28, #130, also returns the lines from the exec call itself,
-      # which `read` repeats) -- either way, judge the result by re-reading state.
+      payload="{\"action\":\"exec\",\"command\":$(json_string "$cmd"),\"capture\":true}"
+      result=$(post console "$payload"); rc=$?
+      [ "$rc" -eq 0 ] || { printf '%s\n' "$result" | pretty; exit "$rc"; }
+      completed=$(printf '%s' "$result" | jget '.completed')
+      if [ -n "$completed" ]; then
+          printf '%s\n' "$result" | pretty
+          # Do not read a shared capture buffer after this request's capture timed out.
+          [ "$completed" = true ] || exit 3
+      else
+          # Compatibility with older servers that only queued capture.
+          sleep 1
+          post console '{"action":"read"}' | pretty
+      fi
       ;;
 
   call)
@@ -213,9 +244,9 @@ case "$CMD" in
       [ $# -ge 2 ] || { echo "usage: devbench-cli.sh call <Script> <Function> [argsJson] [selfJson]" >&2; exit 1; }
       script="$1"; func="$2"; args="${3:-[]}"; slf="${4:-}"
       if [ -n "$slf" ]; then
-          payload="{\"action\":\"call\",\"script\":\"$script\",\"function\":\"$func\",\"args\":$args,\"self\":$slf}"
+          payload="{\"action\":\"call\",\"script\":$(json_string "$script"),\"function\":$(json_string "$func"),\"args\":$args,\"self\":$slf}"
       else
-          payload="{\"action\":\"call\",\"script\":\"$script\",\"function\":\"$func\",\"args\":$args}"
+          payload="{\"action\":\"call\",\"script\":$(json_string "$script"),\"function\":$(json_string "$func"),\"args\":$args}"
       fi
       post papyrus "$payload" | pretty
       # NOTE: DevBench <= 1.24 padded omitted TRAILING optional params with neutral defaults (None/0/false/""),
@@ -226,15 +257,18 @@ case "$CMD" in
 
   describe)
       [ $# -ge 1 ] || { echo "usage: devbench-cli.sh describe <Script>" >&2; exit 1; }
-      post papyrus "{\"action\":\"describe\",\"script\":\"$1\"}" | pretty ;;
+      post papyrus "{\"action\":\"describe\",\"script\":$(json_string "$1")}" | pretty ;;
 
   notify)
       # HUD narration -- the user cannot see this chat while in the headset. Narrate live tests
       # in-game so the whole sequence is self-explaining.
       [ $# -ge 1 ] || { echo "usage: devbench-cli.sh notify \"text\"" >&2; exit 1; }
-      if [ "$HAVE_JQ" -eq 1 ]; then payload=$(jq -nc --arg t "$*" '{action:"call",script:"Debug",function:"Notification",args:[$t]}')
-      else payload="{\"action\":\"call\",\"script\":\"Debug\",\"function\":\"Notification\",\"args\":[\"$*\"]}"; fi
+      payload="{\"action\":\"call\",\"script\":\"Debug\",\"function\":\"Notification\",\"args\":[$(json_string "$*")]}"
       post papyrus "$payload" | pretty ;;
+
+  gfx|dialogue)
+      # Forward JSON unchanged; the installed server validates its own schema.
+      post "$CMD" "${1:-}" | pretty ;;
 
   tool)
       [ $# -ge 1 ] || { echo "usage: devbench-cli.sh tool <name> [json]" >&2; exit 1; }
@@ -247,10 +281,10 @@ case "$CMD" in
       echo "$PORT" ;;
 
   ""|-h|--help|help)
-      sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//' ;;
+      sed -n '2,/^set -u/{ /^set -u/d; p; }' "$0" | sed 's/^# \{0,1\}//' ;;
 
   *)
       echo "Unknown command: $CMD" >&2
-      echo "Try: ping | alive | health | state | inspect <kind> | exec | call | describe | notify | tool | tools | port" >&2
+      echo "Try: ping | alive | health | state | inspect <kind> | exec | call | describe | notify | tool | gfx | dialogue | tools | port" >&2
       exit 1 ;;
 esac

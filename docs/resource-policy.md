@@ -2,10 +2,14 @@
 
 Limits exist to stop the machine slowing to a crawl; barring that, everything runs.
 
+Never push CPU, RAM, free disk, disk I/O or GPU past 80% of the machine, counting what already runs (games,
+other sessions). Measure first; if it will not fit, wait, shrink or ask. The floors below are the specific
+admission and emergency limits under that ceiling.
+
 Physical RAM is the primary memory measure. Windows committed memory is a separate allocation limit,
 not physical usage, and must not receive a percentage reserve.
 
-- A self-started test, scan or worker waits only if it would push the machine past 90% CPU or leave
+- A self-started test, scan or worker waits only if it would push the machine past 80% CPU or leave
   under 3 GiB of physical RAM (20% of RAM while a game is running) or 512 MiB of commit. Use at most
   eight workers and low priority. Run stress probes at idle priority and time-box them.
 - Stop our job tree when physical RAM available remains below 2 GiB for ten seconds, or drops below
@@ -22,3 +26,5 @@ reserve and multi-GiB commit stops.
 
 User ruling, 2026-11-02: shares between jobs (40% CPU, 25% RAM) and the standing 20% RAM reserve are gone.
 The stop floors and disk limits are unchanged.
+
+User ruling, 2026-11-10 (upstream merge): the 80% ceiling from master replaces the 90% CPU admission figure.

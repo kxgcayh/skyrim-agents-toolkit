@@ -15,7 +15,12 @@ from test_mutations import MUTATIONS
 
 def _count(relpath, find):
     with io.open(REPO / relpath, encoding="utf-8", newline="") as fh:
-        return fh.read().count(find)
+        text = fh.read()
+    # a configured working tree holds setup's fill in these files: count in the shipped (template) form, as CI sees it
+    from conftest import _template_forms
+    if relpath in _template_forms():
+        text = _template_forms()[relpath](text.encode("utf-8")).decode("utf-8")
+    return text.count(find)
 
 
 @pytest.mark.parametrize("relpath,find", [(p.values[0], p.values[1]) for p in MUTATIONS],

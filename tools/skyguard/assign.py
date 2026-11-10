@@ -278,6 +278,72 @@ def bash_value(raw: str) -> Optional[str]:
     return "".join(out)
 
 
+# `NAME=$(mktemp ...)` (temp-delete rule): mktemp names a path INSIDE a temp directory, so the name is certain to be
+# scratch although its value is not known. The value recorded is a stand-in literal two levels under /tmp: a `..`
+# climbs at most as far as it would from the real path (a real path is never shallower), so a use that would reach a
+# protected folder from the stand-in is judged as the protected path it could be.
+MKTEMP_STANDIN = "/tmp/.skyguard-mktemp"
+# An Exec.subst pair built on the stand-in is stored under this key prefix. Only the delete rules decode it
+# (deletes.substituted); every other reader looks a word up by itself, never matches, and sees the word unresolved,
+# so no other rule acts on a value that is EMPTY when the mktemp fails.
+TMP_KEY = "\x00mktemp:"
+_TEMP_PATH = re.compile(r"/(?:private/)?(?:tmp|var/tmp)(?:/[A-Za-z0-9._-]{1,64}){0,6}"
+                        r"|/(?:private/)?var/folders/[A-Za-z0-9_]{1,8}/[A-Za-z0-9_]{1,40}/T(?:/[A-Za-z0-9._-]{1,64}){0,6}")
+_MKTEMP_NAME = re.compile(r"[A-Za-z0-9._-]{1,64}")
+_MKTEMP_RHS = re.compile(r'"?(?:\$\(([^()`$\\"\'\n]{1,200})\)|`([^()`$\\"\'\n]{1,200})`)"?')
+_MKTEMP_FLAGS = frozenset(("-d", "-t", "-q", "--tmpdir"))
+
+
+def _clean_temp_path(p: str) -> bool:
+    """A literal absolute path inside a temp directory, with no `.` or `..` component."""
+    return bool(_TEMP_PATH.fullmatch(p)) and not any(c in (".", "..") for c in p.split("/"))
+
+
+def mktemp_value(raw: str) -> Optional[str]:
+    """MKTEMP_STANDIN when the right-hand side `raw` is `$(mktemp ...)` (or the backtick form, optionally in double
+    quotes) with only these arguments: -d, -t, -q, a bare --tmpdir, `-p DIR` or `--tmpdir=DIR` with DIR a temp
+    directory, and at most one template, an absolute path inside a temp directory or a bare name (which mktemp puts
+    in a temp directory only with -t, -p or --tmpdir; without them it uses the current directory). None for
+    anything else, so an unknown option, a template elsewhere, a `..`, or a second template stays unresolved."""
+    m = _MKTEMP_RHS.fullmatch(raw)
+    if not m:
+        return None
+    toks = (m.group(1) if m.group(1) is not None else m.group(2)).split()
+    if not toks or toks[0] != "mktemp":
+        return None
+    flags, tdir, template, i = set(), None, None, 1
+    while i < len(toks):
+        t = toks[i]
+        if t in _MKTEMP_FLAGS:
+            flags.add(t)
+        elif t == "-p":
+            if tdir is not None or i + 1 >= len(toks):
+                return None
+            tdir = toks[i + 1]
+            i += 1
+        elif t.startswith("--tmpdir="):
+            if tdir is not None:
+                return None
+            tdir = t[len("--tmpdir="):]
+        elif t.startswith("-"):
+            return None
+        elif template is not None:
+            return None
+        else:
+            template = t
+        i += 1
+    if tdir is not None and not _clean_temp_path(tdir):
+        return None
+    if template is not None:
+        if template.startswith("/"):
+            if tdir is not None or not _clean_temp_path(template):
+                return None
+        elif not _MKTEMP_NAME.fullmatch(template) or template in (".", "..") or not (
+                tdir is not None or "-t" in flags or "--tmpdir" in flags):
+            return None
+    return MKTEMP_STANDIN
+
+
 _PS_ASSIGN = re.compile(r"""[ \t]*\$(""" + _IDENT + r""")[ \t]*=[ \t]*(?:'((?:[^'‘’‚‛]|'')*)'"""
                         r"""|"([^"`$“”„]*)")[ \t\r]*""")
 

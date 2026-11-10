@@ -42,6 +42,21 @@ less than certain (assign.py and shellparse list the cases) stays UNRESOLVED and
 all hand-read, every operand a scratch or temp path -- and 22 now name the protected file they delete (21 S-DEL-INSTALL, 1 S-WRITE-PLUGIN); 0 true positives
 lost.
 
+TEMP DELETES. Two more unplaceable operands are judged as temp paths, so an agent can clean up its own scratch files
+in a command that also names the install:
+  - `_temp_pid_path`: a bash word whose only unknown is a PID-style suffix (`$$`, `${$}`, `$!`, `$RANDOM`) in the LAST
+    name of an absolute path (`rm -f /tmp/x.$$`). Those variables hold digits, so the directory cannot change. The
+    suffix is read as `0` and the result judged like a written-out path; it must land strictly inside /tmp,
+    /private/tmp, /var/tmp or the macOS temp folder. A variable in a directory component, any other variable, a `..`
+    that leaves the temp folder, and a protected root that lives in a temp folder all stay as they were.
+  - `NAME=$(mktemp ...)` (assign.mktemp_value; shellparse records it under assign.TMP_KEY): the value is a stand-in
+    path under /tmp, decoded only HERE (substituted), and trusted only as the whole word (`"$W"`) or `"$W/name/..."`
+    with plain names. A failed mktemp leaves NAME empty, so `"$W"/*` would read `/*`; it, a `..`, a trailing slash
+    and any other suffix stay unresolved. `cd "$W"` stays an unknown folder, and no other rule sees the stand-in.
+    mktemp is read only with -d, -t, -q, --tmpdir, -p DIR or --tmpdir=DIR (DIR inside a temp folder) and at most one
+    template (absolute inside a temp folder, or bare with -t, -p or --tmpdir); TMPDIR written anywhere in the
+    command turns it off.
+
 ADVICE (no deny): S-RELATIVE-UNKNOWN -- a relative `Data` operand with no cwd (R9).
 
 KNOWN LIMITS (fix round 1, recorded, not handled):
@@ -72,7 +87,7 @@ import re
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import List, Mapping, NamedTuple, Optional, Tuple
 
-from . import paths, targets
+from . import assign, paths, targets
 from .grep import _compile, grep
 from .shellparse import _ListItem, ps_param
 
@@ -583,6 +598,19 @@ def _launched_deletes(node, f, modules, names, literal) -> List[str]:
     if not words or re.split(r"[/\\]", words[0].lower())[-1].rsplit(".exe", 1)[0] not in DELETE_PROGRAMS:
         return []
     return [w for w in words[1:] if not w.startswith("-") and not (w.startswith("/") and len(w) == 2)]
+def _mktemp_use_ok(value: str) -> bool:
+    """A substituted value is trusted unless it is built on the `mktemp` stand-in (assign.MKTEMP_STANDIN) in a way a
+    failed mktemp would turn dangerous: the variable would be EMPTY, so `"$W"/*` would read `/*`. Only the whole word
+    (`"$W"`, an empty operand deletes nothing) or `"$W/name/..."` with plain names (no glob, `..` or trailing slash)
+    counts; any other use stays an unresolved word."""
+    stand = assign.MKTEMP_STANDIN
+    if stand not in value:
+        return True
+    if value == stand:
+        return True
+    rest = value[len(stand) + 1:] if value.startswith(stand + "/") else ""
+    return bool(re.fullmatch(r"[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*", rest)) and \
+        not any(c in (".", "..") for c in rest.split("/"))
 
 
 def substituted(e):
@@ -590,7 +618,13 @@ def substituted(e):
     decides which assignment certainly reaches the word, see assign.py). Other words are unchanged."""
     if not e.subst:
         return e
-    sub = dict(e.subst)
+    sub = {}
+    for w, v in e.subst:
+        if w.startswith(assign.TMP_KEY):                    # a mktemp stand-in: only the delete rules read it
+            if _mktemp_use_ok(v):
+                sub[w[len(assign.TMP_KEY):]] = v
+        else:
+            sub[w] = v
     # A substituted word stays in its comma list (`$d,b,c` is one PowerShell argument).
     return e._replace(argv=tuple((_ListItem(sub[w]) if isinstance(w, _ListItem) else sub[w]) if w in sub else w
                                  for w in e.argv),
@@ -673,6 +707,36 @@ def literal_abs(word: str, base: Optional[str], dialect: str) -> Optional[str]:
     if p is None and base and not re.match(r"[A-Za-z]:|/", s):
         p = paths.norm_abs(base + "/" + s)
     return p
+
+
+# Temp-delete rule: a delete word whose ONLY unknown is a PID-style suffix in its last name (`/tmp/x.$$`,
+# `/tmp/x.$RANDOM`, `/tmp/x.$!`) is a literal path under a temp directory: those variables hold digits, so the
+# directory cannot change. The suffix is read as `0` and the word is judged like any written-out path, so a temp
+# folder that holds a protected root, or a `..` that leaves the temp folder, still resolves to what it is.
+_PID_VARS = re.compile(r"\$\$|\$\{\$\}|\$!|\$\{!\}|\$RANDOM|\$\{RANDOM\}")
+_TEMP_ROOTS = ("/tmp", "/private/tmp", "/var/tmp", "/private/var/tmp")
+_MAC_TEMP = re.compile(r"/(?:private/)?var/folders/[^/]+/[^/]+/t/.")
+
+
+def _in_temp(abs_path: str) -> bool:
+    """A normalised absolute path strictly INSIDE a temp directory (the temp directory itself is not)."""
+    p = abs_path.lower().rstrip("/")
+    return any(p.startswith(r + "/") for r in _TEMP_ROOTS) or bool(_MAC_TEMP.match(p))
+
+
+def _temp_pid_path(word: str, base: Optional[str], dialect: str, env) -> Optional[str]:
+    """The resolved temp path for a bash word like `/tmp/x.$$`; None for anything else (a variable in a directory
+    component or in the last name beyond the PID forms, a backtick, a relative word, a path outside a temp folder)."""
+    if dialect != "bash" or "$" not in word:
+        return None
+    head, sep, last = word.rpartition("/")
+    if not sep or "$" in head or "`" in head:
+        return None
+    last = _PID_VARS.sub("0", last)
+    if "$" in last or "`" in last:
+        return None
+    a = targets.resolve(head + "/" + last, base or "", dialect, env)
+    return a if a is not None and _in_temp(a) else None
 
 
 # RT-A: the protection keys of skyrim-paths.env, read as variables (`$SKYRIM_GAME_ROOT`, `$env:SKYRIM_CONFIG_DIR`,
@@ -1013,6 +1077,8 @@ def scan(command: str, parsed, roots, cwd: str = "", env: Optional[Mapping[str, 
         lit_base = ecwd or (e.cd_before if e.cd_before not in ("", "?") and _is_abs(e.cd_before) else None)
         for w in ops:
             a = None if w is UNRESOLVED else targets.resolve(w, ecwd or "", e.dialect, env)
+            if a is None and w is not UNRESOLVED:
+                a = _temp_pid_path(w, ecwd, e.dialect, env)     # `/tmp/x.$$`: a literal temp path (see above)
             if a is not None:
                 kind, b = place(a)
                 if is_save(b, roots):

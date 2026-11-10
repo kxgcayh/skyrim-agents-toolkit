@@ -5,8 +5,9 @@ tests/test_setup_agent.py); the rest is the structure of the job, so a value or 
 """
 from __future__ import annotations
 
-import subprocess
 import re
+import subprocess
+import sys
 
 import pytest
 
@@ -84,6 +85,7 @@ LINUXISH = 'pwd(){ if [ "${1:-}" = -W ]; then return 1; fi; builtin pwd "$@"; };
 
 
 @pytest.mark.parametrize("value", ["all", "codex"])
+@pytest.mark.skipif(sys.platform == "darwin", reason="Linux CI legs: setup.sh renders Codex hooks on macOS, so the Linux expectations do not apply")
 def test_the_linux_legs_pass(tmp_path, value):
     script = (REPO / "scripts" / "setup-smoke.sh").as_posix()
     r = subprocess.run([BASH, "-c", LINUXISH + 'bash "$0" "$1" "$2"', script, value, (tmp_path / "w").as_posix()],

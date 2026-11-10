@@ -4,7 +4,7 @@
 # This script is designed to be run FROM your Skyrim folder, after
 # extracting the toolkit zip into it. It configures everything in-place.
 #
-# Usage: bash setup.sh [--agent claude|codex|all|auto|generic|opencode] [--lock] [--save-lock|--no-save-lock]
+# Usage: bash setup.sh [--agent claude|codex|all|auto|generic|opencode] [--game <dir>] [--lock] [--save-lock|--no-save-lock] [--with-surfer]
 #   --agent auto    (the default) every agent found on PATH; when none is found, all of them
 #   --agent claude  Claude Code only      --agent codex  Codex only (Windows only)
 #   --agent all     every named adapter (`both` is accepted as another name for it)
@@ -14,6 +14,9 @@
 #   --save-lock     lock the saves so no agent or script can delete or change them (Windows only; unlocking
 #                   one needs an administrator prompt). Asked interactively when neither flag is given;
 #                   --no-save-lock skips the question. OFF unless chosen.
+#   --with-surfer   also clone the PRIVATE nexusmods-surfer repo into tools/nexusmods-surfer (needs access granted
+#                   by the maintainer; without it the clone fails, setup says so and carries on). Re-running it
+#                   moves an existing clean clone's main branch to the pinned commit.
 # Setup never installs software. Every install command it prints is for you to run.
 
 set -e
@@ -21,20 +24,24 @@ set -e
 # --- Options: checked before anything is written ----------------------------------------------------------
 # An unknown option or --agent value is a usage error (exit 2) and nothing is touched.
 usage() {
-    echo "usage: bash setup.sh [--agent claude|codex|all|auto|generic|opencode] [--lock] [--save-lock|--no-save-lock]"
+    echo "usage: bash setup.sh [--agent claude|codex|all|auto|generic|opencode] [--game <dir>] [--lock] [--save-lock|--no-save-lock] [--with-surfer]"
     echo "  --agent auto    the default: every agent found on PATH (claude, codex); all of them when none is found"
     echo "  --agent claude  configure Claude Code only"
     echo "  --agent codex   configure Codex only (Windows only)"
     echo "  --agent generic configure the neutral instructions/runtime; host interception must be supplied"
     echo "  --agent opencode configure the OpenCode V1 CLI target (running-host blocking unqualified)"
     echo "  --agent all     configure both (\`both\` means the same)"
+    echo "  --game <dir>    path to your Skyrim installation (keeps Skyrim clean; defaults to current directory)"
     echo "  --lock          also lock the vanilla masters and archives read-only (off unless you ask)"
     echo "  --save-lock     lock the saves against any delete or change (Windows; asked when neither flag is given)"
     echo "  --no-save-lock  leave save locking off without asking"
+    echo "  --with-surfer   also clone the private nexusmods-surfer (Nexus page scraper); ask the maintainer for access"
 }
 AGENT_ARG="auto"
+GAME_ARG=""
 WANT_LOCK=""
 WANT_SAVE_LOCK=""
+WANT_SURFER=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --agent)
@@ -43,9 +50,16 @@ while [ $# -gt 0 ]; do
             fi
             AGENT_ARG="$2"; shift 2 ;;
         --agent=*) AGENT_ARG="${1#--agent=}"; shift ;;
+        --game)
+            if [ $# -lt 2 ]; then
+                echo "setup.sh: --game needs a path. Nothing was changed." >&2; usage >&2; exit 2
+            fi
+            GAME_ARG="$2"; shift 2 ;;
+        --game=*) GAME_ARG="${1#--game=}"; shift ;;
         --lock) WANT_LOCK=1; shift ;;
         --save-lock) WANT_SAVE_LOCK=yes; shift ;;
         --no-save-lock) WANT_SAVE_LOCK=no; shift ;;
+        --with-surfer) WANT_SURFER=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "setup.sh: unknown option '$1'. Nothing was changed." >&2; usage >&2; exit 2 ;;
     esac
@@ -57,22 +71,68 @@ case "$AGENT_ARG" in
        usage >&2; exit 2 ;;
 esac
 
-GAME_DIR="$(pwd)"
+# Portable in-place sed helper (works on both GNU sed and macOS/BSD sed)
+sedit() {
+    if sed --version >/dev/null 2>&1; then
+        sed -i "$@"
+    else
+        sed -i '' "$@"
+    fi
+}
+
+TOOLKIT_DIR="$(pwd)"
+TOOLKIT_ROOT_WIN=$(pwd -W 2>/dev/null || pwd)
+TOOLKIT_ROOT_WIN=$(printf '%s' "$TOOLKIT_ROOT_WIN" | tr '\134' '/')
+
+# Templates setup.sh fills with machine paths. Those with uncommitted edits NOW are remembered, so the
+# skip-worktree step at the end never hides real work.
+FILLED_TEMPLATES="CLAUDE.md AGENTS.md .devcontainer/devcontainer.json .claude/hooks/*.sh .codex/hooks.json .codex/hooks/skyguard-entry.sh .codex/hooks/skyguard-entry.ps1"
+DIRTY_AT_START=" $(cd "$TOOLKIT_DIR" && git diff --name-only HEAD -- $FILLED_TEMPLATES 2>/dev/null | tr '\n' ' ') "
+
+# --- This machine's paths (setup.local.env, gitignored; format: setup.local.env.example) ---
+# For installs setup cannot detect (CrossOver/Wine on macOS). Read as KEY=VALUE data, never sourced; a variable
+# already set in the environment wins.
+LOCAL_ENV_KEYS=" SKYRIM_GAME_DIR SKYRIM_CONFIG_DIR SKYRIM_LOADORDER_DIR SKYRIM_MO2_MODS SKYRIM_MO2_OVERWRITE "
+if [ -f "$TOOLKIT_DIR/setup.local.env" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        line="${line%$'\r'}"
+        case "$line" in *=*) ;; *) continue ;; esac
+        k="${line%%=*}"; v="${line#*=}"
+        case "$LOCAL_ENV_KEYS" in *" $k "*) ;; *) continue ;; esac
+        v="${v#\"}"; v="${v%\"}"; v="${v#\'}"; v="${v%\'}"
+        [ -n "${!k:-}" ] || export "$k=$v"
+    done < "$TOOLKIT_DIR/setup.local.env"
+    echo "Machine paths read from setup.local.env"
+fi
+
+# Where the game lives: either --game <dir>, or $SKYRIM_GAME_DIR, or $SKYRIM_GAME_ROOT, else the toolkit directory.
+if [ -n "$GAME_ARG" ]; then
+    GAME_DIR="$GAME_ARG"
+elif [ -n "${SKYRIM_GAME_DIR:-}" ]; then
+    GAME_DIR="$SKYRIM_GAME_DIR"
+elif [ -n "${SKYRIM_GAME_ROOT:-}" ]; then
+    GAME_DIR="$SKYRIM_GAME_ROOT"
+else
+    GAME_DIR="$TOOLKIT_DIR"
+fi
+GAME_DIR="$( { cd "$GAME_DIR" 2>/dev/null && pwd; } || echo "$GAME_DIR" )"
 USERNAME="$(whoami)"
-# Native-Windows form of the game dir (C:/...), for paths we WRITE into CLAUDE.md.
+# Native-Windows form of the game dir (C:/...), for paths we WRITE into CLAUDE.md / AGENTS.md.
 # `pwd` under Git Bash/MSYS returns an MSYS path (/c/...) that Claude's file tools and
 # PowerShell can't open; `pwd -W` returns the Windows form. Keep $GAME_DIR (MSYS) for the
 # filesystem work below -- both forms work there -- and use this one only for substitution.
-GAME_ROOT_WIN=$(pwd -W 2>/dev/null || pwd)
+GAME_ROOT_WIN="$( { cd "$GAME_DIR" 2>/dev/null && (pwd -W 2>/dev/null || pwd); } || echo "$GAME_DIR" )"
 GAME_ROOT_WIN=$(printf '%s' "$GAME_ROOT_WIN" | tr '\134' '/')
-# The toolkit's Codex support is Windows-only: its hooks are rendered for a drive-letter root.
-case "$GAME_ROOT_WIN" in [A-Za-z]:/*) CODEX_WIN=1 ;; *) CODEX_WIN="" ;; esac
+# Codex hooks: Windows (rendered for a drive-letter root) and macOS (CODEX_POSIX below).
+case "$TOOLKIT_ROOT_WIN" in [A-Za-z]:/*) CODEX_WIN=1 ;; *) CODEX_WIN="" ;; esac
+# macOS: rendered by tools/codex-posix-setup.py (POSIX root, absolute bash 4.4+). Measured on Darwin only.
+CODEX_POSIX=""; [ -z "$CODEX_WIN" ] && [ "$(uname -s)" = "Darwin" ] && CODEX_POSIX=1
 # The root as a native Python opens it (every tools/*.py call below): the C:/ form wherever Git Bash's cygpath
 # exists -- the same as `pwd -W` normally -- else the shell's own path (Linux).
-PY_ROOT="$GAME_ROOT_WIN"
+PY_ROOT="$TOOLKIT_ROOT_WIN"
 if type cygpath >/dev/null 2>&1; then
-    PY_ROOT=$(cygpath -m "$GAME_DIR" 2>/dev/null | tr -d '\r') || PY_ROOT="$GAME_ROOT_WIN"
-    [ -n "$PY_ROOT" ] || PY_ROOT="$GAME_ROOT_WIN"
+    PY_ROOT=$(cygpath -m "$TOOLKIT_DIR" 2>/dev/null | tr -d '\r') || PY_ROOT="$TOOLKIT_ROOT_WIN"
+    [ -n "$PY_ROOT" ] || PY_ROOT="$TOOLKIT_ROOT_WIN"
 fi
 
 # --- Which agents this run configures --------------------------------------------------------------------
@@ -82,7 +142,7 @@ fi
 AGENTS_FOUND=""
 if [ "$AGENT_ARG" = "auto" ]; then
     which claude >/dev/null 2>&1 && AGENTS_FOUND="claude"
-    if [ -n "$CODEX_WIN" ] && which codex >/dev/null 2>&1; then AGENTS_FOUND="${AGENTS_FOUND:+$AGENTS_FOUND }codex"; fi
+    if { [ -n "$CODEX_WIN" ] || [ -n "$CODEX_POSIX" ]; } && which codex >/dev/null 2>&1; then AGENTS_FOUND="${AGENTS_FOUND:+$AGENTS_FOUND }codex"; fi
     if which opencode >/dev/null 2>&1; then AGENTS_FOUND="${AGENTS_FOUND:+$AGENTS_FOUND }opencode"; fi
     case "$AGENTS_FOUND" in
         claude) AGENT_SEL="claude" ;;
@@ -101,9 +161,9 @@ case "$AGENT_SEL" in
     opencode) DO_OPENCODE=1 ;;
     all) DO_CLAUDE=1; DO_CODEX=1; DO_OPENCODE=1 ;;
 esac
-if [ "$AGENT_SEL" = "codex" ] && [ -z "$CODEX_WIN" ]; then
-    echo "setup.sh: --agent codex: the toolkit's Codex support is Windows-only (Codex on Linux, macOS or WSL is" >&2
-    echo "not supported), and this folder is not a Windows path ($GAME_ROOT_WIN). Nothing was changed." >&2
+if [ "$AGENT_SEL" = "codex" ] && [ -z "$CODEX_WIN" ] && [ -z "$CODEX_POSIX" ]; then
+    echo "setup.sh: --agent codex: the toolkit's Codex support is Windows and macOS only (Codex on Linux or WSL is" >&2
+    echo "not supported), and this folder is not a Windows path ($TOOLKIT_ROOT_WIN). Nothing was changed." >&2
     echo "Use --agent claude here." >&2
     exit 3
 fi
@@ -139,6 +199,9 @@ echo " Skyrim AI Assistant Toolkit -- Setup"
 echo "============================================"
 echo ""
 echo "Game directory: $GAME_ROOT_WIN"
+if [ "$GAME_DIR" != "$TOOLKIT_DIR" ]; then
+    echo "Toolkit directory: $TOOLKIT_ROOT_WIN (Skyrim folder stays clean)"
+fi
 case "$AGENT_ARG" in
     auto) echo "Agents: ${AGENTS_FOUND:-none found on PATH} -> configuring: $AGENT_SEL (--agent auto)" ;;
     *) echo "Agents: configuring $AGENT_SEL (--agent $AGENT_ARG)" ;;
@@ -149,6 +212,11 @@ echo ""
 # --- Verify this looks like a Skyrim install ---
 if [ ! -f "$GAME_DIR/SkyrimVR.exe" ] && [ ! -f "$GAME_DIR/SkyrimSE.exe" ]; then
     echo "WARNING: No SkyrimVR.exe or SkyrimSE.exe found here."
+    if [ "$GAME_DIR" = "$TOOLKIT_DIR" ]; then
+        echo "If you keep the toolkit in a separate folder to leave Skyrim clean, pass:"
+        echo "  bash setup.sh --game \"/path/to/Skyrim\""
+        echo ""
+    fi
     echo "This script should be run from your Skyrim installation folder."
     echo ""
     echo "Are you sure this is the right directory?"
@@ -157,10 +225,10 @@ if [ ! -f "$GAME_DIR/SkyrimVR.exe" ] && [ ! -f "$GAME_DIR/SkyrimSE.exe" ]; then
 fi
 
 # --- Verify toolkit files are present ---
-if [ ! -f "$GAME_DIR/KNOWLEDGEBASE.md" ] || [ ! -f "$GAME_DIR/tools/skyguard/run.py" ] || \
-   [ ! -f "$GAME_DIR/tools/agent-harness.py" ]; then
-    echo "ERROR: Toolkit files not found in this directory."
-    echo "Make sure you extracted the toolkit zip into your Skyrim folder first."
+if [ ! -f "$TOOLKIT_DIR/KNOWLEDGEBASE.md" ] || [ ! -f "$TOOLKIT_DIR/tools/skyguard/run.py" ] || \
+   [ ! -f "$TOOLKIT_DIR/tools/agent-harness.py" ]; then
+    echo "ERROR: Toolkit files not found in this directory ($TOOLKIT_DIR)."
+    echo "Make sure you run setup.sh from the toolkit directory."
     exit 1
 fi
 
@@ -199,11 +267,19 @@ case "$(uname -s 2>/dev/null)" in
     MINGW*|MSYS*)
         echo "  Git Bash: $(git --version 2>/dev/null | tr -d '\r') (tested with Git for Windows 2.55.0.5)" ;;
     *)
-        case "$GAME_DIR" in
+        case "$TOOLKIT_DIR" in
             /mnt/[a-zA-Z]/*)
                 echo "  WARNING: this looks like WSL bash on a Windows drive. The toolkit's hooks run under Git Bash on"
                 echo "  Windows; run setup.sh from Git Bash (Git for Windows), not WSL." ;;
-            *) echo "  bash $BASH_VERSION ($(uname -s 2>/dev/null))" ;;
+            *) echo "  bash $BASH_VERSION ($(uname -s 2>/dev/null))"
+               # The hooks run under the `bash` first on PATH, and need 4.4+ (a time-limited child process): on an
+               # older one (macOS ships 3.2) they cannot run the engine and REFUSE every call. Say so now.
+               read -r BV_MAJOR BV_MINOR <<<"$(bash -c 'echo "${BASH_VERSINFO[0]} ${BASH_VERSINFO[1]}"' 2>/dev/null)"
+               if [ "${BV_MAJOR:-0}" -lt 4 ] || { [ "${BV_MAJOR:-0}" -eq 4 ] && [ "${BV_MINOR:-0}" -lt 4 ]; }; then
+                   echo "  WARNING: the bash the hooks will use (first on PATH) is ${BV_MAJOR:-?}.${BV_MINOR:-?}; they need bash 4.4 or newer."
+                   echo "  Until then every guarded call is refused. On macOS: brew install bash, then put its folder"
+                   echo "  (/opt/homebrew/bin) before /bin in PATH and restart your agent. See docs/macos-crossover.md."
+               fi ;;
         esac ;;
 esac
 
@@ -391,7 +467,8 @@ fi
 # ReSaver CLI compiles its small driver on first run, so it needs a JDK (javac), 17 or newer; 21 is tested.
 echo ""
 echo "Checking for a JDK..."
-if which java >/dev/null 2>&1; then
+# macOS ships a `java` stub that exists but finds no runtime, so run it: `which` alone is not proof.
+if which java >/dev/null 2>&1 && java -version >/dev/null 2>&1; then
     JAVA_LINE=$(java -version 2>&1 | tr -d '\r' | head -n1)
     echo "  Found Java: $JAVA_LINE"
     JAVA_MAJOR=$(printf '%s' "$JAVA_LINE" | sed -n 's/.*version "\(1\.\)\{0,1\}\([0-9][0-9]*\).*/\2/p')
@@ -472,8 +549,8 @@ esac
 # half-written: said loudly, and setup carries on. Exit 2 = not an install.
 echo ""
 echo "Checking for a 3.x install to carry forward..."
-MIG_ENV="$GAME_DIR/.claude/backups/migrate-3x/carried-paths.env"
-if [ ! -f "$GAME_DIR/tools/migrate-3x.py" ]; then
+MIG_ENV="$TOOLKIT_DIR/.claude/backups/migrate-3x/carried-paths.env"
+if [ ! -f "$TOOLKIT_DIR/tools/migrate-3x.py" ]; then
     echo "  tools/migrate-3x.py is missing -- skipped (re-extract the toolkit zip to restore it)."
 elif [ -z "$PY_FOUND" ]; then
     echo "  Migration skipped: it needs Python 3.10+. Your files from before the update are in"
@@ -519,14 +596,15 @@ if [ -f "$GAME_DIR/SkyrimVR.exe" ] && [ ! -f "$GAME_DIR/SkyrimSE.exe" ]; then
     SKYRIM_FOLDER="Skyrim VR"
 elif [ -f "$GAME_DIR/SkyrimSE.exe" ] && [ ! -f "$GAME_DIR/SkyrimVR.exe" ]; then
     SKYRIM_FOLDER="Skyrim Special Edition"
-elif [ -d "$DOCUMENTS_DIR/My Games/Skyrim Special Edition" ] && [ ! -d "$DOCUMENTS_DIR/My Games/Skyrim VR" ]; then
-    SKYRIM_FOLDER="Skyrim Special Edition"
-else
+elif [ -d "$DOCUMENTS_DIR/My Games/Skyrim VR" ] && [ ! -d "$DOCUMENTS_DIR/My Games/Skyrim Special Edition" ]; then
     SKYRIM_FOLDER="Skyrim VR"
+else
+    SKYRIM_FOLDER="Skyrim Special Edition"
 fi
-CONFIG_DIR="$DOCUMENTS_DIR/My Games/$SKYRIM_FOLDER"
+# Set these when the game runs somewhere setup cannot see, e.g. a CrossOver/Wine bottle on macOS (docs/macos-crossover.md).
+CONFIG_DIR="${SKYRIM_CONFIG_DIR:-$DOCUMENTS_DIR/My Games/$SKYRIM_FOLDER}"
 DOCUMENTS_GAME_DIR="$CONFIG_DIR"       # stays here when MO2 profile INIs move CONFIG_DIR: the saves do not move
-LOADORDER_DIR="$LOCALAPPDATA_DIR/$SKYRIM_FOLDER"
+LOADORDER_DIR="${SKYRIM_LOADORDER_DIR:-$LOCALAPPDATA_DIR/$SKYRIM_FOLDER}"
 
 # --- Detect Mod Organizer 2 -------------------------------------------------
 # MO2 has NO flat Data/ folder on disk. It builds a virtual one at launch by merging each enabled
@@ -645,6 +723,18 @@ if [ -f "$MIG_ENV" ]; then
     fi
     # GAME_ROOT is never taken from it: setup runs IN the install, so the detected root is the truth.
 fi
+# Explicit machine paths (setup.local.env or the environment) win over detection: MO2 under CrossOver is not
+# detectable from macOS, and empty MO2 paths would drop the guards' mods/ and overwrite/ protection.
+[ -z "${SKYRIM_CONFIG_DIR:-}" ] || CONFIG_DIR="$SKYRIM_CONFIG_DIR"
+[ -z "${SKYRIM_LOADORDER_DIR:-}" ] || LOADORDER_DIR="$SKYRIM_LOADORDER_DIR"
+if [ -n "${SKYRIM_MO2_MODS:-}" ]; then
+    MO2_MODS="$SKYRIM_MO2_MODS"
+    MO2_OVERWRITE="${SKYRIM_MO2_OVERWRITE:-$(dirname "$MO2_MODS")/overwrite}"
+    [ -n "$MO2_INSTANCE" ] || MO2_INSTANCE="$(dirname "$MO2_MODS")"
+    if [ -n "${SKYRIM_LOADORDER_DIR:-}" ]; then
+        MO2_PROFILE_DIR="$SKYRIM_LOADORDER_DIR"; MO2_PROFILE="$(basename "$MO2_PROFILE_DIR")"
+    fi
+fi
 
 echo ""
 if [ -n "$MO2_INSTANCE" ]; then
@@ -686,25 +776,25 @@ for hook in .claude/hooks/protect-bash.sh .claude/hooks/protect-files.sh .claude
     # Check it EXISTS first. `grep -q` on a missing file exits 2, which is not 0, so
     # control fell to the else branch and a hook that had been quarantined by antivirus
     # or lost to a partial unzip was reported as "Already configured".
-    if [ ! -f "$GAME_DIR/$hook" ]; then
+    if [ ! -f "$TOOLKIT_DIR/$hook" ]; then
         echo "  MISSING: $hook -- this hook is NOT installed and will never run"
         HOOKS_MISSING=$((HOOKS_MISSING + 1))
         case "$hook" in
             .codex/*) HOOKS_MISSING_CODEX=$((HOOKS_MISSING_CODEX + 1)) ;;
             *) HOOKS_MISSING_CLAUDE=$((HOOKS_MISSING_CLAUDE + 1)) ;;
         esac
-    elif grep -q '{{PYTHON_PATH}}' "$GAME_DIR/$hook"; then
+    elif grep -q '{{PYTHON_PATH}}' "$TOOLKIT_DIR/$hook"; then
         if [ -n "$PYTHON_PATH" ]; then
-            sed -i "s|{{PYTHON_PATH}}|$H_SED|g" "$GAME_DIR/$hook"
+            sedit "s|{{PYTHON_PATH}}|$H_SED|g" "$TOOLKIT_DIR/$hook"
             echo "  Configured: $hook"
         else
             echo "  NOT CONFIGURED: $hook -- no Python 3 found, so this hook will refuse until setup.sh is re-run"
         fi
-    elif [ -n "$PYTHON_PATH" ] && ! grep -qxF "$H_LINE" "$GAME_DIR/$hook"; then
+    elif [ -n "$PYTHON_PATH" ] && ! grep -qxF "$H_LINE" "$TOOLKIT_DIR/$hook"; then
         # Already configured, but for a different interpreter (Python upgraded or moved). Left alone,
         # the hook would refuse every command while this script said "Already configured".
-        OLD_PY=$(grep -m1 "$H_RE" "$GAME_DIR/$hook" || true)
-        sed -i "s|$H_RE.*|$H_NEW|" "$GAME_DIR/$hook"
+        OLD_PY=$(grep -m1 "$H_RE" "$TOOLKIT_DIR/$hook" || true)
+        sedit "s|$H_RE.*|$H_NEW|" "$TOOLKIT_DIR/$hook"
         echo "  Updated interpreter: $hook ($OLD_PY -> PY=$PYTHON_PATH)"
     else
         echo "  Already configured: $hook"
@@ -722,14 +812,14 @@ B_SH_SED=$(printf '%s' "$B_SH" | sed -e 's/[\\|&]/\\&/g')
 B_PS="${BASH_FOR_HOOKS//\'/\'\'}"
 B_PS_SED=$(printf '%s' "$B_PS" | sed -e 's/[\\|&]/\\&/g')
 for hook in .codex/hooks/skyguard-entry.ps1 .codex/hooks/skyguard-entry.sh; do
-    [ -f "$GAME_DIR/$hook" ] && grep -q '{{BASH_PATH}}' "$GAME_DIR/$hook" || continue
+    [ -f "$TOOLKIT_DIR/$hook" ] && grep -q '{{BASH_PATH}}' "$TOOLKIT_DIR/$hook" || continue
     case "$hook" in *.ps1) H_SED="$B_PS_SED" ;; *) H_SED="$B_SH_SED" ;; esac
-    sed -i "s|{{BASH_PATH}}|$H_SED|g" "$GAME_DIR/$hook"
+    sedit "s|{{BASH_PATH}}|$H_SED|g" "$TOOLKIT_DIR/$hook"
 done
 
 # PowerShell 5.1 reads BOM-less scripts with its legacy code page. Preserve the
 # UTF-8 interpreter/Bash paths just inserted above, including non-ASCII names.
-if [ -f "$GAME_DIR/.codex/hooks/skyguard-entry.ps1" ] && [ -n "$PY_FOUND" ]; then
+if [ -f "$TOOLKIT_DIR/.codex/hooks/skyguard-entry.ps1" ] && [ -n "$PY_FOUND" ]; then
     if ! MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' $PY_FOUND -B \
         "$PY_ROOT/tools/skyguard/upgrade_render.py" encode-powershell \
         "$PY_ROOT/.codex/hooks/skyguard-entry.ps1"; then
@@ -766,8 +856,8 @@ sq() {
     s=${s//\'/\'\\\'\'}          # ' -> '\''
     printf "'%s'" "$s"
 }
-PATHS_ENV="$GAME_DIR/skyrim-paths.env"
-PATHS_ENV_3X="$GAME_DIR/.claude/skyrim-paths.env"
+PATHS_ENV="$TOOLKIT_DIR/skyrim-paths.env"
+PATHS_ENV_3X="$TOOLKIT_DIR/.claude/skyrim-paths.env"
 PATHS_BAD=""
 # The guard's OWN reader (tools/skyguard/paths.py), run on the files as data -- never by sourcing them -- so what
 # setup checks is what the guard will read. Output is UTF-8 bytes, whatever the console's code page.
@@ -846,7 +936,7 @@ retire_3x_paths() {
         return 0
     fi
     stamp=$(date +%Y%m%d_%H%M%S)
-    dest="$GAME_DIR/.claude/backups/skyrim-paths-3x/$stamp"
+    dest="$TOOLKIT_DIR/.claude/backups/skyrim-paths-3x/$stamp"
     # A rename keeps every byte, and -n never replaces an earlier copy. Verified: the old path gone, the copy there.
     if mkdir -p "$dest" && mv -n "$PATHS_ENV_3X" "$dest/skyrim-paths.env" && [ ! -e "$PATHS_ENV_3X" ] \
        && [ -f "$dest/skyrim-paths.env" ]; then
@@ -980,16 +1070,18 @@ fi
 # command RUN); then the Codex side is left unconfigured and this says so.
 # Setup never marks a Codex project trusted and never approves a hook: both are the user's, in Codex.
 echo ""
-CODEX_DEFS="$GAME_DIR/.codex/hooks.json"
+CODEX_DEFS="$TOOLKIT_DIR/.codex/hooks.json"
 CODEX_STATE="none"
 # "Is this the folder the definitions were rendered for?" Windows paths are case-insensitive and pwd keeps
 # the case the user typed, so the comparison folds case there (ASCII, via tr -- this Git Bash's grep -i
 # aborts with -F). Only the comparison: the rendered path above is never case-folded.
 codex_same_root() {
     if [ -n "$CODEX_WIN" ]; then
-        tr 'A-Z' 'a-z' < "$CODEX_DEFS" | grep -qF "$(printf '%s' "$GAME_ROOT_WIN/.codex/hooks/skyguard-entry.ps1" | tr 'A-Z' 'a-z')"
+        tr 'A-Z' 'a-z' < "$CODEX_DEFS" | grep -qF "$(printf '%s' "$TOOLKIT_ROOT_WIN/.codex/hooks/skyguard-entry.ps1" | tr 'A-Z' 'a-z')"
+    elif [ -n "$CODEX_POSIX" ]; then
+        grep -qF "$TOOLKIT_DIR/.codex/hooks/skyguard-entry.sh" "$CODEX_DEFS"
     else
-        grep -qF "$GAME_ROOT_WIN/.codex/hooks/skyguard-entry.ps1" "$CODEX_DEFS"
+        grep -qF "$TOOLKIT_ROOT_WIN/.codex/hooks/skyguard-entry.ps1" "$CODEX_DEFS"
     fi
 }
 if [ -z "$DO_CODEX" ]; then
@@ -1007,23 +1099,34 @@ rm -f "$CODEX_DEFS.new"
 if [ ! -f "$CODEX_DEFS" ]; then
     echo "  MISSING: .codex/hooks.json -- Codex has no toolkit hooks in this folder."
 elif grep -q '{{CODEX_ROOT' "$CODEX_DEFS"; then
-    if [ -z "$CODEX_WIN" ]; then
-        echo "  NOT CONFIGURED: the toolkit's Codex support is Windows-only (Codex on Linux or WSL is not"
-        echo "  supported). Claude Code is configured as usual."
+    if [ -n "$CODEX_POSIX" ]; then
+        CODEX_BASH=$(command -v bash)
+        if CODEX_ERR=$(python3 "$TOOLKIT_DIR/tools/codex-posix-setup.py" --python "${PYTHON_PATH:-$(command -v python3)}" --bash "$CODEX_BASH" --apply 2>&1); then
+            CODEX_STATE="configured"
+            echo "  Configured: .codex/hooks.json for macOS (bash $CODEX_BASH, root $TOOLKIT_DIR)"
+            echo "  Tip: git update-index --skip-worktree .codex/hooks.json .codex/hooks/skyguard-entry.sh keeps these local paths out of commits."
+        else
+            echo ""
+            echo "  !! CODEX HOOKS NOT CONFIGURED -- Codex will run WITHOUT the toolkit's safety hooks here."
+            echo "  !! $CODEX_ERR"
+        fi
+    elif [ -z "$CODEX_WIN" ]; then
+        echo "  NOT CONFIGURED: the toolkit's Codex support is Windows and macOS only (not Linux or WSL)."
+        echo "  Claude Code is configured as usual."
     elif [ -z "$PY_FOUND" ]; then
         echo "  NOT CONFIGURED: rendering the Codex hooks needs Python 3.10+. Install it and re-run setup.sh."
     else
         # Windows-form paths and no MSYS argument conversion: Git Bash would otherwise rewrite the POSIX
         # root (/c/...) into C:/... on its way to a native python, and the definition would change.
         CODEX_ERR=$(MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' $PY_FOUND \
-            "$GAME_ROOT_WIN/tools/skyguard/codex_definitions.py" render \
-            --template "$GAME_ROOT_WIN/.codex/hooks.json" \
-            --root-win "$GAME_ROOT_WIN" --root-posix "$GAME_DIR" \
-            --out "$GAME_ROOT_WIN/.codex/hooks.json.new" 2>&1) && CODEX_RC=0 || CODEX_RC=$?
+            "$TOOLKIT_DIR/tools/skyguard/codex_definitions.py" render \
+            --template "$TOOLKIT_ROOT_WIN/.codex/hooks.json" \
+            --root-win "$TOOLKIT_ROOT_WIN" --root-posix "$TOOLKIT_DIR" \
+            --out "$TOOLKIT_DIR/.codex/hooks.json.new" 2>&1) && CODEX_RC=0 || CODEX_RC=$?
         if [ "$CODEX_RC" = 0 ] && [ -s "$CODEX_DEFS.new" ]; then
             mv -f "$CODEX_DEFS.new" "$CODEX_DEFS"
             CODEX_STATE="configured"
-            echo "  Configured: .codex/hooks.json (hooks run from $GAME_ROOT_WIN)"
+            echo "  Configured: .codex/hooks.json (hooks run from $TOOLKIT_ROOT_WIN)"
         else
             rm -f "$CODEX_DEFS.new"
             echo ""
@@ -1041,7 +1144,7 @@ else
     CODEX_OLD=$(sed -n 's/.*-File \\"\(.*\)\/\.codex\/hooks\/skyguard-entry\.ps1\\".*/\1/p' "$CODEX_DEFS" | head -n1)
     CODEX_STATE="elsewhere"
     echo ""
-    echo "  WARNING: .codex/hooks.json points at ${CODEX_OLD:-another folder}, not this one ($GAME_ROOT_WIN)."
+    echo "  WARNING: .codex/hooks.json points at ${CODEX_OLD:-another folder}, not this one ($TOOLKIT_ROOT_WIN)."
     echo "  Codex would run the hooks of that other folder, or none. To fix:"
     echo "    1. Re-extract the toolkit zip into this folder (restores the unconfigured .codex/hooks.json)."
     echo "    2. Run: bash setup.sh"
@@ -1051,10 +1154,36 @@ if [ "$CODEX_STATE" = "configured" ]; then
     echo ""
     echo "Codex users: Codex runs these hooks only after you approve them. Open \`codex\` in this folder, type"
     echo "/hooks, and approve the 2 Skyrim toolkit hooks. Until then NOTHING is checked and Codex does not say so."
-    echo "Start Codex in the game folder. Subfolder loading is version-dependent: it worked in an isolated"
-    echo "0.162.1 probe. Verify the live banner and canary before relying on hooks."
+    echo "Start Codex in the game folder itself. Codex runs no hook started from a subfolder unless the install"
+    echo "folder is a git repository; Steam installs are not. Verify the live banner and canary before relying on hooks."
     echo "Check any time with: bash tools/hook-canary.sh"
 fi
+fi
+
+# --- Enable the pre-commit check that refuses machine-local paths (.githooks/pre-commit) ---
+# Left alone when the folder is not a git checkout or core.hooksPath is already set to something else.
+if [ -f "$TOOLKIT_DIR/.githooks/pre-commit" ] && git -C "$TOOLKIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    GH_CUR=$(git -C "$TOOLKIT_DIR" config --get core.hooksPath 2>/dev/null)
+    if [ -z "$GH_CUR" ]; then
+        git -C "$TOOLKIT_DIR" config core.hooksPath .githooks && echo "" && echo "Enabled git pre-commit check for local paths (core.hooksPath=.githooks)."
+    elif [ "$GH_CUR" != ".githooks" ]; then
+        echo "" && echo "  NOTE: core.hooksPath is '$GH_CUR'; the local-path pre-commit check (.githooks/pre-commit) is not enabled."
+    fi
+fi
+
+# --- Render the Antigravity hooks (.agents/hooks.json) from its template ---
+# Antigravity resolves a relative hook command against .agents/ and expands only ~, so the command needs an
+# absolute path; the rendered file is machine-local and gitignored. A root holding " \ or a newline would
+# break the JSON, so it is refused (a hook that cannot start lets every command RUN).
+if [ -f "$TOOLKIT_DIR/.agents/hooks.json.template" ]; then
+    echo ""
+    case "$TOOLKIT_DIR" in
+        *'"'*|*'\'*|*$'\n'*) echo "  !! .agents/hooks.json NOT rendered: the toolkit path holds a quote, backslash or newline." ;;
+        *) AGY_ROOT_ESC=$(printf '%s' "$TOOLKIT_DIR" | sed -e 's/[\\|&]/\\&/g')
+           sed "s|{{TOOLKIT_ROOT}}|$AGY_ROOT_ESC|g" "$TOOLKIT_DIR/.agents/hooks.json.template" > "$TOOLKIT_DIR/.agents/hooks.json.new" \
+               && mv -f "$TOOLKIT_DIR/.agents/hooks.json.new" "$TOOLKIT_DIR/.agents/hooks.json"
+           echo "Rendered .agents/hooks.json for $TOOLKIT_DIR" ;;
+    esac
 fi
 
 # --- Configure CLAUDE.md and AGENTS.md (replace path placeholders) ---
@@ -1078,13 +1207,13 @@ if [ -z "$DOC_ON" ]; then
     continue
 fi
 echo "Configuring $DOC..."
-if [ ! -f "$GAME_DIR/$DOC" ]; then
+if [ ! -f "$TOOLKIT_DIR/$DOC" ]; then
     echo "  MISSING: $DOC"
-elif grep -q "$DOC_PLACEHOLDERS" "$GAME_DIR/$DOC"; then
-    sed -i "s|{{GAME_ROOT}}|$(sed_repl "$GAME_ROOT_WIN")|g" "$GAME_DIR/$DOC"
-    sed -i "s|{{CONFIG_DIR}}|$(sed_repl "$CONFIG_DIR")|g" "$GAME_DIR/$DOC"
-    sed -i "s|{{LOADORDER_DIR}}|$(sed_repl "$LOADORDER_DIR")|g" "$GAME_DIR/$DOC"
-    sed -i "s|{{SKYRIM_FOLDER}}|$(sed_repl "$SKYRIM_FOLDER")|g" "$GAME_DIR/$DOC"
+elif grep -q "$DOC_PLACEHOLDERS" "$TOOLKIT_DIR/$DOC"; then
+    sedit "s|{{GAME_ROOT}}|$(sed_repl "$GAME_ROOT_WIN")|g" "$TOOLKIT_DIR/$DOC"
+    sedit "s|{{CONFIG_DIR}}|$(sed_repl "$CONFIG_DIR")|g" "$TOOLKIT_DIR/$DOC"
+    sedit "s|{{LOADORDER_DIR}}|$(sed_repl "$LOADORDER_DIR")|g" "$TOOLKIT_DIR/$DOC"
+    sedit "s|{{SKYRIM_FOLDER}}|$(sed_repl "$SKYRIM_FOLDER")|g" "$TOOLKIT_DIR/$DOC"
 
     # Mod-manager block. Built in a temp file and spliced in with sed's `r`, so no amount of
     # punctuation in a path can break the substitution.
@@ -1114,13 +1243,13 @@ MMEOF
   so `Data/` is the real, merged view of everything installed.
 MMEOF
     fi
-    sed -i -e "/{{MOD_MANAGER_PATHS}}/{r $MM_BLOCK" -e "d}" "$GAME_DIR/$DOC"
+    sedit -e "/{{MOD_MANAGER_PATHS}}/{r $MM_BLOCK" -e "d;" -e "}" "$TOOLKIT_DIR/$DOC"
     rm -f "$MM_BLOCK"
 
     echo "  Configured with your paths (Skyrim folder: $SKYRIM_FOLDER)."
 else
     echo "  Already configured."
-    if [ -n "$CONFIG_DIR" ] && ! grep -qF "$CONFIG_DIR" "$GAME_DIR/$DOC"; then
+    if [ -n "$CONFIG_DIR" ] && ! grep -qF "$CONFIG_DIR" "$TOOLKIT_DIR/$DOC"; then
         echo "  !! $DOC still names older folders: the guard follows skyrim-paths.env ($CONFIG_DIR), but this file was"
         echo "  !! filled in once. Tell your agent the current folder, or re-extract $DOC and re-run setup."
     fi
@@ -1133,9 +1262,9 @@ done
 # INSTRUCTION_BUDGET). A very long install root or MO2 paths can still push the INSTALLED copy past it.
 INSTRUCTION_BUDGET=32768
 for BDOC in CLAUDE.md AGENTS.md; do
-    [ -f "$GAME_DIR/$BDOC" ] || continue
-    grep -q "$DOC_PLACEHOLDERS" "$GAME_DIR/$BDOC" && continue      # not configured: nothing installed to measure
-    DOC_BYTES=$(wc -c < "$GAME_DIR/$BDOC" | tr -d ' \r')
+    [ -f "$TOOLKIT_DIR/$BDOC" ] || continue
+    grep -q "$DOC_PLACEHOLDERS" "$TOOLKIT_DIR/$BDOC" && continue      # not configured: nothing installed to measure
+    DOC_BYTES=$(wc -c < "$TOOLKIT_DIR/$BDOC" | tr -d ' \r')
     [ "$DOC_BYTES" -gt "$INSTRUCTION_BUDGET" ] || continue
     echo ""
     echo "  WARNING: $BDOC is $DOC_BYTES bytes, over the $INSTRUCTION_BUDGET-byte instruction budget (by $((DOC_BYTES - INSTRUCTION_BUDGET)))."
@@ -1149,7 +1278,7 @@ for BDOC in CLAUDE.md AGENTS.md; do
 done
 
 # --- Configure the devcontainer (optional; only if the user has .devcontainer/) ---
-if [ -f "$GAME_DIR/.devcontainer/devcontainer.json" ] && grep -q '{{DEVCONTAINER_MODS_MOUNT}}' "$GAME_DIR/.devcontainer/devcontainer.json"; then
+if [ -f "$TOOLKIT_DIR/.devcontainer/devcontainer.json" ] && grep -q '{{DEVCONTAINER_MODS_MOUNT}}' "$TOOLKIT_DIR/.devcontainer/devcontainer.json"; then
     echo ""
     echo "Configuring .devcontainer/ (Docker dev environment for the container-side tools)..."
     if [ -n "$MO2_INSTANCE" ]; then
@@ -1159,19 +1288,19 @@ if [ -f "$GAME_DIR/.devcontainer/devcontainer.json" ] && grep -q '{{DEVCONTAINER
         # or overwrite catcher -- point all three at what actually exists.
         DC_MODS="$GAME_ROOT_WIN/Data"; DC_PROFILE="$CONFIG_DIR"; DC_OVERWRITE="$GAME_ROOT_WIN/Data"
     fi
-    sed -i "s|{{DEVCONTAINER_MODS_MOUNT}}|$(sed_repl "$DC_MODS")|g" "$GAME_DIR/.devcontainer/devcontainer.json"
-    sed -i "s|{{DEVCONTAINER_PROFILE_MOUNT}}|$(sed_repl "$DC_PROFILE")|g" "$GAME_DIR/.devcontainer/devcontainer.json"
-    sed -i "s|{{DEVCONTAINER_OVERWRITE_MOUNT}}|$(sed_repl "$DC_OVERWRITE")|g" "$GAME_DIR/.devcontainer/devcontainer.json"
+    sedit "s|{{DEVCONTAINER_MODS_MOUNT}}|$(sed_repl "$DC_MODS")|g" "$TOOLKIT_DIR/.devcontainer/devcontainer.json"
+    sedit "s|{{DEVCONTAINER_PROFILE_MOUNT}}|$(sed_repl "$DC_PROFILE")|g" "$TOOLKIT_DIR/.devcontainer/devcontainer.json"
+    sedit "s|{{DEVCONTAINER_OVERWRITE_MOUNT}}|$(sed_repl "$DC_OVERWRITE")|g" "$TOOLKIT_DIR/.devcontainer/devcontainer.json"
     echo "  Configured .devcontainer/devcontainer.json with your mod paths."
     echo "  Run ./devshell-docker.sh (Docker only) or ./devshell.sh (needs the devcontainer CLI)."
 fi
 
 # --- Ensure backup directory exists (both agents' hooks write their records under it) ---
-mkdir -p "$GAME_DIR/.claude/backups"
+mkdir -p "$TOOLKIT_DIR/.claude/backups"
 
 # --- Copy settings.local.json.example if no settings.local.json exists (Claude Code only) ---
-if [ -n "$DO_CLAUDE" ] && [ ! -f "$GAME_DIR/.claude/settings.local.json" ] && [ -f "$GAME_DIR/.claude/settings.local.json.example" ]; then
-    cp "$GAME_DIR/.claude/settings.local.json.example" "$GAME_DIR/.claude/settings.local.json"
+if [ -n "$DO_CLAUDE" ] && [ ! -f "$TOOLKIT_DIR/.claude/settings.local.json" ] && [ -f "$TOOLKIT_DIR/.claude/settings.local.json.example" ]; then
+    cp "$TOOLKIT_DIR/.claude/settings.local.json.example" "$TOOLKIT_DIR/.claude/settings.local.json"
     echo ""
     echo "  Copied settings.local.json.example -> settings.local.json: common commands (rm, bash, python, curl and"
     echo "  others) run without a prompt, and the guards still judge each one. Edit that file to change the list."
@@ -1180,7 +1309,7 @@ fi
 # --- Optional: Nexus API integration status (non-blocking) ---
 echo ""
 echo "Checking optional Nexus API integration..."
-NEXUS_KEY_FILE="$GAME_DIR/tools/.nexus_api_key"
+NEXUS_KEY_FILE="$TOOLKIT_DIR/tools/.nexus_api_key"
 if [ -s "$NEXUS_KEY_FILE" ]; then
     chmod 600 "$NEXUS_KEY_FILE" 2>/dev/null || true
     echo "  Nexus API key: configured (tools/.nexus_api_key) -- update detection enabled"
@@ -1193,6 +1322,73 @@ else
     echo "      https://www.nexusmods.com/users/myaccount?tab=api"
     echo "    then save it (one line) to tools/.nexus_api_key  (already gitignored),"
     echo "    or set the NEXUS_API_KEY environment variable. Your agent can do this for you on request."
+fi
+
+# --- Optional: nexusmods-surfer, a PRIVATE repo -- ONLY with --with-surfer ---
+# Pinned like every other tool (docs/installing-tools.md). Access is granted per person by the maintainer.
+# A fresh clone and an existing one both end on local branch main at the pin, tracking origin/main.
+# An existing clone is moved only when that loses nothing: no uncommitted changes, no unpushed commits.
+SURFER_REPO="git@github.com:kxgcayh/nexusmods-surfer.git"
+SURFER_COMMIT="343790fbea34b2bca89f1a32c6ea080c07a12dfa"
+SURFER_DIR="$TOOLKIT_DIR/tools/nexusmods-surfer"
+SURFER_RC=""
+surfer_git() { GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes}" git -C "$SURFER_DIR" "$@"; }
+surfer_denied() {
+    echo "  !! Could not reach $SURFER_REPO."
+    echo "     It is a PRIVATE repository: access is granted per person. Contact the toolkit maintainer"
+    echo "     (GitHub: kxgcayh) to be added, make sure your SSH key is on your GitHub account, then re-run"
+    echo "     bash setup.sh --with-surfer. Everything else in the toolkit works without it."
+}
+# Puts branch main on the pin. Refuses (returns 1, says why) rather than drop anyone's work.
+surfer_to_pin() {
+    if [ "$(surfer_git rev-parse HEAD 2>/dev/null)" = "$SURFER_COMMIT" ] \
+        && [ "$(surfer_git symbolic-ref -q --short HEAD)" = "main" ]; then
+        echo "  Already on main at the pin (${SURFER_COMMIT:0:7}): nothing to do."; return 0
+    fi
+    if [ -n "$(surfer_git status --porcelain --untracked-files=no)" ]; then
+        echo "  !! tools/nexusmods-surfer has uncommitted changes: not moved. Commit or stash them, then re-run."; return 1
+    fi
+    if ! surfer_git fetch -q origin main; then surfer_denied; return 1; fi
+    if ! surfer_git merge-base --is-ancestor "$SURFER_COMMIT" origin/main 2>/dev/null; then
+        echo "  !! The pin ${SURFER_COMMIT:0:7} is not on origin/main: not moved. The maintainer must push it."; return 1
+    fi
+    if surfer_git rev-parse -q --verify refs/heads/main >/dev/null \
+        && [ -n "$(surfer_git rev-list origin/main..main)" ]; then
+        echo "  !! Local main has commits not on origin/main: not moved. Push them (or move them to another branch)."; return 1
+    fi
+    local cur; cur="$(surfer_git rev-parse HEAD)"
+    # A detached HEAD is the only state switching away from can orphan; a branch keeps its commits.
+    if ! surfer_git symbolic-ref -q HEAD >/dev/null && ! surfer_git merge-base --is-ancestor HEAD origin/main; then
+        echo "  !! The checked-out commit ${cur:0:7} is on no pushed branch: not moved. Give it a branch first:"
+        echo "     git -C tools/nexusmods-surfer switch -c <name>"; return 1
+    fi
+    surfer_git -c advice.detachedHead=false switch -q -C main "$SURFER_COMMIT" \
+        && surfer_git branch -q --set-upstream-to=origin/main main \
+        && echo "  On main at the pin (${SURFER_COMMIT:0:7}), tracking origin/main."
+}
+echo ""
+if [ -n "$WANT_SURFER" ]; then
+    echo "Installing nexusmods-surfer (--with-surfer)..."
+    if [ -d "$SURFER_DIR/.git" ]; then
+        surfer_to_pin && SURFER_RC=0 || SURFER_RC=1
+        if [ "$SURFER_RC" = 0 ]; then
+            echo "  If package-lock.json changed: cd tools/nexusmods-surfer && npm ci"
+        fi
+    elif [ -e "$SURFER_DIR" ]; then
+        echo "  !! tools/nexusmods-surfer exists but is not a git clone: not touched."
+        SURFER_RC=1
+    elif GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes}" git clone -q "$SURFER_REPO" "$SURFER_DIR"; then
+        surfer_to_pin && SURFER_RC=0 || SURFER_RC=1
+        if [ "$SURFER_RC" = 0 ]; then
+            echo "  Finish it (needs Node 24 and Brave or a Playwright browser):"
+            echo "    cd tools/nexusmods-surfer && npm ci && npm run auth"
+        fi
+    else
+        SURFER_RC=1
+        surfer_denied
+    fi
+else
+    echo "nexusmods-surfer: not installed (optional, private; bash setup.sh --with-surfer after the maintainer grants access)."
 fi
 
 # --- Layer 2: the read-only lock on the vanilla masters and archives -- ONLY with --lock ---
@@ -1221,7 +1417,7 @@ fi
 # --- Optional save locks (user ruling 2026-10-31): the OS refuses to delete or change a locked save ---
 # Off unless chosen. Asked only when a person is at the terminal on Windows and neither flag was given; Enter = no.
 SAVE_LOCK_RC=""
-SAVE_LOCK_SWITCH="$GAME_DIR/.modding-agent-harness/save-lock.json"
+SAVE_LOCK_SWITCH="$TOOLKIT_DIR/.modding-agent-harness/save-lock.json"
 echo ""
 case "$(uname -s 2>/dev/null)" in MINGW*|MSYS*|CYGWIN*) SL_WINDOWS=1 ;; *) SL_WINDOWS="" ;; esac
 if [ -f "$SAVE_LOCK_SWITCH" ] && grep -q '"enabled": true' "$SAVE_LOCK_SWITCH" 2>/dev/null; then
@@ -1259,9 +1455,9 @@ fi
 
 # --- Which agent ends up configured, said plainly ---
 CLAUDE_STATE="not configured"
-if [ -f "$GAME_DIR/CLAUDE.md" ] && ! grep -q "$DOC_PLACEHOLDERS" "$GAME_DIR/CLAUDE.md"; then CLAUDE_STATE="configured"; fi
+if [ -f "$TOOLKIT_DIR/CLAUDE.md" ] && ! grep -q "$DOC_PLACEHOLDERS" "$TOOLKIT_DIR/CLAUDE.md"; then CLAUDE_STATE="configured"; fi
 AGENTS_DOC_STATE="not configured"
-if [ -f "$GAME_DIR/AGENTS.md" ] && ! grep -q "$DOC_PLACEHOLDERS" "$GAME_DIR/AGENTS.md"; then AGENTS_DOC_STATE="configured"; fi
+if [ -f "$TOOLKIT_DIR/AGENTS.md" ] && ! grep -q "$DOC_PLACEHOLDERS" "$TOOLKIT_DIR/AGENTS.md"; then AGENTS_DOC_STATE="configured"; fi
 
 # What this run could not do. The banner, the agent lines and the exit status must agree: an agent gating on the exit
 # code reported a 3.x upgrade or a lost hook as a success (review 2026-11-04).
@@ -1270,7 +1466,7 @@ if [ "$HOOKS_MISSING" != 0 ]; then
     SETUP_PROBLEMS="$SETUP_PROBLEMS  - $HOOKS_MISSING hook file(s) are missing (see MISSING above). Re-extract the toolkit zip."$'\n'
 fi
 SETTINGS_OK=1
-if [ ! -f "$GAME_DIR/.claude/settings.json" ]; then
+if [ ! -f "$TOOLKIT_DIR/.claude/settings.json" ]; then
     SETTINGS_OK=""
 elif [ -n "$PY_FOUND" ] && ! MSYS_NO_PATHCONV=1 $PY_FOUND -B -c "import json,sys; json.load(open(sys.argv[1],encoding='utf-8'))" "$PY_ROOT/.claude/settings.json" >/dev/null 2>&1; then
     SETTINGS_OK=""
@@ -1319,8 +1515,8 @@ elif [ "$CODEX_SUMMARY" = "both" ]; then
     echo "  Codex:       CONFIGURED -- approve the 2 hooks once in Codex's /hooks; until then Codex runs UNGUARDED."
 elif [ "$CODEX_SUMMARY" = "hooks-only" ]; then
     echo "  Codex:       hooks configured, but AGENTS.md has no paths filled in. To finish: bash setup.sh --agent codex"
-elif [ -z "$CODEX_WIN" ]; then
-    echo "  Codex:       NOT CONFIGURED -- the toolkit's Codex support is Windows-only."
+elif [ -z "$CODEX_WIN" ] && [ -z "$CODEX_POSIX" ]; then
+    echo "  Codex:       NOT CONFIGURED -- the toolkit's Codex support is Windows and macOS only."
 else
     echo "  Codex:       NOT CONFIGURED -- .codex/hooks.json is not rendered for this folder, so Codex runs here"
     echo "               WITHOUT the toolkit's hooks, and AGENTS.md may have no paths. To set it up: bash setup.sh --agent codex"
@@ -1331,7 +1527,7 @@ echo "Installed:"
 echo "  CLAUDE.md                        -- Project instructions for Claude Code"
 echo "  AGENTS.md                        -- The same instructions for Codex and other agents"
 echo "  .codex/                          -- Codex hook definitions + entries (approve them in Codex /hooks)"
-echo "  KNOWLEDGEBASE.md                 -- 2,000+ lines of Skyrim modding knowledge"
+echo "  KNOWLEDGEBASE.md + kb/            -- 2,000+ lines of Skyrim modding knowledge"
 echo "  skyrim-paths.env                 -- The paths the safety hooks guard (machine-local)"
 echo "  .claude/settings.json            -- Hook configuration"
 echo "  .claude/hooks/protect-bash.sh    -- Guards dangerous commands"
@@ -1359,10 +1555,12 @@ echo " Optional modding tools (install as needed)"
 echo "--------------------------------------------"
 echo "These are NOT bundled. Ask your agent to set up any you want, or install them yourself -- each at exactly the"
 echo "version docs/installing-tools.md names, every download checked against its SHA-256 in *Pinned downloads*:"
-echo "  xeditlib     -- programmatic ESP read/write (v1.0.2 = commit 06f73ea + koffi 2.15.1, integrity-checked by"
+echo "  xeditlib     -- programmatic ESP read/write (v1.0.2 = commit 0221620 + koffi 2.15.1, integrity-checked by"
 echo "                  package-lock.json), from THIS toolkit root:  npm ci --ignore-scripts --no-audit --no-fund"
-echo "  Champollion  -- Papyrus .pex -> .psc:  v1.3.2 (Champollion.v1.3.2.zip; SHA-256 in Pinned downloads)"
-echo "  Caprica      -- Papyrus .psc -> .pex:  v0.3.0 (Caprica.v0.3.0.7z; SHA-256 in Pinned downloads)"
+echo "  Champollion  -- Papyrus .pex -> .psc:  built from github.com/kxgcayh/Champollion at commit 23e947a"
+echo "                  (installs a champollion command on PATH; steps in docs/installing-tools.md)"
+echo "  Caprica      -- Papyrus .psc -> .pex:  built from github.com/kxgcayh/Caprica at commit d8f7064"
+echo "                  (installs a caprica command on PATH; steps in docs/installing-tools.md)"
 echo "  Spriggit     -- ESP <-> YAML editing, 0.41.0 (needs the .NET 10 SDK), from THIS toolkit root:"
 echo "                  dotnet tool restore   (installs exactly .config/dotnet-tools.json's 0.41.0 as a local tool)"
 echo "                  or: dotnet tool install --global Spriggit.CLI --version 0.41.0"
@@ -1385,6 +1583,9 @@ echo "  NifSkope     -- independent visual NIF render gate: v2.0.dev9 from the h
 echo "  ReSaver CLI  -- headless .ess parse/cross-ref/clean: ReSaver 6.0.643 (FallrimTools, Nexus mod 5031); drop"
 echo "                  ReSaver.jar + lib/ into tools/resaver-cli/, then bash tools/resaver-cli.sh verify;"
 echo "                  needs JDK 17+ (21 tested); the wrapper auto-compiles its driver on first run (tools/resaver-cli.sh)"
+echo "  nexusmods-surfer -- reads nexusmods.com pages (description, permissions, bugs, posts) past Cloudflare."
+echo "                  PRIVATE repo: contact the maintainer (GitHub: kxgcayh) for access, then"
+echo "                  bash setup.sh --with-surfer   (steps in docs/installing-tools.md)"
 echo "  cosave-info  -- read-only SKSE .skse co-save survey (bundled): bash tools/cosave-cli.sh <save.skse>"
 echo "  DevBench     -- LIVE in-game inspect/console/Papyrus while you play:"
 echo "                  Nexus mod 181326 (alandtse). This one is a MOD, not a tools/ utility --"
@@ -1422,8 +1623,8 @@ if [ -n "$DO_PORTABLE" ] || [ -n "$DO_OPENCODE" ]; then
     fi
 fi
 if [ -n "$DO_OPENCODE" ]; then
-    if [ -f "$GAME_DIR/.opencode/plugins/skyguard.js" ] && [ -f "$GAME_DIR/.opencode/hooks/skyguard_adapter.py" ] && \
-       [ -f "$GAME_DIR/tools/modding_harness/opencode_plugin.mjs" ]; then
+    if [ -f "$TOOLKIT_DIR/.opencode/plugins/skyguard.js" ] && [ -f "$TOOLKIT_DIR/.opencode/hooks/skyguard_adapter.py" ] && \
+       [ -f "$TOOLKIT_DIR/tools/modding_harness/opencode_plugin.mjs" ]; then
         echo "OpenCode V1 plugin files present. Running-host blocking, Desktop and V2 remain unqualified."
         echo "See .opencode/SKYRIM-OPENCODE.md; verify the loaded banner and qualify actual blocking."
     else
@@ -1446,5 +1647,21 @@ if [ -n "$WANT_LOCK" ] && [ "$LOCK_RC" != 0 ]; then
 fi
 if [ "$WANT_SAVE_LOCK" = yes ] && [ -n "$SAVE_LOCK_RC" ] && [ "$SAVE_LOCK_RC" != 0 ]; then
     SETUP_RC=1
+fi
+if [ -n "$WANT_SURFER" ] && [ "$SURFER_RC" != 0 ]; then
+    SETUP_RC=1
+fi
+# Tracked templates this run filled with machine paths: hide them from git (skip-worktree) so the paths are
+# never committed. Only a file whose committed copy has {{placeholders}} and whose working copy has none.
+# To change such a template later: git update-index --no-skip-worktree <file>
+if git -C "$TOOLKIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+    for f in $(cd "$TOOLKIT_DIR" && echo $FILLED_TEMPLATES); do
+        [ -f "$TOOLKIT_DIR/$f" ] || continue
+        case "$DIRTY_AT_START" in *" $f "*) echo "  NOTE: $f had uncommitted edits before setup; not hidden from git -- check it for machine paths before committing."; continue ;; esac
+        git -C "$TOOLKIT_DIR" cat-file -e "HEAD:$f" 2>/dev/null || continue
+        git -C "$TOOLKIT_DIR" show "HEAD:$f" | grep -q '{{' || continue
+        grep -qE '\{\{(GAME_ROOT|CONFIG_DIR|PYTHON_PATH|BASH_PATH|CODEX_ROOT|DEVCONTAINER_)' "$TOOLKIT_DIR/$f" && continue
+        git -C "$TOOLKIT_DIR" update-index --skip-worktree "$f" 2>/dev/null || true
+    done
 fi
 exit "$SETUP_RC"

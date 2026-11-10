@@ -514,8 +514,8 @@ def test_setup_prints_the_codex_approval_step(game_dir):
         assert part in r.stdout, part
 
 
-SUBFOLDER_LINE = ("Start Codex in the game folder. Subfolder loading is version-dependent: it worked in an isolated "
-                  "0.162.1 probe. Verify the live banner and canary before relying on hooks.")
+SUBFOLDER_LINE = ("Start Codex in the game folder itself. Codex runs no hook started from a subfolder unless the install "
+                  "folder is a git repository; Steam installs are not. Verify the live banner and canary before relying on hooks.")
 HISTORICAL_SUBFOLDER_LINE = ("Start Codex in the game folder itself, never a subfolder: from a subfolder no hook runs, "
                              "and Codex does not tell you.")
 

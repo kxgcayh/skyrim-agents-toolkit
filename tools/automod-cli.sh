@@ -128,7 +128,12 @@ if [ "$1" == "--rebuild" ]; then
         exit 1
     fi
     if grep -qF "$TFM_OLD" "$PROPS"; then
-        sed -b -i "s#$TFM_OLD#$TFM_NEW#" "$PROPS" || exit 1
+        # GNU sed needs -b to keep CRLF on Windows; BSD sed (macOS) has no -b and keeps CR bytes as is.
+        if sed --version >/dev/null 2>&1; then
+            sed -b -i "s#$TFM_OLD#$TFM_NEW#" "$PROPS" || exit 1
+        else
+            sed -i '' "s#$TFM_OLD#$TFM_NEW#" "$PROPS" || exit 1
+        fi
         echo "Retargeted AutoMod to net10.0 (local patch of Directory.Build.props)."
     fi
     printf '{ "sdk": { "version": "10.0.100", "rollForward": "latestFeature" } }\n' > "$AUTOMOD/global.json" || exit 1

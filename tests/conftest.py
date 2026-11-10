@@ -18,6 +18,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -90,6 +91,21 @@ def harness_active() -> bool:
     return _harness_active()
 
 
+def _min_free_bytes(total: int) -> int:
+    """Free space a run must leave: 20% of the disk (the 80% resource rule), at most 20 GiB."""
+    return min(total // 5, 20 * 2**30)
+
+
+def pytest_runtest_setup(item):
+    """Stop the whole session before it fills the disk: every test may add a toolkit copy that pytest keeps
+    until the run ends (a 2026-11-09 run on macOS filled a drive this way)."""
+    where = item.config.option.basetemp or os.environ.get("PYTEST_DEBUG_TEMPROOT") or tempfile.gettempdir()
+    usage = shutil.disk_usage(where if os.path.isdir(where) else tempfile.gettempdir())
+    if usage.free < _min_free_bytes(usage.total):
+        pytest.exit("stopping: only {:.1f} GiB free on the disk holding the test temp folders ({}); free space "
+                    "and re-run".format(usage.free / 2**30, where), returncode=3)
+
+
 def pytest_configure(config):
     """TOOLKIT_REQUIRE_HARNESS=1 turns "the barriers are not installed" into an error.
 
@@ -160,6 +176,8 @@ IGNORE = shutil.ignore_patterns(
     # CI tees the running suite's own logs into the checkout (ci.yml: collect.log, behavioral.log); a copy that
     # took them shipped the runner's home path into every verify-release payload (Linux CI run 38187755448).
     "collect.log", "behavioral.log",
+    # A maintainer's own clone of the private surfer repo (gitignored): never part of a pristine copy.
+    "nexusmods-surfer",
 )
 
 
@@ -180,10 +198,45 @@ def login_name() -> str:
         return ""
 
 
-def copy_repo(dest: Path) -> Path:
-    """A pristine copy of the toolkit, minus the test suite itself."""
-    shutil.copytree(REPO, dest, ignore=IGNORE)
+def copy_repo(dest: Path, ignore=IGNORE) -> Path:
+    """A pristine copy of the toolkit, minus the test suite itself (`ignore` decides; the mutation tests pass one that keeps tests/).
+
+    In a git checkout: only what git would ship (tracked, plus untracked files that are not ignored), as CI's
+    fresh checkout has. Copying the whole tree took gitignored build output and backups too (~111 MB a copy
+    against ~5 MB), and the suite makes hundreds of copies that pytest keeps until the run ends."""
+    try:
+        out = subprocess.run(["git", "-C", str(REPO), "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+                             capture_output=True, check=True, timeout=60).stdout
+    except (OSError, subprocess.SubprocessError):
+        shutil.copytree(REPO, dest, ignore=ignore)
+        return dest
+    skip = set(ignore(str(REPO), [p for rel in out.split(b"\0") for p in rel.decode().split("/") if p]))
+    dest.mkdir(parents=True, exist_ok=True)
+    for rel in filter(None, out.decode().split("\0")):
+        src = REPO / rel
+        if skip.intersection(rel.split("/")) or not src.is_file():  # deleted-but-tracked files are absent
+            continue
+        (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest / rel)
+        if rel in _template_forms():   # a configured working tree holds setup's fill: a test copy starts from the template
+            (dest / rel).write_bytes(_template_forms()[rel](src.read_bytes()))
     return dest
+
+
+_TEMPLATES = None
+
+
+def _template_forms():
+    """{rel: bytes -> template bytes} for the files setup.sh fills in (empty if the guard module cannot load)."""
+    global _TEMPLATES
+    if _TEMPLATES is None:
+        sys.path.insert(0, str(REPO / "tools"))
+        try:
+            from skyguard import guard_hash
+            _TEMPLATES = {rel: (lambda data, rel=rel: guard_hash.normalised(rel, data)[0]) for rel in guard_hash.CONFIGURED}
+        except Exception:
+            _TEMPLATES = {}
+    return _TEMPLATES
 
 
 def scratch_dir(prefix: str) -> str:
@@ -280,10 +333,13 @@ def install_hooks(root: Path, names=None, python: str | None = None, with_engine
     py = sys.executable.replace(BS, "/") if python is None else python
     hooks = root / ".claude" / "hooks"
     hooks.mkdir(parents=True, exist_ok=True)
+    sys.path.insert(0, str(REPO / "tools"))
+    from skyguard import guard_hash    # the template form: a configured working tree already holds setup's fill
     for f in (REPO / ".claude" / "hooks").glob("*.sh"):
         if names is not None and f.name not in names:
             continue
-        text = f.read_text(encoding="utf-8").replace("{{PYTHON_PATH}}", py)
+        rel = f".claude/hooks/{f.name}"
+        text = guard_hash.normalised(rel, f.read_bytes())[0].decode("utf-8").replace("{{PYTHON_PATH}}", py)
         (hooks / f.name).write_text(text, encoding="utf-8", newline="\n")
     if with_engine:
         shutil.copytree(REPO / "tools" / "skyguard", root / "tools" / "skyguard",

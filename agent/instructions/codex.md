@@ -11,8 +11,8 @@ Generated into `AGENTS.md` only; everything above is shared. Other agents: this 
   toolkit's two hooks, and check with `bash tools/hook-canary.sh`. Approval is needed again after a
   toolkit update whose CHANGELOG says "re-approve your Codex hooks", and (inferred, not measured) after the
   install folder moves: the approval covers the definition as rendered, install path included.
-- Start Codex in the game folder. Subfolder loading is version-dependent: it worked in an isolated
-  0.162.1 probe. Verify the live banner and canary before relying on hooks.
+- Start Codex in the game folder itself. Codex runs no hook started from a subfolder unless the install
+  folder is a git repository; Steam installs are not. Verify the live banner and canary before relying on hooks.
 - **Run the toolkit's scripts as `bash tools/<name>.sh`.** Do not assume your shell is bash: on Windows
   it may be PowerShell, so write commands that work there.
 - **A refusal is final.** The guards cannot ask on Codex, so anything that needs the user's confirmation

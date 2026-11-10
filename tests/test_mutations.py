@@ -28,6 +28,7 @@ from pathlib import Path
 import pytest
 
 from conftest import REPO, login_name
+from conftest import copy_repo as _conftest_copy_repo
 
 BS = chr(92)
 CMD_ONLY = pytest.mark.skipif(sys.platform != "win32", reason="the CMD regression runs on Windows")
@@ -738,8 +739,8 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
         # writes `.LOG`, so the tool reports a complete-looking total built
         # entirely from years-old logs -- the failure mode with no error.
         "tools/crash-triage.py",
-        'CRASH_NAME_RE = re.compile(r"^crash-.+' + BS + '.(txt|log)$", re.I)',
-        'CRASH_NAME_RE = re.compile(r"^crash-.+' + BS + '.txt$")',
+        "){5})" + BS + '.(txt|log)$", re.I)',
+        "){5})" + BS + '.txt$")',
         "tests/test_triage.py::test_crash_finds_dot_log_files_not_only_dot_txt",
         id="crash-log-extension-half-matched",
     ),
@@ -747,10 +748,19 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
         # Match any `.log` in the folder, not just `crash-` dumps. Every SKSE
         # plugin's own log then becomes a phantom crash in the denominator.
         "tools/crash-triage.py",
-        'CRASH_NAME_RE = re.compile(r"^crash-.+' + BS + '.(txt|log)$", re.I)',
-        'CRASH_NAME_RE = re.compile(r".+' + BS + '.(txt|log)$", re.I)',
+        'CRASH_NAME_RE = re.compile(r"^(?:crash-.+|',
+        'CRASH_NAME_RE = re.compile(r"^(?:.+|',
         "tests/test_triage.py::test_crash_ignores_the_crashlogger_plugin_log",
         id="crash-prefix-not-required",
+    ),
+    pytest.param(
+        # Drop the timestamp-only alternative. Trainwreck's dumps are named
+        # `<date>.log` with no `crash-` prefix, so a Trainwreck user gets none.
+        "tools/crash-triage.py",
+        "|" + BS + "d{4}(?:-" + BS + "d{2}){5})",
+        ")",
+        "tests/test_triage.py::test_crash_reads_trainwreck_dumps_in_the_crashlogs_subfolder",
+        id="crash-trainwreck-names-unmatched",
     ),
 
     pytest.param(
@@ -4472,7 +4482,7 @@ MUTATIONS += [
                  "tests/test_skyguard_shell.py::test_rule0b_no_root", id="rule-S-INERT-NOROOT-empty-root"),
     pytest.param("tools/skyguard/write_rules.py", '    if file_path == "":', '    if file_path == None:',
                  "tests/test_skyguard_write.py::test_rule0_empty_path", id="rule-W-INERT-NOPATH-empty-path"),
-    pytest.param("tools/skyguard/write_rules.py", '    if grep(targets.PLUGIN_FILE, file_path):', '    if False:',
+    pytest.param("tools/skyguard/write_rules.py", '    if grep(targets.PLUGIN_FILE, file_path) or grep(targets.PLUGIN_FILE, target_check):', '    if False:',
                  "tests/test_skyguard_write.py::test_rule1_plugin_write_denied", id="rule-W-PLUGIN-plugin-file"),
     # messages-no-echo: the command is appended to a live message; only the corpus-wide check can see that.
     pytest.param("tools/skyguard/shell_rules.py",
@@ -4711,7 +4721,7 @@ MUTATIONS_FINAL = [
      "        cat \"$CODEX_DEFS\" | grep -qF",
      "tests/test_setup_paths.py::test_a_rerun_from_a_differently_cased_folder_is_not_a_moved_install",
      "setup-moved-install-check-is-case-sensitive"),
-    ("setup.sh", '    echo "Start Codex in the game folder. Subfolder loading is version-dependent: it worked in an isolated"',
+    ("setup.sh", '    echo "Start Codex in the game folder itself. Codex runs no hook started from a subfolder unless the install"',
      "    :", "tests/test_setup_paths.py::test_setup_tells_the_user_to_start_codex_in_the_game_folder",
      "setup-omits-the-codex-subfolder-warning"),
 ]
@@ -4750,9 +4760,26 @@ def test_a_skipped_anchor_excuses_its_twin_only_off_windows():
     assert _anchor_skipped_off_windows(5, "no tests ran in 0.1s\n", "linux") == ""  # a stale anchor stays red
 
 
+@pytest.fixture(autouse=True)
+def _drop_mutated_copy(tmp_path):
+    """Each mutation test makes a full toolkit copy (tests/ included) and pytest keeps every tmp_path until the
+    session ends: thousands of copies filled a disk. Remove the copy once its test is done; re-run one to inspect."""
+    yield
+    shutil.rmtree(tmp_path / "mutated", ignore_errors=True)
+
+
+def copy_repo(dest: Path, ignore=None) -> Path:
+    """conftest's git-aware copy for the real checkout; a plain copy of a substituted REPO (the measurement tests patch one in)."""
+    import conftest
+    if REPO == conftest.REPO:
+        return _conftest_copy_repo(dest, ignore=ignore)
+    shutil.copytree(REPO, dest, ignore=ignore)
+    return dest
+
+
 def _mutate(tmp_path: Path, relpath: str, find: str, replace: str) -> Path:
     work = tmp_path / "mutated"
-    shutil.copytree(REPO, work, ignore=MUTATION_IGNORE)
+    copy_repo(work, ignore=MUTATION_IGNORE)
     target = work / relpath
     # io.open, not Path.read_text: the `newline` kwarg only exists on Path in
     # 3.13+, and line endings must be preserved or the mutation rewrites the
@@ -7736,7 +7763,7 @@ _T6D_CLAUSES = [
     ('t6d-only-markdown-files-scanned', 'scripts/thirdparty-audit.py', 'DELIVERY_SUFFIXES = (".md", ".txt", ".sh", ".ps1", ".cmd", ".bat", ".py", ".json", ".yml", ".yaml", ".js", ".example")', 'DELIVERY_SUFFIXES = (".md", ".txt")', 'tests/test_thirdparty_audit.py::test_an_unverified_download_is_found_in_every_shipped_text_type'),
     ('t6d-wording-history-skip-returns', 'scripts/thirdparty-audit.py', '            for rule, (applies, finder) in DELIVERY_RULES.items():\n                if not applies(rel):\n                    continue\n                for problem in finder(line, repo, window):', '            for rule, (applies, finder) in DELIVERY_RULES.items():\n                if not applies(rel) or HISTORY.search(line):\n                    continue\n                for problem in finder(line, repo, window):', 'tests/test_thirdparty_audit.py::test_no_wording_silences_an_install_line'),
     ('t6d-doc-jdk-major-not-held', 'scripts/thirdparty-audit.py', '              {"pattern": r"\\b(?:Open)?JDK (?P<v>\\d{2})\\b(?![+.\\d])", "compare": "major",', '              {"pattern": r"(?!)(?P<v>x)", "compare": "major",', 'tests/test_thirdparty_audit.py::test_a_doc_stating_another_jdk_than_the_image_is_drift'),
-    ('t6d-package-json-xeditlib-loses-its-commit', 'package.json', '"xeditlib": "https://codeload.github.com/WingedGuardian/xeditlib/tar.gz/06f73eac215970c427ede049a9198c8002c43c65"', '"xeditlib": "github:WingedGuardian/xeditlib"', 'tests/test_dependency_locks.py::test_xeditlib_and_koffi_are_locked_so_npm_ci_installs_them'),
+    ('t6d-package-json-xeditlib-loses-its-commit', 'package.json', '"xeditlib": "https://codeload.github.com/kxgcayh/xeditlib/tar.gz/022162079bdfd31b90eadb0be5f85bcbea1bcacf"', '"xeditlib": "github:WingedGuardian/xeditlib"', 'tests/test_dependency_locks.py::test_xeditlib_and_koffi_are_locked_so_npm_ci_installs_them'),
     ('t6d-readme-xeditlib-back-to-unpinned', 'README.md', 'toolkit root: `npm ci --ignore-scripts --no-audit --no-fund`)', 'toolkit root: `npm install github:WingedGuardian/xeditlib`)', 'tests/test_thirdparty_audit.py::test_the_shipped_tree_has_no_unpinned_delivery_path'),
     ('t6d-manual-steps-lose-their-hash', 'tools/inventory-runtimes.py', '+ "d065a4e23c3d9a6b5073d609b5be0830227ec3ca053c083ba385061ddfaf94c6 -- and run it. Then open a new terminal.",', '+ "-- and run it. Then open a new terminal.",', 'tests/test_thirdparty_audit.py::test_the_shipped_tree_has_no_unpinned_delivery_path'),
     ('t6d-container-doc-states-jdk-17-again', 'docs/container-vs-windows.md', 'ReSaver CLI (JDK 21.0.12 is in the image)', 'ReSaver CLI (JDK 17 is in the image)', 'tests/test_thirdparty_audit.py::test_the_real_tree_install_refs_agree_with_their_pins'),
@@ -7789,7 +7816,7 @@ MUTATIONS += [
                  marks=pytest.mark.skipif(sys.platform == "win32", reason="the off-Windows branch runs off Windows"),
                  id="verify-codex-defs-unrendered-off-windows"),
     # ...and on Windows the rendered file is still checked: the drive-letter branch must not take the other one.
-    pytest.param("tools/verify-release.sh", "    [A-Za-z]:/*) ;;", "    __not_a_drive_root__) ;;",
+    pytest.param("tools/verify-release.sh", "    *:[A-Za-z]:/*|Darwin:*) ;;", "    *:__not_a_drive_root__|Darwin:*) ;;",
                  "tests/test_verify_release.py::test_the_scrubbed_install_runs_and_its_canary_is_invisible",
                  marks=CMD_ONLY, id="verify-codex-defs-rendered-on-windows"),
     # v4.0.0 review L4a L4: an exported value stands in for a line skyrim-paths.env lacks (the test could not fail).
@@ -8415,10 +8442,10 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
      '        return _with_prefs(banners + paths.legacy_notice(project), project, audit), "evaluated", "session"',
      _P8T8 + "test_the_notice_is_not_repeated_on_compact", "p8t8-session-notice-not-on-compact"),
     # self-protection: the root file is a guard file...
-    ("tools/skyguard/self_rules.py", '    if rel == ["skyrim-paths.env"]:', "    if False:",
+    ("tools/skyguard/self_rules.py", '    if rel in (["skyrim-paths.env"], ["guard-files.sha256"]):', "    if False:",
      _P8T8 + "test_both_locations_are_guard_files[root]", "p8t8-self-guard-root-file"),
     # ...at the root only, not any file of that name deeper in the install
-    ("tools/skyguard/self_rules.py", '    if rel == ["skyrim-paths.env"]:', '    if rel[-1:] == ["skyrim-paths.env"]:',
+    ("tools/skyguard/self_rules.py", '    if rel in (["skyrim-paths.env"], ["guard-files.sha256"]):', '    if rel[-1:] in (["skyrim-paths.env"], ["guard-files.sha256"]):',
      _P8T8 + "test_only_the_root_level_name_is_a_guard_file", "p8t8-self-guard-root-level-only"),
 ]]
 
@@ -8443,7 +8470,7 @@ _T7 = [
      _T7S + "test_auto_configures_the_agents_found_on_path[none-found-means-all]", "t7-auto-none-found-means-all"),
     ("setup.sh", '    which claude >/dev/null 2>&1 && AGENTS_FOUND="claude"', "    true",
      _T7S + "test_auto_configures_the_agents_found_on_path[claude-only]", "t7-auto-detects-claude"),
-    ("setup.sh", '    if [ -n "$CODEX_WIN" ] && which codex >/dev/null 2>&1; then', "    if false; then",
+    ("setup.sh", '    if { [ -n "$CODEX_WIN" ] || [ -n "$CODEX_POSIX" ]; } && which codex >/dev/null 2>&1; then', "    if false; then",
      _T7S + "test_auto_configures_the_agents_found_on_path[codex-only]", "t7-auto-detects-codex"),
     # an unselected agent's files are kept as extracted
     ("setup.sh", '    *) DOC_ON="${DO_CODEX}${DO_PORTABLE}${DO_OPENCODE}" ;;', "    *) DOC_ON=1 ;;",
@@ -8452,8 +8479,8 @@ _T7 = [
      _T7S + "test_each_value_configures_exactly_its_agents[codex]", "t7-claude-md-only-for-claude"),
     ("setup.sh", 'if [ -z "$DO_CODEX" ]; then', "if false; then",
      _T7S + "test_each_value_configures_exactly_its_agents[claude]", "t7-codex-render-only-for-codex"),
-    ("setup.sh", 'if [ -n "$DO_CLAUDE" ] && [ ! -f "$GAME_DIR/.claude/settings.local.json" ]',
-     'if [ ! -f "$GAME_DIR/.claude/settings.local.json" ]',
+    ("setup.sh", 'if [ -n "$DO_CLAUDE" ] && [ ! -f "$TOOLKIT_DIR/.claude/settings.local.json" ]',
+     'if [ ! -f "$TOOLKIT_DIR/.claude/settings.local.json" ]',
      _T7S + "test_each_value_configures_exactly_its_agents[codex]", "t7-settings-local-only-for-claude"),
     # ...and setup says so plainly
     ("setup.sh", '    echo "  Claude Code: NOT CONFIGURED -- CLAUDE.md has no paths filled in (this run: --agent $AGENT_SEL)."',
@@ -8464,7 +8491,7 @@ _T7 = [
      'if false && { [ "$CODEX_STATE" != "configured" ]',
      _T7S + "test_codex_by_name_exits_1_when_codex_cannot_be_configured", "t7-codex-by-name-unconfigured-is-exit-1"),
     # partial state: any placeholder left makes the file unconfigured
-    ("setup.sh", 'elif grep -q "$DOC_PLACEHOLDERS" "$GAME_DIR/$DOC"; then', "elif grep -q '{{GAME_ROOT}}' \"$GAME_DIR/$DOC\"; then",
+    ("setup.sh", 'elif grep -q "$DOC_PLACEHOLDERS" "$TOOLKIT_DIR/$DOC"; then', "elif grep -q '{{GAME_ROOT}}' \"$TOOLKIT_DIR/$DOC\"; then",
      _T7S + "test_a_half_filled_claude_md_is_completed_by_a_rerun", "t7-every-placeholder-completed"),
     # the root paths file carries the interpreter
     ("setup.sh", "    printf 'SKYGUARD_PYTHON=%s\\n' \"$(sq \"$PYTHON_PATH\")\"", "    :",
@@ -8549,13 +8576,13 @@ _T7F = [
      '    if [ -z "$PY_FOUND" ] || [ "${MIG_RC:-0}" != 0 ]; then',
      _T7S + "test_a_3x_paths_file_is_kept_when_the_migration_tool_is_missing", "t7f-missing-migration-is-not-finished"),
     # M6: --agent with no value; the stale hooks.json.new is removed even when nothing renders (Windows)
-    ("setup.sh", "            if [ $# -lt 2 ]; then", "            if false; then",
+    ("setup.sh", "        --agent)\n            if [ $# -lt 2 ]; then", "        --agent)\n            if false; then",
      _T7S + "test_a_usage_error_exits_2_and_writes_nothing[no-value]", "t7f-agent-without-a-value"),
     ("setup.sh", '# A leftover from an interrupted run is never taken for the result: the renderer writes a fresh one.\nrm -f "$CODEX_DEFS.new"\n',
      '# A leftover from an interrupted run is never taken for the result: the renderer writes a fresh one.\n',
      _T7S + "test_a_stale_hooks_json_new_is_removed_even_when_nothing_renders", "t7f-stale-codex-new-removed"),
     # I1: the smoke expects Codex's hooks only on Windows, AGENTS.md wherever Codex is selected
-    ("scripts/setup-smoke.sh", 'WANT_HOOKS="$WANT_X"; [ -n "$WIN" ] || WANT_HOOKS=""', 'WANT_HOOKS="$WANT_X"',
+    ("scripts/setup-smoke.sh", 'WANT_HOOKS="$WANT_X"; [ -n "$WIN" ] || [ "$(uname -s)" = Darwin ] || WANT_HOOKS=""', 'WANT_HOOKS="$WANT_X"',
      "tests/test_setup_smoke.py::test_the_linux_legs_pass[all]", "t7f-smoke-hooks-windows-only"),
     # the wrappers read SKYGUARD_PYTHON from the root paths file
     ("tools/skyguard.sh", 'for cand in "${SKYGUARD_PYTHON:-}" "$file_py" python3 python "py -3"; do',

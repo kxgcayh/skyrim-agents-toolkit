@@ -1051,3 +1051,50 @@ def test_an_unreadable_declared_env_file_fails_closed(tmp_path, ostype):
     got = _declared_fire(root, {"MSYS2_ARG_CONV_EXCL": "*"}, "ls", ostype)
     # The ENGINE's refusal naming the file -- the wrapper's own "engine failed" GUARD INERT is a different defect.
     assert got[0] == "deny" and "found skyrim-paths.env but could not read it" in got[1], got
+
+
+def _fire_env(project, hook, payload, **extra):
+    env = dict(os.environ, CLAUDE_PROJECT_DIR=str(project), **extra)
+    return subprocess.run(
+        [_bash(), str(project / ".claude" / "hooks" / hook)],
+        input=json.dumps(payload), capture_output=True, text=True, env=env, timeout=60,
+    )
+
+
+_DELETE = {"tool_name": "Bash", "tool_input": {"command": f'rm -rf "{GAME}/Data"'}}
+
+
+
+def test_a_git_checkout_without_the_game_exe_is_still_guarded(project):
+    (project / ".git").mkdir(exist_ok=True)
+    try:
+        assert fire(project, "protect-bash.sh", _DELETE)[0] == "deny"
+    finally:
+        (project / ".git").rmdir()
+
+def test_symlink_bypass_is_refused(tmp_path):
+    root = install_hooks(tmp_path / "install", names={"protect-bash.sh", "protect-files.sh"})
+    game_dir = tmp_path / "game"
+    (game_dir / "Data").mkdir(parents=True)
+    (game_dir / "Data" / "Skyrim.esm").write_bytes(b"TES4")
+    (root / ".claude" / "skyrim-paths.env").write_text(
+        f'SKYRIM_GAME_ROOT="{game_dir.as_posix()}"\n', encoding="utf-8", newline="\n"
+    )
+    data_link = tmp_path / "data_link"
+    try:
+        os.symlink(str(game_dir / "Data"), str(data_link))
+        got, reason = fire(root, "protect-bash.sh", cmd(f'rm -rf "{data_link.as_posix()}/foo"'))
+        assert got == "deny", f"deleting through symlink was allowed: {got}, {reason}"
+
+        file_link = tmp_path / "innocent.txt"
+        os.symlink(str(game_dir / "Data" / "Skyrim.esm"), str(file_link))
+        got, reason = fire(root, "protect-files.sh", fpath(str(file_link.as_posix())))
+        assert got == "deny", f"writing plugin through symlink was allowed: {got}, {reason}"
+
+        sg_link = tmp_path / "sg_link"
+        (root / ".skyguard").mkdir(exist_ok=True)
+        os.symlink(str(root / ".skyguard"), str(sg_link))
+        got, reason = fire(root, "protect-bash.sh", cmd(f'echo x > "{sg_link.as_posix()}/state.json"'))
+        assert got == "deny", f"writing state through symlink was allowed: {got}, {reason}"
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks not supported on this filesystem")

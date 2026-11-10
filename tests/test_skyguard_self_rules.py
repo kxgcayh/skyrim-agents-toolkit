@@ -521,7 +521,7 @@ def test_an_edit_on_the_configured_line_still_shows(tmp_path, line, named):
     for ln in text.splitlines()[1:]:
         rel = ln.split("  ", 1)[1]
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        data = (REPO / rel).read_bytes()
+        data = guard_hash.normalised(rel, (REPO / rel).read_bytes())[0]   # the template form, whatever setup.sh filled
         if rel in guard_hash.CONFIGURED:                  # what setup.sh does, in exactly the files it does it to
             data = data.replace(b"{{PYTHON_PATH}}", b"C:/Python310/python.exe").replace(b"{{BASH_PATH}}", b"C:/Git/bin/bash.exe")
         (root / rel).write_bytes(data)
@@ -559,7 +559,7 @@ def test_the_configured_set_is_setup_sh_s_own_loop_lists():
     assert named == set(guard_hash.CONFIGURED)
     slots = {k: {s[0] for s in v} for k, v in guard_hash.CONFIGURED.items()}
     for rel, kinds in slots.items():
-        src = (REPO / rel).read_text(encoding="utf-8")
+        src = guard_hash.normalised(rel, (REPO / rel).read_bytes())[0].decode("utf-8")   # template form, not setup's fill
         assert ("{{PYTHON_PATH}}" in src) == ("python" in kinds) and ("{{BASH_PATH}}" in src) == ("bash" in kinds), rel
 
 

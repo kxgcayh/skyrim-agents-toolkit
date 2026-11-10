@@ -8,7 +8,7 @@ This is the extended version of the setup instructions. If the README was enough
 
 You're giving Claude Code (an AI assistant) a "brain upgrade" for Skyrim modding. After setup, you can talk to it in plain English and it will:
 
-- Know 2,000+ lines of Skyrim quirks, pitfalls, and workarounds (including VR-specific sections)
+- Know 1,300+ Skyrim quirks, pitfalls, and workarounds (VR sections are inherited from upstream and untested in this fork)
 - Protect your game files from accidental damage
 - Decompile and analyze Papyrus scripts
 - Inspect ESP/ESM mod files
@@ -66,7 +66,7 @@ surface the toolkit claims (`ADAPTING.md`, section 8), so prefer Option B if you
 
 1. Open **Steam**
 2. Click **Library** (at the top)
-3. Find **Skyrim VR** (or **Skyrim Special Edition**) in your game list
+3. Find **Skyrim Special Edition** (or **Skyrim VR**) in your game list
 4. Right-click it > **Properties**
 5. Click **Installed Files** (on the left side)
 6. Click **Browse...**
@@ -77,9 +77,9 @@ surface the toolkit claims (`ADAPTING.md`, section 8), so prefer Option B if you
 Write this path down or keep the window open. You'll need it in the next steps.
 
 Common paths look like:
-- `C:\Steam\steamapps\common\SkyrimVR`
-- `D:\SteamLibrary\steamapps\common\SkyrimVR`
-- `C:\Program Files (x86)\Steam\steamapps\common\SkyrimVR`
+- `C:\Steam\steamapps\common\Skyrim Special Edition`
+- `D:\SteamLibrary\steamapps\common\Skyrim Special Edition`
+- `C:\Program Files (x86)\Steam\steamapps\common\Skyrim Special Edition`
 
 ---
 
@@ -87,38 +87,36 @@ Common paths look like:
 
 1. Download the toolkit from Nexus Mods (click **Manual Download**)
 2. Find the downloaded `.zip` file (usually in your Downloads folder)
-3. Right-click the zip file
-4. Click **Extract All...**
-5. In the "Extract to" box, **paste your Skyrim folder path** from Step 2
-6. Click **Extract**
+3. Choose where to extract:
+   - **Option A (Recommended — Keeps Skyrim folder clean):** Extract into its own dedicated folder (e.g. `C:\Modding\skyrim-toolkit`). Your Skyrim game folder stays clean.
+   - **Option B (In-Place):** Extract directly into your Skyrim game folder.
+4. Right-click the zip file > **Extract All...** > choose your destination folder > **Extract**.
 
-The toolkit files blend in alongside your existing game files. ⚠ Files the toolkit ships ARE replaced on a later update -- `CLAUDE.md`, `KNOWLEDGEBASE.md`, `.claude/hooks/`. Your own notes belong in `KNOWLEDGEBASE.local.md`, which the toolkit never ships. On a FIRST install it only adds new files: the instruction files (CLAUDE.md, AGENTS.md, KNOWLEDGEBASE.md), setup.sh, the docs/ and tools/ folders and the agent folders (.claude/, .codex/, .agents/, .opencode/).
+⚠ Files the toolkit ships ARE replaced on an update (`CLAUDE.md`, `AGENTS.md`, `KNOWLEDGEBASE.md`, `.claude/hooks/`). Your own notes belong in `KNOWLEDGEBASE.local.md`, which the toolkit never ships.
 
 ---
 
-## Step 4: Open Claude Code in Your Skyrim Folder
+## Step 4: Open Your Agent in the Toolkit Folder
 
 ### Desktop App:
 
-1. Open Claude Code
-2. You'll see a text input at the bottom
-3. Type this (paste YOUR path from Step 2 between the quotes):
+1. Open Claude Code / your agent
+2. Navigate to your toolkit folder (Option A) or Skyrim folder (Option B):
    ```
-   cd "C:\Steam\steamapps\common\SkyrimVR"
+   cd "C:\Modding\skyrim-toolkit"
    ```
-4. Press Enter
 
 ### Command Line:
 
-1. Open Windows Terminal
-2. Type this (paste YOUR path):
+1. Open Windows Terminal (Git Bash or PowerShell)
+2. Navigate to your folder and start your agent:
    ```
-   cd "C:\Steam\steamapps\common\SkyrimVR"
+   cd "C:\Modding\skyrim-toolkit"
+   claude
    ```
-3. Press Enter
-4. Type `claude` and press Enter
+   *(If you kept Skyrim clean with Option A, run `bash setup.sh --game "C:\Path\To\Skyrim"`)*
 
-You should see Claude Code's interface -- a text area where you can type messages.
+You should see your agent's interface ready to receive instructions.
 
 ---
 
@@ -204,7 +202,7 @@ replace this file. For example:
 ```markdown
 ## My preferences
 - Always show me a dry run before writing to any plugin.
-- I play in VR; never suggest SSE-only mods.
+- I play on AE; never suggest mods that only support SE 1.5.97.
 - Keep answers short; I know my way around xEdit.
 ```
 

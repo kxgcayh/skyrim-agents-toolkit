@@ -65,6 +65,7 @@ SE_LOG = "\n".join([
 def run(*args, env=None):
     e = dict(os.environ)
     e.pop("SKSE_LOG_DIR", None)
+    e["SKYRIM_DOCUMENTS_DIR"] = "/nonexistent/Skyrim"   # a configured install records the real one, which would beat the fake HOME
     e.update(env or {})
     return subprocess.run([sys.executable, "-B", str(TOOL), *args], capture_output=True, text=True,
                           timeout=120, env=e)

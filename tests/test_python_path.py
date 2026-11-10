@@ -118,7 +118,7 @@ def test_setup_warns_loudly_when_no_python_exists(game_dir, tmp_path):
     # python3. python_free_path keeps /usr/bin's other commands (bash included) through a python-free mirror.
     keep = [python_free_path()] + ([] if offers_python(bash_dir) else [bash_dir])
     assert not any(offers_python(d) for p in keep for d in p.split(os.pathsep) if d), keep
-    result = run_setup(game_dir, env_overrides={"PATH": os.pathsep.join(keep)})
+    result = run_setup(game_dir, env_overrides={"PATH": os.pathsep.join(keep)}, args=("--agent", "all"))   # pinned: auto-detect follows what is on PATH (opencode alone here)
     out = result.stdout
     assert "will REFUSE every command" in out, out[-1500:]
     assert "NOT CONFIGURED" in out
@@ -165,7 +165,7 @@ def test_setup_refuses_a_python_older_than_3_10(game_dir):
     """The harness floor is 3.10. A 3.6 used to pass setup's "is it Python 3?" probe and then every
     hook denied "engine failed" -- a full outage that nothing explained."""
     result = run_setup(game_dir, env_overrides={"FAKE_PYTHON_EXE": "C:/Py36/python.exe", "FAKE_PYTHON_OLD": "1"},
-                       shim_path=True)
+                       shim_path=True, args=("--agent", "all"))   # pinned: auto-detect follows what is on PATH
     assert result.returncode == 1, result.stderr
     out = result.stdout
     assert "3.10" in out and "too old" in out, out[-1500:]

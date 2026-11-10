@@ -243,9 +243,11 @@ def test_every_hook_is_configured_by_setup_and_carries_one_placeholder():
     loop = next((l for l in setup.splitlines() if l.startswith("for hook in ")), "")
     assert loop, "setup.sh has no `for hook in ...` substitution loop; this test is stale"
 
+    sys.path.insert(0, str(REPO / "tools"))
+    from skyguard import guard_hash   # template form: a configured working tree already holds setup's fill
     problems = []
     for h in hooks:
-        text = h.read_text(encoding="utf-8")
+        text = guard_hash.normalised(h.relative_to(REPO).as_posix(), h.read_bytes())[0].decode("utf-8")
         n = text.count("{{PYTHON_PATH}}")
         if n != 1:
             problems.append(f"{h.name}: {n} occurrences of the placeholder, expected exactly 1")

@@ -36,7 +36,7 @@ The DLL is Delphi-compiled. These quirks caused hours of debugging:
 
 6. **Registry requirement**: XEditLib reads game path from `HKLM\SOFTWARE\WOW6432Node\Bethesda Softworks\Skyrim Special Edition` (the SSE key, not the VR key, because game mode 4 = SSE).
 
-7. **xelib.js wrapper**: See [xeditlib on GitHub](https://github.com/WingedGuardian/xeditlib) for the full wrapper with all 163 functions.
+7. **xelib.js wrapper**: See [xeditlib on GitHub](https://github.com/kxgcayh/xeditlib) for the full wrapper with all 163 functions.
 
 ## Load the real active order
 
@@ -49,6 +49,6 @@ can exit **non-zero (e.g. 127) even on full success** on Windows / Git Bash: Nod
 the resident native DLL's teardown. **Parse the output the script prints to decide success, never `$?`**,
 and never `&&`-chain on it; a wrapper that gates on the exit code reports phantom failures. Where a wrapper
 exists it does this for you (`tools/skyrim-winner.sh` parses the `RESULT:` line and returns a real exit
-code). Source: `KNOWLEDGEBASE.md` → *Node/koffi helper exit codes are unreliable on Windows*.
+code). Source: `kb/tools-and-assets.md` → *Node/koffi helper exit codes are unreliable on Windows*.
 
 For who-wins questions use `bash tools/skyrim-winner.sh` (skill `triage-and-conflicts`), not a new script.

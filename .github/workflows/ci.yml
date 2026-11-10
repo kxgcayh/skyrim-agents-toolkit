@@ -99,7 +99,7 @@ jobs:
       # ruff is already a declared dev dependency in requirements.txt. Only the
       # genuine-bug rules gate the build (undefined names, syntax); the full
       # ruleset runs advisory-only (its count depends on the pinned ruff: about
-      # 1400 findings at 0.16.9). ruff.toml makes both runs skip the template
+      # 2700 findings at 0.17.3). ruff.toml makes both runs skip the template
       # slot fragments (*.slots.py); tests/test_ruff_gate.py proves the gate still
       # goes red on a real undefined name.
       - name: ruff

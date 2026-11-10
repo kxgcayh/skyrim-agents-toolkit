@@ -68,10 +68,11 @@ def test_user_docs_carry_no_pre_release_plan_wording():
 
 
 def test_the_codex_subfolder_case_is_stated_one_way():
-    """Review L6 F6: "worked in 0.162.1" (README) against "never a subfolder: no hook runs" (CHANGELOG)."""
+    """Review L6 F6: the README and CHANGELOG stated the subfolder case two ways. Measured (Plan 4, codex-cli 0.160.0):
+    no hook runs from a subfolder of a non-git install; a git root at the install loads them from any subfolder."""
     for rel in ("README.md", "CHANGELOG.md"):
         assert "from a subfolder no hook runs" not in _read(rel), rel
-    assert "it depends on the version" in _read("README.md")
+    assert "unless the install folder is a git repository" in _read("README.md")
 
 
 def test_dotnet_requirements_match_what_house_carl_setup_checks():

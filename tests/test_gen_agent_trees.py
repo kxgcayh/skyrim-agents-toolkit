@@ -165,6 +165,10 @@ def test_crlf_target_file_generates_lf(tmp_path):
 
 def test_repo_is_in_sync():
     """The committed generated files equal what agent/ renders. Fails on a hand edit or a stale regen."""
+    import pytest
+    from skyguard import guard_hash
+    if any(b"{{PYTHON_PATH}}" not in (REPO / rel).read_bytes() for rel in guard_hash.CONFIGURED if (REPO / rel).is_file()):
+        pytest.skip("this working tree is configured by setup.sh; the check runs on a clean checkout (CI)")
     r = subprocess.run([sys.executable, str(REPO / "scripts" / "gen_agent_trees.py"), "--check"],
                        cwd=REPO, capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr

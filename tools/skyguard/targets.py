@@ -50,11 +50,31 @@ to `--` before resolving operands.
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import Mapping, Optional
 
 from . import paths
 from .grep import grep
+
+_ABS_SPELLING = re.compile(r"^(?:[A-Za-z]:[\\/]|[\\/])")
+
+
+def is_absolute_spelling(s: str) -> bool:
+    """A path as written is absolute (POSIX, UNC or drive-letter). Only these are resolved through the filesystem:
+    realpath() on a relative spelling joins it to the working directory and reads the wrong file."""
+    return bool(s) and bool(_ABS_SPELLING.match(s))
+
+
+# shortcut: realpath() is run only up to PATH_MAX (4096, the longest POSIX limit). The OS refuses longer paths
+# before any resolution, and realpath() on them costs quadratic time (profiled: 2.9 s of a 3.0 s covers check on
+# an 80 KB path). Windows long paths (to 32767) are not resolved past this: upgrade if such a path must be checked.
+_RESOLVE_MAX = 4096
+
+
+def is_resolvable(s: str) -> bool:
+    """Absolute as written and short enough for the OS to resolve: only these go through realpath()."""
+    return is_absolute_spelling(s) and len(s) <= _RESOLVE_MAX
 
 HOME_FAMILY = ("HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH")
 _BASH_VAR = re.compile(r"\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))")
@@ -382,8 +402,17 @@ def zone(abs_path: str, roots) -> str:
         if rel[0] and (tools_cache or
                        rel[0] not in paths.SCRATCH_EXCLUDED_TOP and any(c in paths.SCRATCH_NAMES for c in rel)):
             return "scratch"
+    if best == "outside" and abs_path and is_resolvable(abs_path):
+        try:
+            real_p = os.path.realpath(abs_path).replace("\\", "/")
+            norm_rp = paths.norm_abs(real_p)
+            if norm_rp:
+                real_p = norm_rp
+            if real_p and real_p.lower() != p:
+                return zone(real_p, roots)
+        except (OSError, ValueError):
+            pass
     return best
-
 
 # --------------------------------------------------------------------------------------------- covers_protected
 # Fix round 1 (CRITICAL): zone() answers "where is this path". A delete also destroys everything BELOW its operand,
@@ -519,10 +548,29 @@ def covers_protected(abs_path: Optional[str], roots) -> bool:
         rc = _split(root.lower().rstrip("/") or root.lower())
         if len(pc) <= len(rc) and all(_comp_matches(a, b) for a, b in zip(pc, rc)):
             return True
+    if _real_path_covers(abs_path, roots):
+        return True
     if pc[-1] == "documents":
         return _user_documents(pc)
     return len(pc) >= 3 and pc[-1] == "my games" and pc[-2] == "documents" and _user_documents(pc[:-1])
 
+
+
+def _real_path_covers(abs_path: str, roots) -> bool:
+    """A symlink whose real path is a protected root or one of its parents covers it too."""
+    if not is_resolvable(abs_path):
+        return False
+    try:
+        real_p = os.path.realpath(abs_path).replace("\\", "/")
+        if real_p and real_p.lower() != abs_path.lower():
+            rc_p = _split(real_p.lower().rstrip("/") or "/")
+            for root in tuple(roots.install_dirs) + tuple(roots.config_dirs) + tuple(roots.mo2_dirs):
+                rc = _split(root.lower().rstrip("/") or root.lower())
+                if len(rc_p) <= len(rc) and all(_comp_matches(a, b) for a, b in zip(rc_p, rc)):
+                    return True
+    except (OSError, ValueError):
+        pass
+    return False
 
 def _user_documents(pc) -> bool:
     """A Documents folder that can hold the config: a user's own (through OneDrive too), or one at a drive's root. Not any
@@ -558,4 +606,14 @@ def file_class(*spellings: str) -> str:
     for kind, rx, _ in CLASS_RULE:
         if any(s and grep(rx, s) for s in spellings):
             return kind
+    for s in spellings:
+        if s and is_absolute_spelling(s):
+            try:
+                real_s = os.path.realpath(s)
+                if real_s and real_s != s:
+                    for kind, rx, _ in CLASS_RULE:
+                        if grep(rx, real_s):
+                            return kind
+            except (OSError, ValueError):
+                pass
     return ""

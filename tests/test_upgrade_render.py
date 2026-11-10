@@ -82,7 +82,7 @@ def test_rendered_interpreter_literals_roundtrip_unicode_and_single_quotes(tmp_p
         if not executable:
             pytest.skip(shell + " unavailable; interpreter literal not qualified")
     data = config(tmp_path)
-    raw = upgrade_render._hook(name, (REPO / name).read_bytes(), data)
+    raw = upgrade_render._hook(name, guard_hash.normalised(name, (REPO / name).read_bytes())[0], data)   # template form
     lines = raw.decode("utf-8-sig").split("\n")
     assignments = [line for line in lines if line.startswith(("PY=", "BASH_EXE=", "$PY = ", "$BASHEXE = "))]
     if shell == "bash":
@@ -144,8 +144,12 @@ def test_runtime_cli_renders_a_private_component_review(tmp_path):
 
 
 def test_every_configured_hook_template_is_in_the_canonical_slot_inventory():
-    templates = {p.relative_to(REPO).as_posix() for prefix in (".claude/hooks", ".codex/hooks")
-                 for p in (REPO / prefix).iterdir() if p.is_file() and b"{{PYTHON_PATH}}" in p.read_bytes()}
+    templates = set()
+    for prefix in (".claude/hooks", ".codex/hooks"):
+        for p in (REPO / prefix).iterdir():
+            rel = p.relative_to(REPO).as_posix()
+            if p.is_file() and b"{{PYTHON_PATH}}" in guard_hash.normalised(rel, p.read_bytes())[0]:   # template form
+                templates.add(rel)
     assert templates == set(guard_hash.CONFIGURED)
 
 

@@ -104,7 +104,9 @@ def install_kind(rel: List[str]) -> str:
         return GUARD
     if rel[0] == ".claude" and len(rel) == 2 and (_settings(rel[1]) or rel[1] == "skyrim-paths.env"):
         return GUARD
-    if rel == ["skyrim-paths.env"]:                  # Plan 8 T8: the paths file's own location, the toolkit root
+    if rel in (["skyrim-paths.env"], ["guard-files.sha256"]):
+        return GUARD
+    if rel in (["tools", "kb-guard.sh"], ["tools", "skyguard.sh"], ["tools", "skydoctor"]):
         return GUARD
     if rel[:3] == [".claude", "backups", ".hook-heartbeat"] or rel == [".claude", "backups", "audit_log.txt"]:
         return GUARD
@@ -245,6 +247,12 @@ def kind_of(abs_path: str, roots, env: Mapping[str, str], holder: bool = False) 
         r = _rel(abs_path, [h])
         if r is not None:
             return user_kind(r)
+    try:
+        real_p = os.path.realpath(abs_path).replace("\\", "/") if targets.is_resolvable(abs_path) else ""
+        if real_p and real_p.lower() != abs_path.lower():
+            return kind_of(real_p, roots, env, holder)
+    except (OSError, ValueError):
+        pass
     return ""
 
 
@@ -462,7 +470,16 @@ def _reaches_state(a: str, roots) -> bool:
     if roots is None or not a:
         return False
     rel = _rel(a, roots.install_dirs)
-    return rel is not None and (install_kind(rel) == STATE or rel in _SAVE_HOLDERS)
+    if rel is not None and (install_kind(rel) == STATE or rel in _SAVE_HOLDERS):
+        return True
+    try:                                                    # a symlink into the guard's state counts as the state
+        real_a = os.path.realpath(a).replace("\\", "/") if targets.is_resolvable(a) else ""
+        if real_a and real_a.lower() != a.lower():
+            rel = _rel(real_a, roots.install_dirs)
+            return rel is not None and (install_kind(rel) == STATE or rel in _SAVE_HOLDERS)
+    except (OSError, ValueError):
+        pass
+    return False
 
 
 def _hit_name(a: str, w: str) -> str:

@@ -102,6 +102,17 @@ and always names the file it read and how old it is: the log describes the **las
 DLLs on disk now. Rows must sum to the plugins checked; a mismatch prints `ACCOUNTING MISMATCH` and
 exits 1. Override the folder with `$SKSE_LOG_DIR`.
 
+## mod-sizes — find a mod, and see what is large
+
+```bash
+python tools/mod-sizes.py --enabled --top 20      # largest enabled mods
+python tools/mod-sizes.py bsheartland             # mod name OR a plugin in its top folder
+```
+
+Read-only headless form of the MO2ModSizeAnalyzer plugin, which needs MO2's `mobase` and Qt. Size counts
+what is on disk, not how much content a mod adds: a generated output folder or a hair pack can outrank a
+quest mod. Folders come from `SKYRIM_MO2_MODS` and `SKYRIM_LOADORDER_DIR`.
+
 ## mirror-launch-logs — keep the logs the next launch would overwrite
 
 ```bash

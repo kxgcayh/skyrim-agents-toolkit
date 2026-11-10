@@ -34,10 +34,24 @@ bash tools/devbench-cli.sh notify "Test 3 of 5: swing now"   # HUD narration
 bash tools/devbench-cli.sh tool menu '{"action":"accept"}'   # raw: any tool, any JSON
 ```
 
-**Hard requirement: the game must be running.** The server only exists while the game is genuinely
-running with a save loaded. In VR that normally means the headset is on (Skyrim VR errors at VR-init
-without one) -- or headless mode, below. When the game is closed the port is dead — fall back to the
-offline tools (xelib, Spriggit, ReSaver, PyNifly).
+**Hard requirement: the game must be running with DevBench loaded.** Current builds start the
+server at `kPostLoad`, so discovery, menu, `gfx` and keyboard input can work at the Main Menu.
+World inspection and Papyrus calls need a loaded game. When the game is closed the port is dead;
+use offline tools (xelib, Spriggit, ReSaver, PyNifly).
+
+The wrapper retains `tool <name> '<json>'` for every registered tool and extension. Shortcuts
+`gfx` and `dialogue` forward one JSON argument unchanged. Other tools continue through
+`tool <name>` so existing guard routing remains intact. Run `tools` for the installed server's schemas;
+local fork features are not necessarily present in a stock DLL. For example:
+
+```bash
+bash tools/devbench-cli.sh dialogue '{"action":"inspect"}'
+bash tools/devbench-cli.sh gfx '{"op":"get","menu":"Dialogue Menu","path":"_root.DialogueMenu_mc.eMenuState"}'
+```
+
+`dialogue select` requires the snapshot returned by inspect and a zero-based list index. Keep
+that snapshot explicit; `submitted` confirms invocation, not completed dialogue or gameplay.
+`gfx` native calls require known argument types; a wrong type can crash the game.
 
 **Headless Skyrim VR (no headset): `bash tools/vr-headless.sh run --desktop <choice> [--park]`.**
 **Before every session ask the user: this desktop (`current`) or a private background desktop
@@ -69,7 +83,9 @@ and ask the user first, every time; an earlier yes does not carry over to a new 
 
 **Port is deterministic per runtime: SE/AE `8920`, VR `8921`** (DevBench iterates if the port is busy
 and writes the bound port to `Data/SKSE/Plugins/devbench/runtime.json`, which the wrapper reads).
-Override with `DEVBENCH_PORT`. MCP clients can point at `http://127.0.0.1:<port>/mcp`; the REST path
+Override with `DEVBENCH_PORT`. `DEVBENCH_RUNTIME_JSON` selects a runtime file explicitly
+(e.g. MO2 overwrite or a CrossOver bottle). Otherwise the wrapper also checks
+`$LOCALAPPDATA/devbench/se/runtime.json` (`vr` for Skyrim VR) after the Data path. MCP clients can point at `http://127.0.0.1:<port>/mcp`; the REST path
 the wrapper uses works any time the server is up, with no reconnect.
 
 **Tools:** `ping` · `console` (exec/read) · `inspect` (`state|health|vm|scene|mods|player|inventory|
@@ -81,7 +97,7 @@ quests|effects|refs`) · `papyrus` (list/describe/**call**) · `menu` (list/desc
 exercised them against a live game).** `game` gained `loadLast` (fire-and-forget; reload the latest save), `advanceTime`
 (1.17), `setTimeScale` / `getTimeScale` (1.22; scale 0.1..3.0, leased, refused with 409 while a
 recording runs) · `wait` and `sleep` (1.16; step pacing, incl. in-game hours) · `input` (1.18-1.24;
-`capabilities` / `observe` / `keyboard` / `vrTrackedSet`: **synthetic input, VR-specific and mutating**
+`capabilities` / `observe` / `keyboard` / `vrTrackedSet`: **synthetic input, mutating; keyboard input also supports SE/AE menus**
 -- treat like `record`/`replay`) · `camera orbit` (third person only; 501 on VR) · `inspect kind=extensions`
 · `menu invoke`. **`scenario` now FAILS when an inner tool errors (since 1.16, #72)**; before that it
 reported success, so a scenario that used to "pass" may now fail honestly -- read the step it names.
@@ -100,8 +116,8 @@ Address Library. The newest VR Address Library seen when this was written is **0
 a stale Address Library is the usual reason an SKSE plugin fails to load.
 **Console capture:** 1.19 fixed capture when the output buffer is empty (#96) and 1.24 changed how
 console output is captured (#117). 1.28 (#130) makes `console exec` with `capture:true` return the
-output itself as `lines` (plus `completed` and `lossPossible`); a following `read` returns the same output
-again, so the wrapper's exec+sleep+read pair still works unchanged. `count:0` was common on older builds
+output itself as `lines` (plus `completed` and `lossPossible`); the wrapper uses that capture when the response
+includes `completed`, falls back to sleep+read for older servers, and exits 3 on `completed:false` without reading another capture. `count:0` was common on older builds
 and is no longer assumed normal -- many commands still print nothing, so verify by re-reading state.
 1.24 also warns on unknown request keys; the wrapper sends only documented keys.
 
@@ -135,7 +151,7 @@ so. MCP clients get the same signal as `inspect kind=health`.
 test this myself instead of asking the user to?" Build a *parameterized* harness (a global Papyrus
 function callable via `call`, logging to a file you read off disk) rather than a one-shot, so sweeping
 a value or swapping a mechanism is another DevBench call — not another edit → recompile → user reload.
-Reserve manual testing for the final confirmation gate. See KNOWLEDGEBASE.md for the hazards
+Reserve manual testing for the final confirmation gate. See kb/environment-and-guards.md for the hazards
 (`game save` deadlock, paused-state semantics, heavy console commands) — read them before your first
 live session.
 

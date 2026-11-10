@@ -44,17 +44,53 @@ while [ "$i" -lt "${#argv[@]}" ]; do
 done
 # A global tool install puts `spriggit` on PATH (Windows); the dev container restores it as a
 # LOCAL tool from .config/dotnet-tools.json, which is only reachable via `dotnet tool run`.
-if type -P spriggit >/dev/null 2>&1; then SPRIGGIT=(spriggit)
+# A shell started by an app (an agent, an IDE) often has a minimal PATH: ask the login shell where dotnet is.
+if [ "$(uname -s)" = Darwin ] && ! type -P dotnet >/dev/null 2>&1; then
+    DOTNET_BIN="$(/bin/zsh -lc 'command -v dotnet' 2>/dev/null | tail -1)"
+    [ -x "$DOTNET_BIN" ] && PATH="$PATH:${DOTNET_BIN%/*}"
+fi
+SPRIGGIT=()
+# A locally built fork (tools/Spriggit, git-ignored, never shipped) wins when present; it runs on macOS as is.
+LOCAL_FORK="$SCRIPT_DIR/Spriggit/publish/Spriggit.CLI"
+if [ -x "$LOCAL_FORK" ]; then SPRIGGIT=("$LOCAL_FORK")
+elif type -P spriggit >/dev/null 2>&1; then SPRIGGIT=(spriggit)
 elif type -P dotnet >/dev/null 2>&1; then SPRIGGIT=(dotnet tool run spriggit --)
-else echo '[spriggit-cli] spriggit not found: install the Spriggit.CLI dotnet tool' >&2; exit 1; fi
-if [ -z "$REAL_IN" ] && [ -z "$REAL_OUT" ]; then exec "${SPRIGGIT[@]}" "$@"; fi
+elif [ "$(uname -s)" != Darwin ]; then echo '[spriggit-cli] spriggit not found: install the Spriggit.CLI dotnet tool' >&2; exit 1; fi  # macOS may still run the DLL
+# macOS: the CLI starts its translation helper as "Spriggit.Yaml.Skyrim.exe", which does not exist there
+# (Win32Exception 2; docs/macos-crossover.md). The helper's DLL takes the same long options, so run it with dotnet.
+find_translation_dll() {
+    [ -n "${SPRIGGIT_DLL:-}" ] && { printf '%s\n' "$SPRIGGIT_DLL"; return; }
+    local ver="" prev="" a
+    for a in "$@"; do [ "$prev" = --PackageVersion ] && ver="$a"; prev="$a"; done
+    { find "$HOME/.nuget/packages/spriggit.yaml.skyrim" "${TMPDIR:-/tmp}/Spriggit/Translations" \
+        -name Spriggit.Yaml.Skyrim.dll -path "*/${ver:-*}/*" 2>/dev/null || true; } | sort | tail -1
+}
+run_spriggit() {
+    if [ "$(uname -s)" = Darwin ] && [ "${SPRIGGIT[0]:-}" != "$LOCAL_FORK" ] && type -P dotnet >/dev/null 2>&1; then
+        case "${1:-}" in serialize|deserialize)
+            local dll; dll="$(find_translation_dll "$@")"
+            if [ -z "$dll" ] && [ "${#SPRIGGIT[@]}" -gt 0 ]; then "${SPRIGGIT[@]}" "$@" >/dev/null 2>&1 || true; dll="$(find_translation_dll "$@")"; fi  # one CLI run unpacks the helper
+            if [ -n "$dll" ]; then echo "[spriggit-cli] macOS: running $dll with dotnet" >&2; dotnet "$dll" "$@"; return; fi
+            echo '[spriggit-cli] Spriggit.Yaml.Skyrim.dll not found; set SPRIGGIT_DLL or install the Spriggit.CLI dotnet tool' >&2; return 1;;
+        esac
+    fi
+    [ "${#SPRIGGIT[@]}" -gt 0 ] || { echo '[spriggit-cli] spriggit not found: install the Spriggit.CLI dotnet tool' >&2; return 1; }
+    "${SPRIGGIT[@]}" "$@"
+}
+if [ -z "$REAL_IN" ] && [ -z "$REAL_OUT" ]; then
+    [ "${#SPRIGGIT[@]}" -gt 0 ] || { echo '[spriggit-cli] spriggit not found: install the Spriggit.CLI dotnet tool' >&2; exit 1; }
+    exec "${SPRIGGIT[@]}" "$@"
+fi
 [ -n "$REAL_IN" ] && [ -n "$REAL_OUT" ] || { echo 'InputPath and OutputPath are both required' >&2; exit 1; }
 "${PY[@]}" "$SCRIPT_DIR/spriggit_publish.py" check "$REAL_IN" "$REAL_OUT"
-DEFAULT_ROOT="${TMPDIR:-/tmp}/spriggit-work"
-case "${OSTYPE:-}" in msys*|cygwin*) DEFAULT_ROOT='C:/Temp/spriggit-work';; esac
+USER_SUFFIX="${USER:-${USERNAME:-default}}"
+DEFAULT_ROOT="${TMPDIR:-/tmp}/spriggit-work-$USER_SUFFIX"
+case "${OSTYPE:-}" in msys*|cygwin*) DEFAULT_ROOT="C:/Temp/spriggit-work-$USER_SUFFIX";; esac
 WORK_ROOT="${SPRIGGIT_WORK_ROOT:-$DEFAULT_ROOT}"
 mkdir -p "$WORK_ROOT"
+chmod 700 "$WORK_ROOT" 2>/dev/null || true
 WORK=$(mktemp -d "$WORK_ROOT/run.XXXXXXXX")
+chmod 700 "$WORK" 2>/dev/null || true
 trap 'rm -rf -- "$WORK"' EXIT
 mkdir -p "$WORK/in" "$WORK/out"
 NEW_IN="$WORK/in/$(basename "$REAL_IN")"; NEW_OUT="$WORK/out/$(basename "$REAL_OUT")"
@@ -69,6 +105,6 @@ while [ "$i" -lt "${#argv[@]}" ]; do
     esac
 done
 echo "[spriggit-cli] workspace: $WORK" >&2
-"${SPRIGGIT[@]}" "${ARGS[@]}"
+run_spriggit "${ARGS[@]}"
 "${PY[@]}" "$SCRIPT_DIR/spriggit_publish.py" publish "$NEW_OUT" "$REAL_OUT"
 echo "[spriggit-cli] result -> $REAL_OUT" >&2

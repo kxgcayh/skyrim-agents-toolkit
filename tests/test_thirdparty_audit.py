@@ -874,20 +874,20 @@ def test_a_pinned_hash_upstream_publishes_is_ok_and_a_different_one_is_drift(tmp
 
 
 def test_a_pinned_hash_is_checked_by_downloading_when_upstream_publishes_none(tmp_path):
-    url = "https://github.com/Orvid/Champollion/releases/download/v1.3.2/Champollion.v1.3.2.zip"
-    body = b"champollion bytes"
-    row = "| Champollion | v1.3.2 | `Champollion.v1.3.2.zip` | `%s` | <%s> |\n"
+    url = "https://github.com/hexabits/nifskope/releases/download/v2.0.dev9/NifSkope_2_0_2023-09-29-x64.7z"
+    body = b"nifskope bytes"
+    row = "| NifSkope | v2.0.dev9 | `NifSkope_2_0_2023-09-29-x64.7z` | `%s` | <%s> |\n"
     for sha, want in ((__import__("hashlib").sha256(body).hexdigest(), ta.OK), ("0" * 64, ta.DRIFT)):
         repo = make_repo(tmp_path / want.replace(" ", "_"), {"docs/installing-tools.md": row % (sha, url)})
         cache = make_cache(tmp_path / want.replace(" ", "_"), extra=[(url, 200, body)])
-        rows, _code = audit(repo, cache, ["Champollion"])
+        rows, _code = audit(repo, cache, ["NifSkope"])
         assert [r.status for r in rows if r.check == "pinned hash"] == [want], [r.as_dict() for r in rows]
 
 
 @pytest.mark.parametrize("family,index", [
     ("Node.js", 0), ("Node.js", 1), (".NET SDK", 0), (".NET SDK", 1),
     ("Microsoft OpenJDK", 0), ("Microsoft OpenJDK", 1),
-    ("Blender (4.2 LTS)", 0), ("PyNifly", 0), ("PyNifly", 1), ("House Carl", 0), ("7-Zip", 0), ("7-Zip", 1),
+    ("Blender (4.2 LTS)", 0), ("PyNifly", 0), ("PyNifly", 1), ("7-Zip", 0), ("7-Zip", 1),
 ])
 @pytest.mark.parametrize("swapped", [False, True])
 def test_published_hash_belongs_to_the_exact_artifact(tmp_path, family, index, swapped):
@@ -973,6 +973,16 @@ def test_a_bare_sidecar_hash_is_bound_to_its_artifact_specific_url():
     assert ta._published_checksum(response, "https://example.invalid/selected.zip.sha256sum.txt", item, {}, 64) == SHA_A
     with pytest.raises(ta.CouldNotCheck):
         ta._published_checksum(response, "https://example.invalid/other.zip.sha256sum.txt", item, {}, 64)
+def test_a_branch_head_pin_is_ok_at_head_and_newer_when_the_branch_moves(tmp_path):
+    sha = "23e947a5d16fa9f4ad4b3fdf2b0dc37caefc6bbd"
+    doc = "Built from <https://github.com/kxgcayh/Champollion> (fork), pinned to commit `%s`.\n" % sha
+    url = "https://api.github.com/repos/kxgcayh/Champollion/commits/HEAD"
+    for head, want in ((sha, ta.OK), ("a" * 40, ta.NEWER)):
+        d = tmp_path / want.replace(" ", "_")
+        repo = make_repo(d, {"docs/installing-tools.md": doc})
+        cache = make_cache(d, extra=[(url, 200, json.dumps({"sha": head}).encode())])
+        rows, code = audit(repo, cache, ["Champollion"])
+        assert [r.status for r in rows if r.check == "version"] == [want] and code == 0, [r.as_dict() for r in rows]
 
 
 def test_the_newest_main_nexus_file_is_the_upstream_version(tmp_path):
@@ -1126,11 +1136,11 @@ def test_the_pinned_git_installer_hash_is_the_one_github_publishes(tmp_path, sha
 
 # Commit-published xeditlib has a package version, not necessarily a matching release/tag.
 XEDIT_COMMIT = "1" * 40
-XEDIT_URL = "https://raw.githubusercontent.com/WingedGuardian/xeditlib/" + XEDIT_COMMIT + "/package.json"
+XEDIT_URL = "https://raw.githubusercontent.com/kxgcayh/xeditlib/" + XEDIT_COMMIT + "/package.json"
 
 
 def xedit_repo(tmp_path, *, version="1.0.2", documentation=True, extra_doc="", hint=None):
-    url = "https://codeload.github.com/WingedGuardian/xeditlib/tar.gz/" + XEDIT_COMMIT
+    url = "https://codeload.github.com/kxgcayh/xeditlib/tar.gz/" + XEDIT_COMMIT
     files = {
         "package.json": json.dumps({"optionalDependencies": {"xeditlib": url}}),
         "package-lock.json": json.dumps({"packages": {"node_modules/xeditlib": {

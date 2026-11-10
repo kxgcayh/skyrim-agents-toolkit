@@ -53,10 +53,10 @@ case "$sel" in claude) WANT_C=1; WANT_X="" ;; codex) WANT_C=""; WANT_X=1 ;; all)
     generic|opencode) WANT_C=""; WANT_X="" ;;
     *) fail "no 'configuring:' line in the output"; WANT_C=""; WANT_X="" ;; esac
 # AGENTS.md serves Codex and portable agents, so it is filled for each selected one, on any OS; only Codex's
-# hooks (.codex/hooks.json) are Windows-only.
+# hooks (.codex/hooks.json) are Windows- and macOS-only.
 WANT_AGENTS="$WANT_X"
 case "$sel" in generic|opencode) WANT_AGENTS=1 ;; esac
-WANT_HOOKS="$WANT_X"; [ -n "$WIN" ] || WANT_HOOKS=""
+WANT_HOOKS="$WANT_X"; [ -n "$WIN" ] || [ "$(uname -s)" = Darwin ] || WANT_HOOKS=""   # Codex hooks render on Windows and macOS
 if has_marks CLAUDE.md; then [ -z "$WANT_C" ] && ok "CLAUDE.md left as extracted" || fail "CLAUDE.md not filled in"
 else [ -n "$WANT_C" ] && ok "CLAUDE.md filled in" || fail "CLAUDE.md filled in for an unselected agent"; fi
 if has_marks AGENTS.md; then [ -z "$WANT_AGENTS" ] && ok "AGENTS.md left as extracted" || fail "AGENTS.md not filled in"

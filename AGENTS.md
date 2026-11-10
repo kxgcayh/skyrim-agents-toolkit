@@ -5,7 +5,7 @@ Guidance for AI coding agents working in this Skyrim install. Agent-specific not
 
 ## What This Is
 
-A modded Skyrim installation. Adapt paths and version-specific notes to your Skyrim version: SE, AE, VR, or LE. VR-specific behavior is flagged throughout — never assume SSE behavior equals VR behavior.
+A modded Skyrim installation. This fork targets Skyrim on PC (SE and AE). Adapt paths and version-specific notes to your Skyrim version: SE, AE, VR, or LE. VR notes are inherited from upstream and untested here; VR-specific behavior is flagged throughout — never assume SSE behavior equals VR behavior.
 
 `setup.sh` detects your mod manager and fills in the Key Paths below accordingly. **If it detected Mod Organizer 2, read the MO2 note in Key Paths before reading or writing any mod file** — MO2 has no real `Data/` folder, so the obvious path is the wrong one. See "Mod Manager Layout" in `KNOWLEDGEBASE.md`.
 
@@ -24,21 +24,29 @@ All under `tools/`:
 
 | Tool | Purpose | Usage |
 |------|---------|-------|
-| **Champollion** | Decompile Papyrus `.pex` → `.psc` | `tools/Champollion/Champollion.exe input.pex` |
-| **Caprica** | Compile Papyrus `.psc` → `.pex` | `tools/Caprica/Caprica.exe` from `Data/Scripts/Source` with a BARE filename and a second `-i` for the base-game sources: exact command in skill `skyrim-context` |
-| **XEditLib.dll** | Programmatic ESP/ESM reading via FFI | Load with koffi in Node.js (skill `xelib`) |
+| **Champollion** | Decompile Papyrus `.pex` → `.psc` | `champollion input.pex -p <out dir>` |
+| **Caprica** | Compile Papyrus `.psc` → `.pex` | `caprica` (see notes) |
+| **XEditLib.dll** | Programmatic ESP/ESM reading via FFI | koffi in Node.js; skill `xelib` |
 | **Spriggit** | ESP ↔ YAML/JSON conversion (.NET) | `spriggit serialize ...` |
-| **AutoMod CLI** | NIF meshes, BSA archives, audio, MCM, ESP one-liners | `bash tools/automod-cli.sh <module> <command> --json` |
-| **PyFFI** | NIF geometry edit — **NiTriShape (LE-format) ONLY** (any modern Python with setuptools) | PyFFI / PyNifly below; skill `skyrim-nif` |
-| **PyNifly** | NIF read/write incl. **BSTriShape (SSE)** + **animation/controller authoring** (Python, prebuilt DLL) | PyFFI / PyNifly below; skill `skyrim-nif` |
-| **ReSaver CLI** | Headless `.ess` save parse / query / cross-reference / clean | `bash tools/resaver-cli.sh <op> <save.ess>` — op list and rules: skill `skyrim-save` (write ops are dry-run unless `--apply`, always a NEW file). Needs JDK 17+ + ReSaver's jar (see `docs/installing-tools.md`). Opt-in native backend: `RESAVER_BACKEND=native`, never a fallback. |
-| **cosave-info** | READ-ONLY structural survey of an SKSE `.skse` co-save → JSON (which mods stashed co-save data + how much) | `bash tools/cosave-cli.sh <cosave.skse>` (Python 3; the cosave sits next to its `.ess`) |
-| **skyrim-winner** | **"Which plugin actually wins this record?"** Loads the FULL active load order and asks xEdit. No index, no cache -- xEdit is the authority. | `bash tools/skyrim-winner.sh <winner\|chain> <formid> [plugin]` · `... conflicts <plugin>` -- needs **xeditlib**; skill `triage-and-conflicts` |
-| **papyrus-triage** | Turns `Papyrus.N.log` into bucketed, attributed counts. Rows **sum to the entry count**; the not-shown row prints even at zero. | `python tools/papyrus-triage.py [logfile] [--top N] [--all]` -- bundled, Python 3, no install |
-| **crash-triage** | Reduces CrashLogger dumps (~5.5k lines each) to ranked signatures and labels the ones your knowledgebase already ruled on. | `python tools/crash-triage.py [dir\|file] [--frames N] [--all]` -- bundled, Python 3, no install |
-| **DevBench** | **LIVE in-game** inspect / console / Papyrus / scenario via a localhost REST+MCP server — only while the game is actually running | `bash tools/devbench-cli.sh <alive\|health\|ping\|state\|inspect\|exec\|call\|describe\|notify\|tool>` — skill `devbench` |
+| **AutoMod CLI** | NIF, BSA, audio, MCM, ESP one-liners | `bash tools/automod-cli.sh <module> <command> --json` |
+| **PyFFI** | NIF geometry edit, **NiTriShape (LE) ONLY** | skill `skyrim-nif` |
+| **PyNifly** | NIF read/write incl. **BSTriShape (SSE)** + animation authoring | skill `skyrim-nif` |
+| **ReSaver CLI** | Headless `.ess` save parse / query / clean | `bash tools/resaver-cli.sh <op> <save.ess>` |
+| **cosave-info** | READ-ONLY survey of an SKSE `.skse` co-save → JSON | `bash tools/cosave-cli.sh <cosave.skse>` |
+| **skyrim-winner** | Which plugin wins a record, over the FULL load order | `bash tools/skyrim-winner.sh <winner\|chain\|conflicts> ...` |
+| **papyrus-triage** | `Papyrus.N.log` → bucketed, attributed counts | `python tools/papyrus-triage.py [logfile] [--top N] [--all]` |
+| **crash-triage** | CrashLogger dumps → ranked signatures | `python tools/crash-triage.py [dir\|file] [--frames N] [--all]` |
+| **mod-sizes** | MO2 mods by size; search by mod or plugin name (read-only) | `python tools/mod-sizes.py [search] [--enabled] [--top N]` |
+| **DevBench** | **LIVE in-game** inspect / console / Papyrus / scenario | `bash tools/devbench-cli.sh <command>`; skill `devbench` |
 
-> **Note**: none of these are bundled. How to install and verify each one: `docs/installing-tools.md`.
+- **Caprica**: run from `Data/Scripts/Source` with bare filename and `-i` for base sources (skill `skyrim-context`).
+- **PyFFI / PyNifly**: LE NiTriShape vs SSE BSTriShape limits below; skill `skyrim-nif`.
+- **ReSaver CLI**: headless save queries/cleaning; write ops need `--apply` and write a new file (skill `skyrim-save`).
+- **cosave-info**: SKSE co-save survey (Python 3); sits next to its `.ess`.
+- **skyrim-winner**: authority on record winners across active load order (needs xeditlib; skill `triage-and-conflicts`).
+- **DevBench**: live in-game REST/MCP inspect/exec (commands: `alive health ping state inspect exec call describe notify tool`; skill `devbench`).
+
+> **Note**: only papyrus-triage and crash-triage are bundled (Python 3, no install). How to install and verify the rest: `docs/installing-tools.md`.
 
 ## Where the rest lives
 
@@ -80,13 +88,14 @@ Settings load in this order (later overrides earlier):
 
 ## Nexus Mod Research (Standing Rule)
 
-**Always search a mod's Nexus mod page before investigating it.** Check the description, tutorials/articles, comments, and bug reports before going in blind. Most issues are already documented there.
+**Always search a mod's Nexus mod page before investigating it.** Check the description, tutorials/articles, comments, and bug reports before going in blind. This saves enormous time -- most issues have been seen and documented by other users.
 
-Nexus also has a free API (versions, changelogs, dependencies). `bash tools/nexus.sh mod <id>` wraps it; key setup and the personal-use rules are in `docs/installing-tools.md`. Never echo, log or commit the key. Nexus pages answer plain web fetches with 403: use a browser tool.
+Nexus also has a free API (versions, changelogs, dependencies). `bash tools/nexus.sh mod <id>` wraps it; key setup and the personal-use rules are in `docs/installing-tools.md`. Never echo, log or commit the key.
+For the page itself (comments, bugs, permissions), WebFetch gets a Cloudflare 403: use `tools/nexusmods-surfer/` if installed (optional, private; `docs/installing-tools.md`).
 
 ## Knowledgebase
 
-`KNOWLEDGEBASE.md` (project root) is the master reference for all discovered quirks, gotchas, and cross-version differences. **Always consult it before making changes** to avoid repeating past mistakes.
+`KNOWLEDGEBASE.md` (project root) indexes `kb/`, the reference for all discovered quirks, gotchas, and cross-version differences. **Always consult the matching `kb/` file before making changes** to avoid repeating past mistakes.
 
 ### Two files, and which one to WRITE to
 
@@ -98,25 +107,19 @@ Nexus also has a free API (versions, changelogs, dependencies). `bash tools/nexu
 **Standing instruction**: after every debugging session, mod investigation, or web
 research, extract any new facts (engine quirks, VR vs SSE differences, API gotchas,
 tool limitations) and append them to **`KNOWLEDGEBASE.local.md`**, creating it if it
-does not exist. Read both files; write only to the local one. If the install is a git
-repository that does not ignore that file, commit it alone by explicit path (`git add -- <file>`, then
-`git commit -m "KB notes" -- <file>`). Never push.
+does not exist. Read both files; write only to the local one. If git does not
+ignore it, commit it alone by explicit path (`git commit -m "KB" -- <file>`). Never push.
 
 ### Your preferences: `## My preferences`, read every session
 
 `KNOWLEDGEBASE.local.md` holds the user's facts AND their standing instructions. Its
 `## My preferences` section is the user's instructions to you: **read it at the start of every
-session and follow it**. Never grant or imply an exception to it; no doc outranks it. On agents with
-session hooks the guards print it at session start; that is the same text. Read the rest of the file before making changes. When the user states a lasting
+session and follow it**. Never grant or imply an exception to it; no doc outranks it. On agents with session hooks the guards print it at session start; that is
+the same text. Read the rest of the file before making changes. When the user states a lasting
 preference ("always…", "never…", "from now on…"), add it to that section. When you create the
 file, start it with an empty `## My preferences` section.
 
-**Why the split:** updating extracts the new zip over your install, which *replaces* every
-shipped file, so notes appended to a shipped file are lost silently at the next update.
-
-⚠ If you already have accumulated notes inside `KNOWLEDGEBASE.md` from an older
-version, move them to `KNOWLEDGEBASE.local.md` now. Anything left in the shipped file
-is lost at the next update.
+**Why the split.** The upgrade path is "extract the new zip over your install", so any shipped file is replaced on update. Keeping user notes and preferences in `KNOWLEDGEBASE.local.md` ensures updates never overwrite them.
 
 ### The copy that covers the install you already have
 
@@ -129,24 +132,24 @@ no alarm. Details: `docs/safety-philosophy.md`.
 
 ## Top Gotchas (Always In Context)
 
-These are the most dangerous/common pitfalls. Consult `KNOWLEDGEBASE.md` for full details.
+These are the most dangerous/common pitfalls. Consult `kb/` for full details.
 
 1. **RemoveSpell doesn't fire OnEffectFinish** -- use `DispelSpell` when cleanup logic exists (but `DispelSpell` excludes ability-type spells)
 2. **All effects on a spell must have the same casting type** -- mismatches cause silent failure
 3. **VMAD editing is fragile** -- use `GetFormFromFile()` on your OWN plugin's forms to minimize properties (never another mod's — see *Own Your Records*), and check the result for `None`; xEdit can't add scripts to VMAD
-4. **PlayIdle fails in VR** -- VRIK overrides skeleton IK; bypass with timed Papyrus scripts
+4. **PlayIdle fails in VR (VR only)** -- VRIK overrides skeleton IK; bypass with timed Papyrus scripts
 5. **Wait() unreliable under 100ms** -- merge sub-100ms gaps; use `RegisterForSingleUpdate` when possible
-6. **SSE != VR** for: camera, skeleton, collision, UI, input, SKSE addresses, physics (60Hz->90Hz)
+6. **SE/AE != VR** for: camera, skeleton, collision, UI, input, SKSE addresses, physics (60Hz->90Hz)
 7. **Light-plugin (ESL) FormIDs: keep to xx000800-xx000FFF** -- lower IDs depend on the runtime (KB)
 8. **Loose files always override BSAs** -- check for loose file conflicts before assuming BSA content wins
 9. **Condition OR has precedence over AND** -- `A AND B OR C` != what you'd expect
 10. **Non-auto properties don't restore from master on save/load** -- they stay blank
-11. **PreWEAPON/PreSHIELD skeleton nodes cause CTD in VR** -- must be removed
+11. **PreWEAPON/PreSHIELD skeleton nodes cause CTD in VR (VR only)** -- must be removed
 12. **ONAM required for ESM temp record overrides** -- missing ONAM = game silently ignores overrides
-13. **SetVehicle causes HMD desync in VR** -- avoid entirely
+13. **SetVehicle causes HMD desync in VR (VR only)** -- avoid entirely
 14. **GoToState("") in OnUnload -> Self=None crash** -- move to OnLoad instead
 15. **Navmesh creation is CK-only** -- xEdit can only delete, never recreate
-16. **VR controller input is not on the SKSE Input API** -- use the VRIK API for trigger/grip/button detection
+16. **VR controller input is not on the SKSE Input API (VR only)** -- use the VRIK API for trigger/grip/button detection
 17. **Spell effect Area is in FEET, not game units** -- Area=60 ≈ 18m radius
 18. **Papyrus Sound type maps to SOUN, not SNDR** -- passing a SNDR FormID silently returns None
 
@@ -165,7 +168,7 @@ Outside the installed House Carl gateway, prefer Spriggit for ESP edits. It seri
 
 **Serialize → edit the YAML → the user reviews it → deserialize**, always through `bash tools/spriggit-cli.sh` (raw
 `spriggit` fails on nested paths). Spriggit **silently drops unknown YAML fields**: serialize with `-u`, round-trip
-verify every new field, pass `--PackageVersion` as `spriggit --version` prints it. Commands and notes: skill `skyrim-context`.
+verify every new field, pass `--PackageVersion` as the translation package version (`spriggit --version` prints it for the pinned CLI; a local fork prints its own version, so use `0.41.0` there). Commands and notes: skill `skyrim-context`.
 
 ### When to Use Which
 - **Spriggit**: Creating new ESPs, editing existing records, any task where you're modifying specific fields.
@@ -174,7 +177,7 @@ verify every new field, pass `--PackageVersion` as `spriggit --version` prints i
 
 ## ESP Dependency Rule: Own Your Records
 
-**Never use `GetFormFromFile()` to borrow records from another mod.** Soft runtime dependencies silently break when that mod is disabled — the call returns `None` with zero error output and the feature simply doesn't work.
+**Never use `GetFormFromFile()` to borrow records from another mod.** Soft runtime dependencies silently break when that mod is disabled — the call returns `None` with zero error output and the feature simply doesn't work. This is nearly impossible to debug without reading the Papyrus log.
 
 **Rule**: Any record your mod needs must live in the ESP you're building. Copy the record (SNDR, SPEL, MGEF, WEAP, etc.) into your own plugin rather than referencing another mod's.
 - **Hard master dependencies** (MAST records): acceptable when overriding or extending a specific mod's content.
@@ -191,19 +194,18 @@ the rules are graded and only the first list refuses.
 ### DENIED -- refused outright, cannot proceed
 
 Each is judged on the **program that runs** and the file it targets, in Bash and PowerShell, not on words
-merely in a command (`grep -rn "rm -rf" <install>` is allowed). Relative paths, including literal interpreter-delete
-names, resolve against the reported working directory; names built at run time rely on the text fallback.
+that merely appear in a command (`grep -rn "rm -rf" <install>` is allowed). Relative paths resolve against
+the working directory the agent reports.
 
 - **Deleting inside the game install, the config directory, or Mod Organizer's `mods/` / `overwrite/`**
   (`rm`, `del`, `Remove-Item`, `find -delete`, `git clean`, `shutil.rmtree`, a Recycle-Bin delete, ...), or
-  moving files out of them. Also refused: a delete whose target the guard cannot work out in a command
+  moving files out of them. Also refused: a delete whose target it cannot work out in a command
   naming a protected folder, and deleting everything in a folder it cannot place (`rm -rf *` after an
   unknown `cd`). Scratch folders (`/tmp`, temp, the scratchpad) are not protected.
   Pattern matching, **not a sandbox**: a guard against accidents.
 
   The install is **resolved** (from the guard's own location plus `skyrim-paths.env` at the toolkit root), never guessed
-  from the word "Skyrim". ⚠ If no root resolves, or a path in `skyrim-paths.env` is unreadable, the guard DENIES.
-  Why: `docs/safety-philosophy.md`.
+  from the word "Skyrim". ⚠ If no root resolves, or a path in `skyrim-paths.env` is unreadable, the guard DENIES (`docs/safety-philosophy.md`).
 - **Moving or renaming the install, `Data`, the settings folder or `Saves`** away.
 - **Deleting Bethesda registry keys** (`reg delete` / `Remove-Item` on a Bethesda key or one of its parents).
 - **Writing a plugin or archive (`.esp .esm .esl .bsa .ba2`) as raw text, anywhere** -- through the edit
@@ -213,11 +215,11 @@ names, resolve against the reported working directory; names built at run time r
   built at runtime, a script run from a file (`python fix.py`), other interpreters.
 - A program's output flag (`-o`, `--output`) aimed at a `.psc`, and Champollion against a `.pex`
   inside `Data/Scripts/` -- both have destroyed sources
-- DevBench `smp reset` (measured to crash a large load order), by MCP, `curl` or `devbench-cli.sh`
+- `sed -i` without `-b` on install/MO2 files
+- DevBench `smp reset` (crashes big load orders), by MCP, `curl` or `devbench-cli.sh`
 - Decoded text run as commands (`base64 -d | bash`), which the guard cannot read
-- `sed -i` without `-b` on a file in the install, config or MO2 folder (it makes CRLF LF): use `sed -i -b`
-- **More than two saves changed at once**, or saves named by a wildcard, until the user types the
-  `SAVE_ACCESS_APPROVAL` line `check --preview` prints (skill `skyrim-save`)
+- **More than two saves at once** or by wildcard, until the user types the `SAVE_ACCESS_APPROVAL`
+  line `check --preview` prints
 - A command the guard cannot read: empty or not text ("GUARD INERT"), or unparseable while it contains
   a deletion and names a protected folder -- it refuses rather than shrugs
 
@@ -226,10 +228,10 @@ names, resolve against the reported working directory; names built at run time r
 - SKSE plugin configs (`Data/SKSE/Plugins/*.ini`) -- not captured by any snapshot
 - Papyrus scripts (`.psc`, `.pex`) -- a `.pex` loads at game startup ONLY
 - Load order files -- the mod manager owns them and may overwrite a direct edit
-- Redirects, `tee`, `sed -i -b` and other shell writes into `Data/`, the config folder or MO2 (a `cp`/`mv`
+- Redirects, `tee`, an in-place sed and other shell writes into `Data/`, the config folder or MO2 (a `cp`/`mv`
   there is silent), a copy onto a plugin where the game loads it, and any write, copy or move onto a
   file directly in the game folder (its exe and dlls, `openvr_api.dll`, loader INIs)
-- A decompiler writing its output into the install; a backslash path in a `sed` replacement
+- A decompiler writing its output into the install; an in-place sed with a backslash path, on a file in the install
 - AutoMod write commands without `--dry-run`
 - Changing one or two saves (a save and its `.skse` are one): both are backed up, verified, first;
   a failed backup refuses
@@ -237,41 +239,39 @@ names, resolve against the reported working directory; names built at run time r
 Naming a plugin or INI in a read-only command is silent: notes fire on the program that writes.
 
 ### ASKS THE USER -- five rules
-- git discarding uncommitted changes in a protected folder (`checkout -- x`, `restore`, `reset --hard`)
-- an unnamed program (`$R`) given a save
+- git that throws away uncommitted changes in a protected folder (`checkout -- x`, `restore`, `reset --hard`)
+- a command whose unnamed program names a save, held until you approve it
 - an unnamed program, an eval of a variable, or awk system() given a protected path
-- `lock disable` (file lock off for good), and `snapshot restore --in-place` or
-  `restore-from-backup.sh --restore` (writes over live files)
+- `lock disable` (the file lock off for good)
+- `snapshot restore --in-place` or `restore-from-backup.sh --restore` (writes over live files)
 
-Few prompts by design: a guard that prompts on routine work is approved by reflex
+Few prompts by design: a guard that prompts on routine work gets approved by reflex
 (`docs/safety-philosophy.md`). **Check the guards are alive: `bash tools/hook-canary.sh`.**
 Coverage and gaps: `docs/guard-coverage.md`.
 
 ### The file lock and the guards' own state
 - **"Access denied" writing a vanilla master or archive** (`Skyrim.esm`, a base `.bsa`) is the optional lock, not
   a fault (the OS says no more): never retry or work around it. `bash tools/skyguard.sh lock unlock <file>` lifts
-  it for an hour (then the next tool call relocks it): **tell the user why first; relock when done**
+  it for an hour (the next tool call after that relocks it): **tell the user why first; relock when done**
   (`lock lock`). If it answers "No session id", you cannot lift it, by design: ask the user to run
   `tools\skyguard-unlock.cmd` in their own terminal. Never clear the read-only bit or ACL by hand.
 - **Never edit `.skyguard/`** (guard on/off state): refused. `bash tools/skydoctor` shows what is live.
 
 ### General rules
 - **Always review changes before applying** -- modded installs are delicate
-- Never modify ESP/ESM files directly -- use xelib or Spriggit
+- Never modify ESP/ESM files directly -- use xelib programmatically or Spriggit
 - **Keep line endings:** a CRLF file stays CRLF; whole-file churn in `git diff --stat` means you broke it
 - Vortex manages load order -- direct edits to loadorder.txt/plugins.txt may be overwritten
 - **Never bare-copy a third-party mod into `Data/`**, SKSE DLLs (DevBench too) included: untracked
   files get clobbered or orphaned by a deploy or purge. Prefer the user's mod manager; a manual
   install goes through `tools/mod-install.py`: dry run first, read every destination, then `--apply`
   (backups + manifest) and check the result. (The user's **own** in-development mod files are fine.)
-- **Delete to the Recycle Bin, never permanently.** Windows: the shell delete (`SHFileOperation` with
-  `FOF_ALLOWUNDO|FOF_WANTNUKEWARNING`), not `rm`/`Remove-Item`; only same-run scratch goes outright; too big
-  for the bin -> ask. Say in chat first when a delete may need approval or raise an OS prompt. The guard
-  judges these like any delete. Retention: `docs/RETENTION.md`.
-- **Resources:** own jobs wait only past 90% CPU or under 3 GiB RAM left, <=8 workers, low priority.
-  Physical RAM is primary; commit uses fixed 512/256/128 MiB buffers, never percentages.
-  Games/user-directed work skip admission; games skip floors. See `docs/resource-policy.md`
-  for admission, emergency/disk floors and probes.
+- **Delete to the Recycle Bin, never permanently.** Windows: `Microsoft.VisualBasic.FileIO.FileSystem`
+  `DeleteFile`/`DeleteDirectory` with `SendToRecycleBin`, not `rm`/`Remove-Item`. A permanent delete
+  needs the user's OK; a tool's own temp files are exempt. The guard judges a Recycle-Bin delete like any delete.
+- **Never push CPU, RAM, free disk, disk I/O or GPU past 80% of the machine**, counting what already
+  runs (games, other sessions). Measure first; if it won't fit, wait, shrink or ask. Stress tests: never
+  one worker per core, idle priority, time-boxed.
 
 ### Safety improvement loop
 After every session, near-miss or surprise, ask whether a new guard rule, protection or knowledgebase entry would have caught it -- proactively, when you notice a gap. Record proposals in a "Hook Candidates" section of `KNOWLEDGEBASE.local.md`.
@@ -280,7 +280,7 @@ After every session, near-miss or surprise, ask whether a new guard rule, protec
 - On agents with hooks, files changed through the edit tools are backed up to `.claude/backups/` first. ⚠ A file a script writes is not backed up (see the knowledgebase note above).
 - An audit log at `.claude/backups/AUDIT_LOG.txt` records every file touched, when, and by which tool
 
-### Iteration snapshots (standing process -- do not skip)
+### Iteration snapshots (standing process — do not skip)
 1. **Before any experimental change**, copy the current `.psc` files to `.claude/backups/<descriptive-name>/` (e.g. `known-good-pre-stagger/`): the rollback point.
 2. **Automatic copies are not rollback points** -- you can't identify them later, so snapshot by name anyway. Spriggit backs up the ESP on deserialize, not scripts.
 3. **After a state works in-game**, snapshot scripts and a Spriggit export to a `known-good/` folder named for what works.
@@ -294,12 +294,12 @@ After every session, near-miss or surprise, ask whether a new guard rule, protec
 2. **List assumptions** that the confidence level depends on
 3. **Investigate before acting**: Check the knowledgebase, read relevant source files, and web-search for Skyrim/VR-specific quirks before committing to an approach. Skyrim has many built-in bugs and version-specific differences -- things frequently do NOT work as expected.
 4. **Target >= 90% confidence** before touching anything. If below 90%, document what's uncertain and what additional research would raise it.
-5. **Never assume Skyrim SE behavior = Skyrim VR behavior.** Always verify VR-specific differences.
+5. **Never assume Skyrim SE/AE behavior = Skyrim VR behavior.** VR facts here are inherited and untested; say so when you rely on one.
 
 The confidence scale (95-100% verified, 80-94% strong, 60-79% research more, < 60% do not proceed) is in `docs/safety-philosophy.md`.
 
 ### Investigation checklist (before any change)
-- [ ] Consulted `KNOWLEDGEBASE.md` for known quirks
+- [ ] Consulted `kb/` (see `KNOWLEDGEBASE.md`) for known quirks
 - [ ] Read the actual source files involved
 - [ ] Checked if VR differs from SSE for this feature
 - [ ] Web-searched for known issues with this approach
@@ -320,7 +320,7 @@ Approaches disconnected from how the engine actually works lead to silent failur
 3. Model your solution as closely as possible on that pattern
 4. Only diverge when the vanilla pattern genuinely cannot be adapted
 
-Worked examples: `KNOWLEDGEBASE.md`, *Stagger & Bleed — Vanilla Alignment*.
+Worked examples: `kb/engine-and-combat.md`, *Stagger & Bleed — Vanilla Alignment*.
 
 ---
 
@@ -346,7 +346,7 @@ Worked examples: `KNOWLEDGEBASE.md`, *Stagger & Bleed — Vanilla Alignment*.
 
 **Do the amount of due diligence you need such that the user has to do as little trial-and-error and manual verification as possible.**
 
-- This does **NOT** mean cut corners, and does **NOT** mean skip steps where the user is genuinely needed (e.g. in-game VR testing only they can do).
+- This does **NOT** mean cut corners, and does **NOT** mean skip steps where the user is genuinely needed (e.g. in-game testing only they can do).
 - It means: verify formats, read the actual files, research the established technique (web + Nexus), confirm tool capabilities, and de-risk uncertain steps with a cheap spike — *then* make the change.
 - On any in-game problem, test it yourself through DevBench before asking the user (skill `devbench`).
 - **Catch CTD-class failures in tooling, not the headset** — cross-validate authored assets with an independent parser; don't trust same-tool readback.
@@ -376,8 +376,8 @@ Generated into `AGENTS.md` only; everything above is shared. Other agents: this 
   toolkit's two hooks, and check with `bash tools/hook-canary.sh`. Approval is needed again after a
   toolkit update whose CHANGELOG says "re-approve your Codex hooks", and (inferred, not measured) after the
   install folder moves: the approval covers the definition as rendered, install path included.
-- Start Codex in the game folder. Subfolder loading is version-dependent: it worked in an isolated
-  0.162.1 probe. Verify the live banner and canary before relying on hooks.
+- Start Codex in the game folder itself. Codex runs no hook started from a subfolder unless the install
+  folder is a git repository; Steam installs are not. Verify the live banner and canary before relying on hooks.
 - **Run the toolkit's scripts as `bash tools/<name>.sh`.** Do not assume your shell is bash: on Windows
   it may be PowerShell, so write commands that work there.
 - **A refusal is final.** The guards cannot ask on Codex, so anything that needs the user's confirmation

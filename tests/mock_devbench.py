@@ -109,6 +109,12 @@ class Handler(BaseHTTPRequestHandler):
                                     "code": 504})
         if MODE == "badarg400":
             return self._send(400, {"error": "kind must be a string", "code": 400})
+        if MODE in ("capture", "incomplete"):
+            if self.path == "/api/tool/console" and body.get("action") == "exec":
+                return self._send(200, {"completed": MODE == "capture", "lines": [body["command"]]})
+            return self._send(500, {"error": "must not read shared capture"})
+        if MODE == "echo":
+            return self._send(200, {"path": self.path, "args": body})
         if MODE == "bench":
             return self._bench(body)
         if self.path == "/api/tool/ping":

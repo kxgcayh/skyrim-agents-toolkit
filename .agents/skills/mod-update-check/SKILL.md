@@ -48,7 +48,7 @@ Typical rulings on a kept save, for reference (the user's own words in `## My pr
 updates and fixes before new mods, and new mods only after every update is done and play-tested,
 loaded at the END of the order; no removals or reorders of existing mods mid-save.
 
-**Then read:** `KNOWLEDGEBASE.md` → *Updating or Adding Mods on an Existing Save: Safety Rubric*.
+**Then read:** `kb/esp-xedit.md` → *Updating or Adding Mods on an Existing Save: Safety Rubric*.
 The rubric maps what an update CHANGES to its save footprint and a verdict. This skill is the
 procedure; the rubric prices each change; the user's rulings say which changes are allowed at all.
 

@@ -246,6 +246,40 @@ def cmd_contents(version):
     return 0
 
 
+def cmd_collection():
+    d = load_env("R")
+    coll = (d.get("data") or {}).get("collection")
+    if coll is None:
+        print("ERROR: {}".format(str(d.get("errors") or d)[:300]), file=sys.stderr)
+        return 2
+    rev = coll.get("latestPublishedRevision") or {}
+    mod_files = rev.get("modFiles") or []
+    seen: set = set()
+    required: list = []
+    optional: list = []
+    for entry in mod_files:
+        f = entry.get("file") or {}
+        mod = f.get("mod") or {}
+        mod_id = mod.get("modId")
+        mod_name = s(mod.get("name"), "Unknown")
+        if mod_id in seen:
+            continue
+        seen.add(mod_id)
+        (optional if entry.get("optional") else required).append(mod_name)
+    total = len(required) + len(optional)
+    print("# Collection: {} ({}) rev {} - {} mod(s) ({} required, {} optional)".format(
+        s(coll.get("name")), s(coll.get("slug")), s(rev.get("revisionNumber")),
+        total, len(required), len(optional)))
+    print("# nexus.sh collection -- order reflects collection API, not MO2 load order")
+    for n in required:
+        print("+{}".format(n))
+    if optional:
+        print("# --- optional (disabled) ---")
+        for n in optional:
+            print("-{}".format(n))
+    return 0
+
+
 def main(argv):
     args = list(argv)
     since = None
@@ -275,6 +309,14 @@ def main(argv):
         if cmd == "gql-find" and len(rest) == 2:
             print(json.dumps(discovery.request(rest[1], rest[0], wildcard=True)))
             return 0
+        if cmd == "gql-collection" and len(rest) == 1:
+            slug = rest[0].replace('"', "")   # slug is alphanumeric, strip any accidental quotes
+            print(json.dumps({"query": '{ collection(slug:"%s") { name slug latestPublishedRevision { '
+                                       'revisionNumber modCount modFiles { fileId optional '
+                                       'file { mod { modId name } } } } } }' % slug}))
+            return 0
+        if cmd == "collection" and not rest:
+            return cmd_collection()
         if cmd == "gql-req" and len(rest) == 2 and rest[0].isdigit() and rest[1] in GAME_IDS:
             # The query text the dev install's tool uses, with the id inlined (it is all digits, checked above).
             print(json.dumps({"query": "{ mod(gameId:%d, modId:%d){ modRequirements{ nexusRequirements{ nodes{ "
@@ -283,8 +325,8 @@ def main(argv):
     except (ValueError, AttributeError, TypeError) as e:
         print("ERROR: unparseable Nexus API response ({}: {})".format(type(e).__name__, e), file=sys.stderr)
         return 2
-    print("usage: nexus-render.py find | page <domain> <modId> | changelog | contents [version] | gql-find <name> <domain> | gql-req <modId> <domain>"
-          "   (got {})".format(args), file=sys.stderr)
+    print("usage: nexus-render.py find | page <domain> <modId> | changelog | contents [version] | "
+          "gql-find | gql-req | gql-collection <slug> | collection   (got {})".format(args), file=sys.stderr)
     return 2
 
 

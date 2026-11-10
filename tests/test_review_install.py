@@ -30,7 +30,7 @@ def test_kept_identical_config_survives_the_documented_uninstall(tmp_path, monke
     plan.insert(slot, ("Example.ini", config, "CONFIG-NEW", []))
     def extract(argv, **kwargs):
         out = Path(next(a[2:] for a in argv if a.startswith("-o")))
-        out.mkdir(parents=True)
+        out.mkdir(parents=True, exist_ok=True)  # the installer pre-creates the staging dir
         for name, contents in payloads.items():
             (out / name).write_bytes(contents)
         return subprocess.CompletedProcess(argv, 0, stdout=b"", stderr=b"")

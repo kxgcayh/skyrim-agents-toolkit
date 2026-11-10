@@ -51,3 +51,29 @@ tools/resaver-plus/backend
 # Session charters: each session's first prompt, goal and open items (private, per install).
 .agent-sessions/
 tools/resaver-cli/.compiled/
+
+# Third-party tools downloaded or built locally -- NEVER commit or ship
+tools/Caprica
+tools/Caprica/
+tools/Champollion/
+tools/Spriggit
+tools/Spriggit/
+tools/automod/
+tools/nexusmods-surfer/
+tools/ffdec/
+tools/pynifly/
+tools/resaver-cli/ReSaver.jar
+tools/resaver-cli/lib/
+tools/resaver-cli/*.class
+
+# Machine-local agent/MCP config and diagnostics
+.claude/diag/
+
+# Rendered from .agents/hooks.json.template by setup.sh (holds this machine's absolute path)
+/.agents/hooks.json
+
+# This machine's paths for setup.sh (template: setup.local.env.example)
+/setup.local.env
+
+# Runtime coverage database
+.modding-agent-harness/

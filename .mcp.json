@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "crossover": {
+      "type": "stdio",
+      "command": "python3",
+      "args": [
+        "${CLAUDE_PROJECT_DIR:-.}/tools/crossover-mcp.py"
+      ],
+      "env": {
+        "CX_BOTTLE": "SkyGames",
+        "CX_BOTTLE_PATH": "${HOME}/Bottles",
+        "CX_MO2_DIR": "${CX_MO2_DIR:-D:\\Modding\\SSEAE}"
+      }
+    },
+    "devbench": {
+      "type": "http",
+      "url": "http://127.0.0.1:8920/mcp"
+    }
+  }
+}
