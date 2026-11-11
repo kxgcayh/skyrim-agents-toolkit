@@ -52,6 +52,21 @@ DOTNET="${AUTOMOD_DOTNET:-dotnet}"
 
 g() { git -C "$AUTOMOD" "$@"; }
 
+# BSArch is a Windows program that AutoMod's `archive` module starts at <build output>/tools/bsarch/bsarch.exe. On macOS and Linux
+# the toolkit builds a native replacement (python tools/bsarch-native/build.py); this copies it to that path, and is a no-op when it
+# is not built. A bsarch.exe that is not ours (the real one, or a Wine shim) is never replaced: ours is recognised by the marker.
+NATIVE_BSARCH="$SCRIPT_DIR/bsarch-native/bin/bsarch"
+BSARCH_DIR="$OUT/tools/bsarch"
+install_native_bsarch() {
+    [ -x "$NATIVE_BSARCH" ] || return 0
+    case "$(uname -s 2>/dev/null)" in Darwin|Linux) ;; *) return 0 ;; esac
+    if [ -e "$BSARCH_DIR/bsarch.exe" ] && [ ! -f "$BSARCH_DIR/bsarch-native.txt" ]; then return 0; fi
+    if [ -f "$BSARCH_DIR/bsarch.exe" ] && cmp -s "$NATIVE_BSARCH" "$BSARCH_DIR/bsarch.exe"; then return 0; fi
+    mkdir -p "$BSARCH_DIR" || return 0
+    cp "$NATIVE_BSARCH" "$BSARCH_DIR/bsarch.exe" && chmod +x "$BSARCH_DIR/bsarch.exe" || return 0
+    echo "installed by tools/bsarch-native (python tools/bsarch-native/build.py); the real BSArch is a Windows program" > "$BSARCH_DIR/bsarch-native.txt"
+}
+
 # True when Directory.Build.props differs from HEAD's ONLY by our net8.0 -> net10.0 line.
 only_our_patch() {
     [ "$(g diff --name-only)" = "Directory.Build.props" ] || return 1
@@ -147,6 +162,7 @@ if [ "$1" == "--rebuild" ]; then
     fi
     # The record: the commit built, plus "dirty" when tracked files differed from it (re-review N3).
     { printf '%s' "$(g rev-parse HEAD)"; [ -n "$(local_changes)" ] && printf ' dirty'; echo; } > "$MARKER" || exit 1
+    install_native_bsarch
     exit 0
 fi
 
@@ -183,4 +199,5 @@ if [ ! -f "$DLL" ]; then
     exit 1
 fi
 
+install_native_bsarch
 "$DOTNET" "$DLL" "$@"

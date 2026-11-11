@@ -219,6 +219,9 @@ BREAKS = {
     "emu-work-shipped": (_mkdir("tools/vr-emu-driver/work"), "tools/vr-emu-driver/work NOT shipped"),
     "xeditlib-lib-shipped": (_mkdir("tools/xeditlib/lib"), "tools/xeditlib/lib NOT shipped"),
     "spriggit-fork-bin-shipped": (_mkdir("tools/spriggit-fork/bin"), "tools/spriggit-fork/bin NOT shipped"),
+    "bsarch-native-bin-shipped": (_mkdir("tools/bsarch-native/bin"), "tools/bsarch-native/bin NOT shipped"),
+    "bsarch-native-build-missing": (lambda r: (r / "tools" / "bsarch-native" / "build.py").unlink(),
+                                    "tools/bsarch-native/build.py present"),
     # v4.0.0 ReSaver Plus: text only, the tested patch set, its Apache-2.0 notices, and none of the dev install's
     # local-only material.
     "resaver-plus-build-shipped": (_mkdir("tools/resaver-plus/build"), "tools/resaver-plus/build NOT shipped"),

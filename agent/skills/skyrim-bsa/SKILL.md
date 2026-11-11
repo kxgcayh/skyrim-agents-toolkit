@@ -17,16 +17,16 @@ bash tools/automod-cli.sh archive <command> [args] --json
 - `archive list <archive> [--filter <pattern>] [--limit <n>]` — list contents. ⚠ **The default `--limit` is 100**: pass `--limit 0` for every file, and check `showing` against `totalInArchive` before concluding a file is absent
 - `archive validate <archive>` — integrity check
 - `archive diff <archive1> <archive2>` — compare two archives
-- `archive status` — verify BSArch tool availability
+- `archive status` — verify BSArch tool availability. On macOS and Linux BSArch is the native `tools/bsarch-native` (build it once with `python3 tools/bsarch-native/build.py`; the wrapper installs it where AutoMod looks)
 
 ## Write Commands (always confirm with user first)
 
 - `archive extract <archive> --output <dir>` — extract all files
-- `archive extract-file <archive> <file> --output <dir>` — extract single file
-- `archive create <dir> --output <archive> [--game Skyrim]` — create new BSA
-- `archive add-files <archive> <dir> [--base-dir <path>]` — add files to existing archive
+- `archive extract-file <archive> --file <path in archive> --output <output file>` — extract single file
+- `archive create <dir> --output <archive> [--game sse|le|fo4|fo76]` — create new BSA (default `sse`, compressed)
+- `archive add-files <archive> --files <files> [--base-dir <path>]` — add files to existing archive
 - `archive remove-files <archive> --filter <pattern>` — remove files by pattern
-- `archive update-file <archive> <file-path> <archive-path>` — replace single file
+- `archive update-file <archive> --file <path in archive> --source <source file>` — replace single file
 - `archive replace-files <archive> <source-dir>` — bulk replace
 - `archive merge <archive1> <archive2> [...] --output <path>` — merge archives
 - `archive optimize <archive> [--output <path>]` — optimize compression

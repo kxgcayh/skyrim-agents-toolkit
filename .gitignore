@@ -48,6 +48,9 @@ tools/xeditlib/lib/
 # The Spriggit fork is BUILT on the user's machine from a pinned commit and never shipped: tools/spriggit-fork/README.md.
 tools/spriggit-fork/bin/
 tools/spriggit-fork/build-*/
+# The native bsarch is BUILT on the user's machine from pinned commits and never shipped: tools/bsarch-native/README.md.
+tools/bsarch-native/bin/
+tools/bsarch-native/build-*/
 # ReSaver Plus is BUILT on the user's machine from pinned upstream source plus the shipped patches; nothing binary
 # ships (tools/resaver-plus/README.md). `backend` is the user's own backend choice.
 tools/resaver-plus/build/

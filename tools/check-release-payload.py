@@ -99,6 +99,10 @@ CORE_REQUIRED = (
     "tools/xeditlib/README.md",
     "tools/spriggit-fork/fetch.py",
     "tools/spriggit-fork/README.md",
+    "tools/bsarch-native/build.py",
+    "tools/bsarch-native/README.md",
+    "tools/bsarch-native/shim/bsarch_shim.cpp",
+    "tools/bsarch-native/patches/bsa-optional-directxtex.patch",
     "tools/resaver-cli.sh",
     "tools/resaver-cli/ResaverCLI.java",
     "tools/resaver_cli_cache.py",
@@ -162,6 +166,8 @@ ABSENT_PATHS = (
     "tools/xeditlib/lib",
     # The Spriggit fork is built on the user's machine, never shipped (tools/spriggit-fork/README.md).
     "tools/spriggit-fork/bin",
+    # The native bsarch is built on the user's machine, never shipped (tools/bsarch-native/README.md).
+    "tools/bsarch-native/bin",
     # ReSaver Plus: the user's own build, its work tree and their backend choice; and the local-only upstream
     # contribution bundles and install-specific helpers of the dev install, which never ship.
     "tools/resaver-plus/build",

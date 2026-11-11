@@ -1,0 +1,51 @@
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index 9c12d84..4c8989a 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -14,11 +14,15 @@ set(SOURCE_DIR "${ROOT_DIR}/src")
+ set(SOURCE_FILES
+ 	"${SOURCE_DIR}/bsa/detail/binary_reproc.hpp"
+ 	"${SOURCE_DIR}/bsa/detail/common.cpp"
+-	"${SOURCE_DIR}/bsa/fo4.cpp"
+ 	"${SOURCE_DIR}/bsa/tes3.cpp"
+ 	"${SOURCE_DIR}/bsa/tes4.cpp"
+ )
+ 
++option(BSA_ENABLE_FO4 "build the fo4 (BA2) backend; requires DirectXTex" ON)
++if("${BSA_ENABLE_FO4}")
++	list(APPEND SOURCE_FILES "${SOURCE_DIR}/bsa/fo4.cpp")
++endif()
++
+ set(NATVIS_DIR "${ROOT_DIR}/visualizers")
+ set(NATVIS_FILES
+ 	"${NATVIS_DIR}/bsa_common.natvis"
+@@ -91,7 +95,9 @@ target_include_directories(
+ list(APPEND CMAKE_MODULE_PATH "${ROOT_DIR}/cmake")
+ 
+ find_package(binary_io REQUIRED CONFIG)
+-find_package(directxtex REQUIRED CONFIG)
++if("${BSA_ENABLE_FO4}")
++	find_package(directxtex REQUIRED CONFIG)
++endif()
+ find_package(LZ4 MODULE REQUIRED)
+ find_package(mmio REQUIRED CONFIG)
+ find_package(ZLIB MODULE REQUIRED)
+@@ -101,12 +107,17 @@ target_link_libraries(
+ 	PUBLIC
+ 		binary_io::binary_io
+ 		mmio::mmio
+-		Microsoft::DirectXTex
+ 	PRIVATE
+ 		LZ4::LZ4
+ 		ZLIB::ZLIB
+ )
+ 
++if("${BSA_ENABLE_FO4}")
++	target_link_libraries("${PROJECT_NAME}" PUBLIC Microsoft::DirectXTex)
++else()
++	target_compile_definitions("${PROJECT_NAME}" PUBLIC BSA_NO_FO4=1)
++endif()
++
+ option(BSA_SUPPORT_XMEM "build support for the xmem codec proxy" OFF)
+ if("${BSA_SUPPORT_XMEM}")
+ 	target_compile_definitions(

@@ -19,7 +19,10 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 from conftest import BASH, REPO
 
@@ -351,3 +354,69 @@ def test_the_mismatch_message_names_the_commit_once_and_is_clean(tmp_path):
     ((tools / "automod" / DLL_REL).parent / "toolkit-built-from.txt").unlink()
     p = _run(tmp_path, tools, pin, "--built")
     assert p.returncode != 0 and p.stderr == "", p.stderr
+
+
+# --- native bsarch (tools/bsarch-native): copied to the path AutoMod starts BSArch from -------------
+
+BSARCH_REL = Path("src") / "SpookysAutomod.Cli" / "bin" / "Release" / "net10.0" / "tools" / "bsarch"
+posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the native bsarch is for macOS and Linux")
+
+
+def _native(tools: Path, body: bytes = b"native-v1") -> Path:
+    binary = tools / "bsarch-native" / "bin" / "bsarch"
+    binary.parent.mkdir(parents=True)
+    binary.write_bytes(body)
+    binary.chmod(0o755)
+    return binary
+
+
+def _dest(tools: Path) -> Path:
+    return tools / "automod" / BSARCH_REL
+
+
+@posix_only
+def test_a_rebuild_installs_the_native_bsarch_where_automod_looks(tmp_path):
+    tools, pin, _ = _layout(tmp_path)
+    _native(tools)
+    p = _run(tmp_path, tools, pin, "--rebuild")
+    assert p.returncode == 0, p.stdout + p.stderr
+    exe = _dest(tools) / "bsarch.exe"
+    assert exe.read_bytes() == b"native-v1" and os.access(exe, os.X_OK)
+    assert (_dest(tools) / "bsarch-native.txt").is_file()
+
+
+@posix_only
+def test_a_run_installs_it_too_and_refreshes_a_rebuilt_binary(tmp_path):
+    tools, pin, _ = _layout(tmp_path)
+    dll = tools / "automod" / DLL_REL
+    dll.parent.mkdir(parents=True)
+    dll.write_bytes(b"MZ")
+    binary = _native(tools)
+    assert _run(tmp_path, tools, pin, "esp", "info", "x.esp").returncode == 0
+    assert (_dest(tools) / "bsarch.exe").read_bytes() == b"native-v1"
+    binary.write_bytes(b"native-v2")
+    assert _run(tmp_path, tools, pin, "esp", "info", "x.esp").returncode == 0
+    assert (_dest(tools) / "bsarch.exe").read_bytes() == b"native-v2"
+
+
+@posix_only
+def test_a_bsarch_exe_that_is_not_ours_is_never_replaced(tmp_path):
+    """The real BSArch, or a Wine shim the user wrote, sits at the same path: no marker, so hands off."""
+    tools, pin, _ = _layout(tmp_path)
+    dll = tools / "automod" / DLL_REL
+    dll.parent.mkdir(parents=True)
+    dll.write_bytes(b"MZ")
+    _native(tools)
+    users = _dest(tools) / "bsarch.exe"
+    users.parent.mkdir(parents=True)
+    users.write_bytes(b"the real BSArch 1.0")
+    assert _run(tmp_path, tools, pin, "esp", "info", "x.esp").returncode == 0
+    assert users.read_bytes() == b"the real BSArch 1.0"
+    assert not (_dest(tools) / "bsarch-native.txt").exists()
+
+
+@posix_only
+def test_without_a_native_build_nothing_is_created(tmp_path):
+    tools, pin, _ = _layout(tmp_path)
+    assert _run(tmp_path, tools, pin, "--rebuild").returncode == 0
+    assert not _dest(tools).exists()

@@ -352,6 +352,21 @@ v4 retarget builds into a NEW folder, so move an existing copy across). BSArch a
 create it first. **It lives under `bin/`, so any `dotnet build` or `clean` of AutoMod wipes
 it** — keep a canonical copy elsewhere and re-place it after a rebuild.
 
+**macOS and Linux: `tools/bsarch-native` replaces `bsarch.exe` (MEASURED 2026-11-12).** The real BSArch is a closed
+Windows program, so on a Mac the wrapper builds a native stand-in from pinned source (`python3
+tools/bsarch-native/build.py`; Ryan-rsm-McKenzie/bsa, MIT) and `tools/automod-cli.sh` copies it to
+`<build-output>/tools/bsarch/bsarch.exe` after `--rebuild` and before each run, so the `dotnet build` wipe above heals
+itself. AutoMod only sends `pack <dir> <out> -sse|-tes5 [-z] [-mt]` and `unpack <archive> [<outdir>]`
+(`BsarchWrapper.cs`), which is all the stand-in implements; `-fo4`/`-fo76` fail with a message. On a vanilla archive
+every `archive` command ran through it: `extract`, `create` (v105, compressed), `validate`, `list`, `extract-file`
+(byte-identical), `remove-files`, `add-files`, `update-file`, `optimize`, `merge`, `diff`. Round trip of 151 installed-mod
+archives (up to 20 MB, 7,749 files, 28 originally compressed): every name and SHA-256 identical. The game's own reader
+agreed: DevBench `forms asset` with `hash:true` returned 367 of 373 files of three repacked mod archives byte-identical
+(153 compressed `.fuz` voice files included); the other 6 were scripts that other mods override with loose files, each
+engine hash equal to that mod's file. Audible playback was not measured. A hostile archive cannot write outside the
+extract folder (entries with `..`, a drive or an absolute path are refused). Use Apple's `/usr/bin/clang++` to build: a
+Homebrew LLVM `clang++` first on `PATH` fails against the macOS SDK headers.
+
 Similarly, `audio wav-to-xwm` needs `xWMAEncode.exe`, which is not bundled. It is often simpler to call
 `xWMAEncode` directly than to go through AutoMod.
 
