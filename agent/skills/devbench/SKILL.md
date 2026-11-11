@@ -23,6 +23,7 @@ install it through their own mod manager like any other SKSE plugin; the wrapper
 moment it's present.
 
 ```bash
+bash tools/devbench-cli.sh wait [seconds] [--ingame]   # poll until the game answers (default 300 s); --ingame waits for a loaded save
 bash tools/devbench-cli.sh alive                       # is the GAME running, paused, hung, or not loaded?
 bash tools/devbench-cli.sh health                      # raw off-thread liveness + instance identity
 bash tools/devbench-cli.sh ping                        # server self-test only -- NOT proof of liveness
@@ -30,6 +31,7 @@ bash tools/devbench-cli.sh state                       # {plugin,version,vr,play
 bash tools/devbench-cli.sh inspect vm                  # Papyrus VM health — freeze diagnosis
 bash tools/devbench-cli.sh exec "player.getav health"  # console exec + capture + read output
 bash tools/devbench-cli.sh call Actor IsInCombat '[]' '{"form":"0x14"}'
+bash tools/devbench-cli.sh quest 0x1607CADF            # IsRunning / IsCompleted / current stage of a quest, by FormID
 bash tools/devbench-cli.sh notify "Test 3 of 5: swing now"   # HUD narration
 bash tools/devbench-cli.sh tool menu '{"action":"accept"}'   # raw: any tool, any JSON
 ```
@@ -38,6 +40,20 @@ bash tools/devbench-cli.sh tool menu '{"action":"accept"}'   # raw: any tool, an
 server at `kPostLoad`, so discovery, menu, `gfx` and keyboard input can work at the Main Menu.
 World inspection and Papyrus calls need a loaded game. When the game is closed the port is dead;
 use offline tools (xelib, Spriggit, ReSaver, PyNifly).
+
+**The user launches the game, you connect: retry, never assume.** An MCP server that failed to
+connect at session start (ECONNREFUSED) is stale information: the game simply was not running. The
+REST wrapper works the moment the game answers, with no reconnect. So:
+1. When the user says the game is launched, loaded or running, run `bash tools/devbench-cli.sh wait 300 --ingame`
+   (or `alive`) before anything else, and start the live checks yourself. Do not wait for them to paste console output.
+2. Before asking the user to play-test a fix, write down the live checks you will run (for a quest or script
+   fix: `quest <FormID>`, `inspect quests`, `call` or `exec` to read the property or stage the fix touches) and run them.
+3. Never write "not verified in game" or "DevBench was down" in a report, release note or message to a third
+   party unless a `wait` or `alive` after the user's launch also failed. A check you skipped is a gap in your work,
+   not a limit of the tool.
+4. When it does not answer, read the wrapper's diagnosis: which `runtime.json` supplied the port, whether a Skyrim
+   process exists on this machine (none: the game is closed, or runs in a VM that needs `DEVBENCH_HOST`), and
+   whether `skse64.log` says DevBench loaded and how old the log is (stale: the game was closed).
 
 The wrapper retains `tool <name> '<json>'` for every registered tool and extension. Shortcuts
 `gfx` and `dialogue` forward one JSON argument unchanged. Other tools continue through
@@ -84,7 +100,10 @@ and ask the user first, every time; an earlier yes does not carry over to a new 
 **Port is deterministic per runtime: SE/AE `8920`, VR `8921`** (DevBench iterates if the port is busy
 and writes the bound port to `Data/SKSE/Plugins/devbench/runtime.json`, which the wrapper reads).
 Override with `DEVBENCH_PORT`. `DEVBENCH_RUNTIME_JSON` selects a runtime file explicitly
-(e.g. MO2 overwrite or a CrossOver bottle). Otherwise the wrapper also checks
+(e.g. a CrossOver bottle). Under **Mod Organizer 2 the file is written to `<overwrite>/SKSE/Plugins/devbench/runtime.json`**,
+not to `Data/`: the wrapper finds it through `SKYRIM_MO2_OVERWRITE` in `skyrim-paths.env` (`DEVBENCH_PATHS_ENV`
+points at another env file). The host is `127.0.0.1` unless `DEVBENCH_HOST` is set, for a game in a VM or a
+bottle with its own address. Otherwise the wrapper also checks
 `$LOCALAPPDATA/devbench/se/runtime.json` (`vr` for Skyrim VR) after the Data path. MCP clients can point at `http://127.0.0.1:<port>/mcp`; the REST path
 the wrapper uses works any time the server is up, with no reconnect.
 
