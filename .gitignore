@@ -80,3 +80,5 @@ tools/resaver-cli/*.class
 
 # Runtime coverage database
 .modding-agent-harness/
+# XEditLib writes its log into the current directory
+xelib_log.txt
