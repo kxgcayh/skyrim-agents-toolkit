@@ -68,14 +68,35 @@ function loadXelib() {
     if (xelib) return;
     const attempts = ['xeditlib', path.join(__dirname, 'xelib', 'xelib')];
     const errors = [];
+    let nativeLoadError = null;
     for (const spec of attempts) {
-        try { xelib = require(spec); break; } catch (e) { errors.push(spec + ': ' + e.message); }
+        try {
+            xelib = require(spec);
+            break;
+        } catch (e) {
+            errors.push(spec + ': ' + e.message);
+            const isModuleNotFound = e.code === 'MODULE_NOT_FOUND' &&
+                (e.message.includes("'xeditlib'") || e.message.includes(spec));
+            const isNativeError = !isModuleNotFound && (
+                e.code !== 'MODULE_NOT_FOUND' ||
+                /dlopen|koffi|libXEditLib|XEditLib\.dll|\.dylib|\.dll|\.so/i.test(e.message)
+            );
+            if (isNativeError && !nativeLoadError) {
+                nativeLoadError = e;
+            }
+        }
     }
     // die() flattens newlines -- the RESULT marker has to stay one line -- so
     // this is one actionable sentence, with Node's require-stack noise trimmed
     // off the resolver errors. Those still distinguish "not installed" from
     // "installed somewhere Node will not look".
     if (!xelib) {
+        if (nativeLoadError) {
+            die('xeditlib is installed but its native library could not be loaded ('
+                + process.platform + ' ' + process.arch + '). '
+                + 'Bundled builds exist for win32 and darwin-arm64 only; XEDITLIB_PATH can point to another build. '
+                + nativeLoadError.message);
+        }
         const brief = errors.map(e => e.split('Require stack')[0].trim()).join(' | ');
         die('xeditlib is not installed -- run "npm ci --ignore-scripts --no-audit --no-fund" (it installs the pinned xeditlib + koffi from package-lock.json) '
             + 'from the toolkit ROOT (every bundled script finds it by upward lookup). '

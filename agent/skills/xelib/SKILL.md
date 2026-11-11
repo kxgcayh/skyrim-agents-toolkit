@@ -33,7 +33,10 @@ The DLL is Delphi-compiled. These quirks caused hours of debugging:
 
 5. **Game mode enum**: gmFNV=0, gmFO3=1, gmTES4=2, gmTES5=3, **gmSSE=4** (use this for Skyrim VR), gmFO4=5
 
-6. **Registry requirement**: XEditLib reads game path from `HKLM\SOFTWARE\WOW6432Node\Bethesda Softworks\Skyrim Special Edition` (the SSE key, not the VR key, because game mode 4 = SSE).
+6. **Platform and registry setup**:
+   - **Windows**: XEditLib reads game path from `HKLM\SOFTWARE\WOW6432Node\Bethesda Softworks\Skyrim Special Edition` (the SSE key, not the VR key, because game mode 4 = SSE).
+   - **macOS arm64**: xeditlib 1.1.0 bundles native `libXEditLib.dylib` (Free Pascal 3.2.2, macOS 11+, links system zlib; measured 2026-11-11). Runs natively without CrossOver or Wine. Game path comes from `GAME_ROOT` or `skyrim-paths.env` (no registry key needed). Intel Macs (x64 under Rosetta) and Linux (no .so) are not supported.
+   - **Custom build path**: Set `XEDITLIB_PATH` to point to a specific library binary.
 
 7. **xelib.js wrapper**: See [xeditlib on GitHub](https://github.com/kxgcayh/xeditlib) for the full wrapper with all 163 functions.
 
