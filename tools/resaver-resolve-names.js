@@ -14,8 +14,9 @@
  *    indexed fast path handles the common case quickly.
  */
 const path = require('path');
-const xelib = require('xeditlib');
-process.chdir(path.dirname(require.resolve('xeditlib')));   // cwd = the xeditlib package dir (DLL + *.Hardcoded.dat)
+const loadXelib = require(path.join(__dirname, 'xelib', 'load'));
+const xelib = loadXelib();
+if (loadXelib.dir) process.chdir(loadXelib.dir);   // cwd = the xeditlib package dir (DLL + *.Hardcoded.dat)
 const GAME_ROOT_RAW = process.env.GAME_ROOT || path.resolve(__dirname, '..');  // game root = parent of tools/
 // XEditLib wants a TRAILING SEPARATOR on the game path. Measured 2026-08-27:
 // without one, a setGamePath() called BEFORE setGameMode() makes setGameMode

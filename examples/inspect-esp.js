@@ -2,11 +2,12 @@
 // Loads an ESP file and catalogs all records by type.
 // Usage: node inspect-esp.js "MyMod.esp"
 //
-// Requires: xeditlib, pinned (docs/installing-tools.md), from the toolkit root:
-//   npm ci --ignore-scripts --no-audit --no-fund   (xeditlib 1.0.2 @ 06f73ea + koffi 2.15.1, from package-lock.json)
+// Requires: xeditlib, fetched (docs/installing-tools.md), from the toolkit root:
+//   python tools/xeditlib/fetch.py
 // The ESP must be in your Skyrim Data/ folder.
 
-const xelib = require('xeditlib');
+const loadXelib = require('../tools/xelib/load');
+const xelib = loadXelib();
 
 const ESP_NAME = process.argv[2];
 if (!ESP_NAME) {

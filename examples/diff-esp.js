@@ -4,10 +4,11 @@
 // Usage: node diff-esp.js "Original.esp" "Modified.esp"
 // Both ESPs must be in your Skyrim Data/ folder.
 //
-// Requires: xeditlib, pinned (docs/installing-tools.md), from the toolkit root:
-//   npm ci --ignore-scripts --no-audit --no-fund   (xeditlib 1.0.2 @ 06f73ea + koffi 2.15.1, from package-lock.json)
+// Requires: xeditlib, fetched (docs/installing-tools.md), from the toolkit root:
+//   python tools/xeditlib/fetch.py
 
-const xelib = require('xeditlib');
+const loadXelib = require('../tools/xelib/load');
+const xelib = loadXelib();
 
 const ORIGINAL = process.argv[2];
 const MODIFIED = process.argv[3];

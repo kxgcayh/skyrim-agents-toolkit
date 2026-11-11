@@ -95,6 +95,8 @@ CORE_REQUIRED = (
     "tools/vr-headless.py",
     "tools/vr_background_desktop.py",
     "tools/vr-emu-driver/fetch.py",
+    "tools/xeditlib/fetch.py",
+    "tools/xeditlib/README.md",
     "tools/resaver-cli.sh",
     "tools/resaver-cli/ResaverCLI.java",
     "tools/resaver_cli_cache.py",
@@ -154,6 +156,8 @@ ABSENT_PATHS = (
     # The driver is fetched on the user's machine, never shipped (tools/vr-emu-driver/README.md).
     "tools/vr-emu-driver/build",
     "tools/vr-emu-driver/work",
+    # The xeditlib package and libraries are fetched on the user's machine, never shipped (tools/xeditlib/README.md).
+    "tools/xeditlib/lib",
     # ReSaver Plus: the user's own build, its work tree and their backend choice; and the local-only upstream
     # contribution bundles and install-specific helpers of the dev install, which never ship.
     "tools/resaver-plus/build",

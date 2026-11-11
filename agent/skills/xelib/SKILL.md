@@ -38,7 +38,7 @@ The DLL is Delphi-compiled. These quirks caused hours of debugging:
    - **macOS arm64**: xeditlib 1.1.0 bundles native `libXEditLib.dylib` (Free Pascal 3.2.2, macOS 11+, links system zlib; measured 2026-11-11). Runs natively without CrossOver or Wine. Game path comes from `GAME_ROOT` or `skyrim-paths.env` (no registry key needed). Intel Macs (x64 under Rosetta) and Linux (no .so) are not supported.
    - **Custom build path**: Set `XEDITLIB_PATH` to point to a specific library binary.
 
-7. **xelib.js wrapper**: See [xeditlib on GitHub](https://github.com/kxgcayh/xeditlib) for the full wrapper with all 163 functions.
+7. **xelib.js wrapper**: Resolved through `tools/xelib/load.js` (`const loadXelib = require('./load'); const xelib = loadXelib();`). The wrapper and native libraries live in `tools/xeditlib/lib/`, fetched on the machine with `python tools/xeditlib/fetch.py` (verified with `fetch.py --check`). Upstream fork is [xeditlib on GitHub](https://github.com/kxgcayh/xeditlib). MEASURED 2026-11-11: `python tools/xeditlib/fetch.py` fetches commit `9632663` into `tools/xeditlib/lib/`; `fetch.py --check` verifies 16 package files against the pinned manifest; `tools/xelib/load.js` resolves the module; `tools/skyrim-winner.sh chain 0000000A` resolves WINNER: Update.esm.
 
 ## Load the real active order
 

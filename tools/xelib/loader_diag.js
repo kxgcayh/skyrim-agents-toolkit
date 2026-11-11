@@ -2,7 +2,8 @@
 // waitForLoader only reports getExceptionMessage() (empty in our case); this also dumps
 // the loader message log, exception stack, and globals, polling status the whole time.
 const path = require('path');
-const xelib = require('xeditlib');
+const loadXelib = require('./load');
+const xelib = loadXelib();
 
 function dumpAll(tag) {
     console.log(`\n----- ${tag} -----`);

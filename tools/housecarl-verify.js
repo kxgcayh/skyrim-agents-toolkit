@@ -19,9 +19,8 @@ function parseErrorReports(entries) {
 }
 
 async function main() {
-  let x;
-  try { x = require('xeditlib'); }
-  catch (_) { x = require(path.join(base, 'tools/xelib/xelib')); }
+  const loadXelib = require(path.join(__dirname, 'xelib', 'load'));
+  const x = loadXelib();
   x.init(); x.setLanguage('English'); x.setGamePath(game + path.sep); x.setGameMode(x.GM_SSE);
   x.loadPlugins(plugin, true, false);
   await x.waitForLoader();

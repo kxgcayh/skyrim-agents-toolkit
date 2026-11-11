@@ -217,6 +217,7 @@ BREAKS = {
     "vr-headless-missing": (lambda r: (r / "tools" / "vr-headless.py").unlink(), "tools/vr-headless.py present"),
     "emu-build-shipped": (_mkdir("tools/vr-emu-driver/build"), "tools/vr-emu-driver/build NOT shipped"),
     "emu-work-shipped": (_mkdir("tools/vr-emu-driver/work"), "tools/vr-emu-driver/work NOT shipped"),
+    "xeditlib-lib-shipped": (_mkdir("tools/xeditlib/lib"), "tools/xeditlib/lib NOT shipped"),
     # v4.0.0 ReSaver Plus: text only, the tested patch set, its Apache-2.0 notices, and none of the dev install's
     # local-only material.
     "resaver-plus-build-shipped": (_mkdir("tools/resaver-plus/build"), "tools/resaver-plus/build NOT shipped"),

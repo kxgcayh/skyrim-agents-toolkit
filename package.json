@@ -12,8 +12,7 @@
     "zod": "3.25.76"
   },
   "optionalDependencies": {
-    "koffi": "2.15.1",
-    "xeditlib": "https://codeload.github.com/kxgcayh/xeditlib/tar.gz/96326630099662f14578d273d40b7d9cf7220277"
+    "koffi": "2.15.1"
   },
   "engines": {
     "node": ">=24"
