@@ -129,7 +129,8 @@ Stage 2?) at the top, so the review survives across sessions.
 1. **Get the archive:** ask the user for it (or where their downloads are). Before asking,
    `bash tools/nexus.sh contents <modId> [version]` may list each file's contents from the Nexus
    content preview. A refusal of the client is reported as such, with the link to open in a
-   browser; it is not "no preview".
+   browser; it is not "no preview". A mod released on GitHub: the `github-mod-fetch` skill
+   downloads it with an MO2 `.meta` (dry run first).
 2. **Compare it with the install:** `python tools/archive-triage.py <archive>` lists every
    destination as NEW / SAME / CHANGED / NO CRC, flags everything outside `Data/`, and checks DLLs.
    For a FOMOD, work out which option the installed copy used and keep it.

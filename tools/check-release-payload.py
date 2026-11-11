@@ -88,6 +88,7 @@ CORE_REQUIRED = (
     "tools/mirror-launch-logs.py",
     "tools/housekeep.py",
     "tools/mod-install.py",
+    "tools/github-mod-fetch.py",
     "tools/nexus.sh",
     "tools/nexus-render.py",
     "tools/bench-vr.py",
