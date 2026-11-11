@@ -1119,10 +1119,10 @@ elif grep -q '{{CODEX_ROOT' "$CODEX_DEFS"; then
         # Windows-form paths and no MSYS argument conversion: Git Bash would otherwise rewrite the POSIX
         # root (/c/...) into C:/... on its way to a native python, and the definition would change.
         CODEX_ERR=$(MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' $PY_FOUND \
-            "$TOOLKIT_DIR/tools/skyguard/codex_definitions.py" render \
+            "$PY_ROOT/tools/skyguard/codex_definitions.py" render \
             --template "$TOOLKIT_ROOT_WIN/.codex/hooks.json" \
             --root-win "$TOOLKIT_ROOT_WIN" --root-posix "$TOOLKIT_DIR" \
-            --out "$TOOLKIT_DIR/.codex/hooks.json.new" 2>&1) && CODEX_RC=0 || CODEX_RC=$?
+            --out "$PY_ROOT/.codex/hooks.json.new" 2>&1) && CODEX_RC=0 || CODEX_RC=$?
         if [ "$CODEX_RC" = 0 ] && [ -s "$CODEX_DEFS.new" ]; then
             mv -f "$CODEX_DEFS.new" "$CODEX_DEFS"
             CODEX_STATE="configured"

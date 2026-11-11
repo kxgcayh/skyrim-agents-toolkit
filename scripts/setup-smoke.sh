@@ -45,7 +45,7 @@ if [ "$AGENT" = codex ] && [ -z "$WIN" ]; then
     echo "setup-smoke [$AGENT]: $FAILS failure(s)"
     [ "$FAILS" = 0 ]; exit $?
 fi
-[ "$rc" = 0 ] || { fail "setup.sh --agent $AGENT exited $rc"; echo "$out" | tail -25; }
+[ "$rc" = 0 ] || { fail "setup.sh --agent $AGENT exited $rc"; echo "$out" | grep -E '!!|NOT CONFIGURED|MISSING' | head -20; echo "$out" | tail -25; }
 sel=$(printf '%s\n' "$out" | sed -n 's/.*-> configuring: \([a-z]*\) (--agent auto).*/\1/p; s/^Agents: configuring \([a-z]*\) (--agent .*/\1/p' | head -n1)
 case "$AGENT" in auto) ;; both) [ "$sel" = all ] || fail "--agent both configured '$sel', not all" ;;
     *) [ "$sel" = "$AGENT" ] || fail "--agent $AGENT configured '$sel'" ;; esac
