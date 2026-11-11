@@ -45,6 +45,9 @@ tools/vr-emu-driver/work/
 # The xeditlib package and native libraries are FETCHED on the user's machine (pinned, hash-verified) and never shipped:
 # delivery decision and licence: tools/xeditlib/README.md.
 tools/xeditlib/lib/
+# The Spriggit fork is BUILT on the user's machine from a pinned commit and never shipped: tools/spriggit-fork/README.md.
+tools/spriggit-fork/bin/
+tools/spriggit-fork/build-*/
 # ReSaver Plus is BUILT on the user's machine from pinned upstream source plus the shipped patches; nothing binary
 # ships (tools/resaver-plus/README.md). `backend` is the user's own backend choice.
 tools/resaver-plus/build/

@@ -50,8 +50,9 @@ if [ "$(uname -s)" = Darwin ] && ! type -P dotnet >/dev/null 2>&1; then
     [ -x "$DOTNET_BIN" ] && PATH="$PATH:${DOTNET_BIN%/*}"
 fi
 SPRIGGIT=()
-# A locally built fork (tools/Spriggit, git-ignored, never shipped) wins when present; it runs on macOS as is.
-LOCAL_FORK="$SCRIPT_DIR/Spriggit/publish/Spriggit.CLI"
+# The pinned fork built by tools/spriggit-fork/fetch.py (git-ignored, never shipped) wins when present; it runs on macOS as is.
+LOCAL_FORK="$SCRIPT_DIR/spriggit-fork/bin/Spriggit.CLI"
+[ -x "$LOCAL_FORK" ] || [ ! -x "$LOCAL_FORK.exe" ] || LOCAL_FORK="$LOCAL_FORK.exe"
 if [ -x "$LOCAL_FORK" ]; then SPRIGGIT=("$LOCAL_FORK")
 elif type -P spriggit >/dev/null 2>&1; then SPRIGGIT=(spriggit)
 elif type -P dotnet >/dev/null 2>&1; then SPRIGGIT=(dotnet tool run spriggit --)
