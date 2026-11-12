@@ -14,7 +14,10 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 from conftest import BASH, REPO
 
@@ -363,3 +366,63 @@ def test_automod_built_from_a_dirty_tree_is_degraded(tmp_path):
     out = _run_wrappers(tmp_path, root)
     assert "MISMATCH" in _line(out, "automod version") and "local changes" in _line(out, "automod version"), out
     assert "automod-version" in _failed(out), out
+
+
+# --- bsarch-native: optional, only where AutoMod is set up, macOS and Linux only ---------------------
+
+posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the native bsarch is for macOS and Linux")
+
+
+def _toolkit(tmp_path: Path, automod: bool = True, build: str | None = None, check_rc: int = 0) -> Path:
+    """A toolkit root with a FAKE AutoMod wrapper and, when `build` is given, a fake tools/bsarch-native."""
+    root = tmp_path / "tk"
+    tools = root / "tools"
+    tools.mkdir(parents=True)
+    if automod:
+        (tools / "automod").mkdir()
+        (tools / "automod-cli.sh").write_text(
+            '#!/bin/bash\n[ "$1" = --built ] && { echo "AutoMod v1.11.2 built for net10.0"; exit 0; }\n'
+            'echo "Spooky\'s AutoMod Toolkit"\n', encoding="utf-8", newline="\n")
+    if build:
+        nb = tools / "bsarch-native"
+        (nb / "bin").mkdir(parents=True)
+        (nb / "build.py").write_text("import sys\nprint('pin mismatch: x' if %d else 'verified')\nsys.exit(%d)\n" % (check_rc, check_rc),
+                                    encoding="utf-8", newline="\n")
+        (nb / "bin" / "bsarch").write_text("#!/bin/bash\necho 'bsarch: error: usage: bsarch pack ...' >&2\nexit 1\n", encoding="utf-8", newline="\n")
+        (nb / "bin" / "bsarch").chmod(0o755)
+        if build == "built":
+            (nb / "bin" / "fetched.json").write_text("{}", encoding="utf-8")
+    return root
+
+
+def _run_root(root: Path) -> str:
+    env = dict(os.environ)
+    env["CLAUDE_PROJECT_DIR"] = str(root)
+    return subprocess.run([BASH, str(TOOL)], capture_output=True, text=True, env=env, timeout=120).stdout
+
+
+@posix_only
+def test_bsarch_native_not_built_is_informational_and_names_the_build_command(tmp_path):
+    out = _run_root(_toolkit(tmp_path))
+    line = _line(out, "bsarch (native)")
+    assert "not built (optional" in line and "tools/bsarch-native/build.py" in line, out
+    assert "bsarch-native" not in out.split("RESULT:")[-1].split("A documented")[0].replace("tools/bsarch-native", ""), out
+
+
+@posix_only
+def test_bsarch_native_built_and_verified_is_ok(tmp_path):
+    out = _run_root(_toolkit(tmp_path, build="built"))
+    assert " ok " in _line(out, "bsarch (native)"), out
+
+
+@posix_only
+def test_bsarch_native_built_but_failing_its_check_is_a_mismatch_and_degrades_the_result(tmp_path):
+    out = _run_root(_toolkit(tmp_path, build="built", check_rc=1))
+    assert "MISMATCH" in _line(out, "bsarch (native)") and "pin mismatch" in out, out
+    assert "RESULT: DEGRADED" in out and "bsarch-native" in out.split("RESULT:")[-1], out
+
+
+@posix_only
+def test_bsarch_native_is_not_asked_about_without_automod(tmp_path):
+    out = _run_root(_toolkit(tmp_path, automod=False, build="built"))
+    assert "bsarch (native)" not in out, out

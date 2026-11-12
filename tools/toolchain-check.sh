@@ -186,6 +186,22 @@ if wrapper automod-cli "$ROOT/tools/automod" "Spooky's AutoMod Toolkit"; then
     printf '  %-22s MISMATCH      %s\n' "automod version" "$AM_BUILT"
     FAIL=1; MISSING="$MISSING automod-version"
   fi
+  # bsarch-native: the macOS/Linux stand-in for BSArch, a Windows program that AutoMod's archive module starts. Built HERE by
+  # tools/bsarch-native/build.py, so it is optional, and it only matters where AutoMod is set up. Not built is informational; built
+  # with a wrong pin, shim or hash is a MISMATCH; built and answering is ok. Windows keeps the real bsarch.exe and is not asked.
+  case "$(uname -s 2>/dev/null)" in
+    Darwin|Linux)
+      NB="$ROOT/tools/bsarch-native"
+      NBPY="$(command -v python3 || command -v python)"
+      if [ ! -f "$NB/bin/fetched.json" ]; then
+        printf '  %-22s not built (optional, macOS/Linux: python3 tools/bsarch-native/build.py)\n' "bsarch (native)"
+      elif [ -n "$NBPY" ] && ! NB_OUT=$("$NBPY" "$NB/build.py" --check 2>&1); then
+        printf '  %-22s MISMATCH      %s\n' "bsarch (native)" "$(printf '%s' "$NB_OUT" | tail -n1 | cut -c1-90)"
+        FAIL=1; MISSING="$MISSING bsarch-native"
+      else
+        check "bsarch (native)" "bsarch" "$NB/bin/bsarch"
+      fi ;;
+  esac
 fi
 wrapper resaver-cli "$ROOT/tools/resaver-cli/ReSaver.jar" "need <op>" "$ROOT/tools/resaver-cli/lib/*.jar"
 # ReSaver Plus, the optional native backend: built HERE by tools/resaver-plus/build.py (nothing ships). Its pin

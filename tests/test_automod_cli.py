@@ -420,3 +420,43 @@ def test_without_a_native_build_nothing_is_created(tmp_path):
     tools, pin, _ = _layout(tmp_path)
     assert _run(tmp_path, tools, pin, "--rebuild").returncode == 0
     assert not _dest(tools).exists()
+
+
+HINT = "tools/bsarch-native/build.py"
+
+
+def _with_dll(tmp_path):
+    tools, pin, _ = _layout(tmp_path)
+    dll = tools / "automod" / DLL_REL
+    dll.parent.mkdir(parents=True)
+    dll.write_bytes(b"MZ")
+    return tools, pin
+
+
+@posix_only
+def test_an_archive_command_without_any_bsarch_says_how_to_build_the_native_one(tmp_path):
+    tools, pin = _with_dll(tmp_path)
+    for sub in ("status", "create", "extract"):
+        p = _run(tmp_path, tools, pin, "archive", sub, "--json")
+        assert p.returncode == 0 and HINT in p.stderr and HINT not in p.stdout, (sub, p.stdout, p.stderr)
+
+
+@posix_only
+def test_the_hint_is_for_commands_that_start_bsarch_only(tmp_path):
+    tools, pin = _with_dll(tmp_path)
+    assert HINT not in _run(tmp_path, tools, pin, "archive", "list", "x.bsa").stderr
+    assert HINT not in _run(tmp_path, tools, pin, "esp", "info", "x.esp").stderr
+
+
+@posix_only
+def test_no_hint_once_a_bsarch_is_in_place_ours_or_the_users(tmp_path):
+    tools, pin = _with_dll(tmp_path)
+    _native(tools)
+    assert HINT not in _run(tmp_path, tools, pin, "archive", "create", "d").stderr
+    other = tmp_path / "other"
+    other.mkdir()
+    tools2, pin2 = _with_dll(other)
+    users = _dest(tools2) / "bsarch.exe"
+    users.parent.mkdir(parents=True)
+    users.write_bytes(b"the real BSArch 1.0")
+    assert HINT not in _run(other, tools2, pin2, "archive", "create", "d").stderr

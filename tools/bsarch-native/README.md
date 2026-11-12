@@ -37,6 +37,13 @@ packs and unpacks a small tree, checks the archive header (version 105, compress
 if all of that passes. `bin/fetched.json` records the pins, the shim and patch hashes and the binary's SHA-256, so `--check` also notices a
 shim edited after the build. Output: `tools/bsarch-native/bin/bsarch`, gitignored and never shipped; it links only system libraries.
 
+## When it applies (optional, like xeditlib)
+
+- **Opt-in.** Nothing builds it for you: it is listed with the optional tools in `setup.sh`'s output, and you or your agent run `python3 tools/bsarch-native/build.py`.
+- **macOS and Linux only.** `build.py` refuses on Windows, the wrapper never installs it there, and `toolchain-check.sh` does not ask about it there. Windows keeps the real `bsarch.exe`.
+- **Only where AutoMod is set up.** `bash tools/toolchain-check.sh` reports `bsarch (native)` as `not built (optional ...)` (informational), `ok`, or `MISMATCH` (built, but a pin, the shim, the patch or the binary no longer matches; the result is then DEGRADED) once AutoMod is installed, and says nothing without it.
+- **A hint, not a surprise build.** `tools/automod-cli.sh archive status|create|extract|extract-file|add-files|remove-files|update-file|replace-files|merge|optimize` on macOS or Linux with no `bsarch.exe` in place prints one line on stderr naming the build command, because AutoMod's own "BSArch not found" message points at Windows downloads. The wrapper never fetches or compiles anything by itself.
+
 ## How AutoMod gets it
 
 `tools/automod-cli.sh` copies `bin/bsarch` to `<AutoMod build>/tools/bsarch/bsarch.exe` (the path AutoMod's `BsarchWrapper` starts) after

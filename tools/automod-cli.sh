@@ -200,4 +200,13 @@ if [ ! -f "$DLL" ]; then
 fi
 
 install_native_bsarch
+# Where BSArch cannot run and the native stand-in is not built, say so once instead of leaving AutoMod's "BSArch not found" (whose
+# suggestions name Windows downloads). Only for the commands that start BSArch; stderr, so --json output stays clean.
+case "$1:$2" in
+    archive:status|archive:create|archive:extract|archive:extract-file|archive:add-files|archive:remove-files|archive:update-file|archive:replace-files|archive:merge|archive:optimize)
+        case "$(uname -s 2>/dev/null)" in
+            Darwin|Linux)
+                [ -e "$BSARCH_DIR/bsarch.exe" ] || echo "note: BSArch is a Windows program and cannot run here. Build the native stand-in once: python3 tools/bsarch-native/build.py (tools/bsarch-native/README.md)" >&2 ;;
+        esac ;;
+esac
 "$DOTNET" "$DLL" "$@"
