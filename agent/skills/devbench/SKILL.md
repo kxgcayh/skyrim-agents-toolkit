@@ -203,7 +203,16 @@ Shapes were checked against the DevBench source (`blockedBy` is `[{name,hint}]`,
   (`formType=Actor radius=800 limit=50 filter=...`; numbers and true/false/null stay unquoted, a JSON object is
   merged as-is), so the server-side `filter` is passed through. `--grep` (jq) is a client-side, case-insensitive
   substring filter over each ref's `formType`, `name`, `editorId`, `model` and `base`; the reply keeps `count` as the
-  server's and gains `grep: {text, matched, of}`.
+  server's and gains `grep: {text, matched, of}`. `--grep` only sees the page the server returned (default limit
+  100), so prefer the server-side `filter=<text>` (user's DevBench fork, commit cea84b9 and later: case-insensitive
+  over base editorId/name, model path and the ref's editorId/name, applied before the limit; measured 2026-11-12:
+  `filter=door` 34 of 5,582 refs where `--grep door` matched 0 of the first 100).
+- **`wait --ingame`** prints a progress line every 15 s on stderr and names the reason (`at the Main Menu: no save
+  loaded yet`, `loading a save`), so a wait at the Main Menu is visible instead of silent.
+- **Fork-only fields** (commit cea84b9 and later): `inspect player`/`state` carry `godMode` (null on VR);
+  `state`, `health` and `/api/health` carry `menusOpen`, `hudMenus` and `modalOpen`; `blockedBy` is computed from
+  the menu flags captured at open, so always-open HUD overlays no longer appear in it. A stock DevBench build has none
+  of these.
 
 ## bench-vr — frame rate before and after a change
 

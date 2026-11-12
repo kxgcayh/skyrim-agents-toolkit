@@ -432,7 +432,13 @@ case "$CMD" in
                           case "$f" in
                               -*) last="server up, not in game (frame $f)" ;;
                               *)  pl=$(probe_state | jget '.playerLoaded')
-                                  if [ "$pl" = false ]; then last="frame $f, player not loaded yet"; else ready=1; fi ;;
+                                  if [ "$pl" = false ]; then
+                                      case "$PH_BODY" in
+                                          *'"Main Menu"'*) last="at the Main Menu: no save loaded yet" ;;
+                                          *'"Loading Menu"'*) last="loading a save" ;;
+                                          *) last="frame $f, player not loaded yet" ;;
+                                      esac
+                                  else ready=1; fi ;;
                           esac
                       fi ;;
                   404)  # pre-1.11.0: no /api/health; the main-thread state is the only evidence
@@ -454,6 +460,11 @@ case "$CMD" in
           if [ "$elapsed" -ge "$secs" ]; then
               echo "TIMEOUT: DevBench not ready after ${elapsed}s (limit ${secs}s): $last"
               exit 3
+          fi
+          # One progress line every 15 s on stderr, so a long wait never looks hung.
+          if [ "$elapsed" -ge "${next_note:-15}" ]; then
+              echo "waiting ${elapsed}s of ${secs}s: $last" >&2
+              next_note=$(( elapsed + 15 ))
           fi
           left=$(( secs - elapsed )); nap=3; [ "$left" -lt "$nap" ] && nap="$left"
           sleep "$nap"
