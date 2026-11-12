@@ -264,3 +264,94 @@ def test_notify_escapes_text_without_jq(server):
     r = run_cli("notify", message, port=server.port, mask_jq=True)
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout)["args"]["args"] == [message]
+
+
+# ------------------------------------------------- review regressions (strict mock: invalid JSON -> 400)
+
+@pytest.mark.parametrize("server", ["strict"], indirect=True)
+@pytest.mark.parametrize("value, expected", [
+    ("00012345", "00012345"),   # leading zeros are not a JSON number: must be sent as a string (FormID text)
+    ("0013298", "0013298"),
+    ("800", 800), ("-5", -5), ("1.5", 1.5), ("0", 0), ("0.25", 0.25),
+])
+def test_inspect_leading_zero_value_is_sent_as_a_string(server, value, expected):
+    import json
+    r = run_cli("inspect", "refs", f"formId={value}", port=server.port)
+    assert r.returncode == 0, r.stdout + r.stderr
+    sent = json.loads(r.stdout)["args"]["formId"]
+    assert sent == expected and type(sent) is type(expected)
+
+
+@pytest.mark.parametrize("server", ["strict"], indirect=True)
+def test_call_value_prints_an_error_body_compact(server):
+    import json
+    r = run_cli("call", "ObjectReference", "Reject", "[]", "--value", port=server.port)
+    assert r.returncode == 4, r.stdout + r.stderr
+    assert r.stdout.strip() == json.dumps({"error": "arg 1: expected Float got Int", "code": 400}, separators=(",", ":"))
+
+
+@pytest.mark.parametrize("server", ["running"], indirect=True)
+def test_raw_is_accepted_before_the_command(server):
+    r = run_cli("--raw", "ping", port=server.port)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "Unknown command" not in r.stderr
+    import json
+    assert json.loads(r.stdout) == {"ok": True}
+
+
+def test_coerce_args_with_three_arguments_does_not_trip_set_u():
+    import re
+    src = CLI.read_text(encoding="utf-8")
+    fn = re.search(r"^coerce_args\(\) \{.*?^\}", src, re.S | re.M).group(0)
+    r = subprocess.run([BASH, "-uc", fn + '\nHAVE_JQ=0\ncoerce_args ObjectReference SetAngle "[0,0,90]"'],
+                       capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == "[0,0,90]"
+
+
+def _logs(tmp_path, monkeypatch_env):
+    env = dict(os.environ)
+    env["DEVBENCH_PAPYRUS_LOG"] = str(tmp_path / "Papyrus.0.log")
+    env["DEVBENCH_DIAG_DIR"] = str(tmp_path / "diag")
+    return env
+
+
+def _cli_env(env, *args):
+    return subprocess.run([BASH, str(CLI), *args], cwd=str(REPO), env=env, capture_output=True, text=True, timeout=60)
+
+
+def test_logdiff_detects_rotation_of_a_log_shorter_than_256_bytes(tmp_path):
+    env = _logs(tmp_path, None)
+    log = tmp_path / "Papyrus.0.log"
+    log.write_text("old session header line 1\nshort\n")            # 32 bytes at the mark
+    assert _cli_env(env, "logmark").returncode == 0
+    log.write_text("[11/12/2026 - 01:00:00AM] NEW SESSION header aaaa\n"
+                   "[11/12/2026 - 01:00:01AM] second line bbbbbbbbbbbb\n")   # rotated, now longer than the mark
+    r = _cli_env(env, "logdiff")
+    assert "rotated or replaced" in r.stderr, r.stderr
+    assert r.stdout.startswith("[11/12/2026 - 01:00:00AM] NEW SESSION"), r.stdout
+
+
+def test_logdiff_does_not_cry_rotation_when_a_short_log_only_grew(tmp_path):
+    env = _logs(tmp_path, None)
+    log = tmp_path / "Papyrus.0.log"
+    log.write_text("[11/12/2026 - 01:00:00AM] header\n")
+    assert _cli_env(env, "logmark").returncode == 0
+    with log.open("a") as fh:
+        fh.write("[11/12/2026 - 01:00:05AM] appended line\n")
+    r = _cli_env(env, "logdiff")
+    assert "rotated" not in r.stderr, r.stderr
+    assert r.stdout == "[11/12/2026 - 01:00:05AM] appended line\n"
+
+
+def test_logdiff_errors_does_not_latch_on_a_continuation_line(tmp_path):
+    env = _logs(tmp_path, None)
+    log = tmp_path / "Papyrus.0.log"
+    log.write_text("[11/12/2026 - 01:00:00AM] start\n")
+    assert _cli_env(env, "logmark").returncode == 0
+    with log.open("a") as fh:
+        fh.write("[11/12/2026 - 01:00:01AM] info entry\n   continuation mentions a warning word\n   second continuation\n"
+                 "[11/12/2026 - 01:00:02AM] error: real\n   stack frame\n"
+                 "[11/12/2026 - 01:00:03AM] info after\n   plain continuation\n")
+    r = _cli_env(env, "logdiff", "--errors")
+    assert r.stdout == "[11/12/2026 - 01:00:02AM] error: real\n   stack frame\n", r.stdout

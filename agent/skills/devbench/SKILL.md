@@ -24,12 +24,14 @@ moment it's present.
 
 ```bash
 bash tools/devbench-cli.sh alive                       # is the GAME running, paused, hung, or not loaded?
+bash tools/devbench-cli.sh wait 300 --ingame           # block until DevBench answers AND a save is loaded (exit 0 / 3)
 bash tools/devbench-cli.sh health                      # raw off-thread liveness + instance identity
 bash tools/devbench-cli.sh ping                        # server self-test only -- NOT proof of liveness
 bash tools/devbench-cli.sh state                       # {plugin,version,vr,playerLoaded,frame,pid,port,exe}
 bash tools/devbench-cli.sh inspect vm                  # Papyrus VM health — freeze diagnosis
 bash tools/devbench-cli.sh exec "player.getav health"  # console exec + capture + read output
 bash tools/devbench-cli.sh call Actor IsInCombat '[]' '{"form":"0x14"}'
+bash tools/devbench-cli.sh fps 5 --gpu                 # fps from the frame counter; warns if a mod menu is open
 bash tools/devbench-cli.sh notify "Test 3 of 5: swing now"   # HUD narration
 bash tools/devbench-cli.sh tool menu '{"action":"accept"}'   # raw: any tool, any JSON
 ```
@@ -97,8 +99,9 @@ quests|effects|refs`) · `papyrus` (list/describe/**call**) · `menu` (list/desc
 exercised them against a live game).** `game` gained `loadLast` (fire-and-forget; reload the latest save), `advanceTime`
 (1.17), `setTimeScale` / `getTimeScale` (1.22; scale 0.1..3.0, leased, refused with 409 while a
 recording runs) · `wait` and `sleep` (1.16; step pacing, incl. in-game hours) · `input` (1.18-1.24;
-`capabilities` / `observe` / `keyboard` / `vrTrackedSet`: **synthetic input, mutating; keyboard input also supports SE/AE menus**
--- treat like `record`/`replay`) · `camera orbit` (third person only; 501 on VR) · `inspect kind=extensions`
+actions `capabilities | status | down | up | tap | sequence | releaseAll` (the server's own list; `tap` with a key
+name works, and `keyboard` is NOT an action): **synthetic input, mutating; keyboard input also supports SE/AE menus**
+-- treat like `record`/`replay`; `releaseAll` frees every held key) · `camera orbit` (third person only; 501 on VR) · `inspect kind=extensions`
 · `menu invoke`. **`scenario` now FAILS when an inner tool errors (since 1.16, #72)**; before that it
 reported success, so a scenario that used to "pass" may now fail honestly -- read the step it names.
 `devbench-bridge.exe` (stdio, shipped with DevBench) is the recommended MCP route for a session that must
@@ -154,6 +157,53 @@ a value or swapping a mechanism is another DevBench call — not another edit �
 Reserve manual testing for the final confirmation gate. See kb/environment-and-guards.md for the hazards
 (`game save` deadlock, paused-state semantics, heavy console commands) — read them before your first
 live session.
+
+## Wrapper conveniences (`tools/devbench-cli.sh`)
+
+Everything below is wrapper-side; the exit codes of the existing commands (0 ok, 3 could not check) are unchanged.
+Shapes were checked against the DevBench source (`blockedBy` is `[{name,hint}]`, `call` returns `returned` /
+`returnedType`, `describe` returns `globalFunctions` / `memberFunctions` with `params:[{name,type}]` and `parent`,
+`menu list` returns `openMenus`). Items marked jq need `jq` on PATH and say so when it is missing.
+
+- **`wait [seconds=300] [--ingame]`** -- polls the off-thread `/api/health` every 3 s until DevBench answers. `--ingame`
+  also requires `frame >= 0` and, when `inspect state` reports it, `playerLoaded` not false. Prints one line
+  (`READY: ...` or `TIMEOUT: ... : <last reason>`), no JSON; exit 0 ready, 3 timeout. The standing user preference after
+  "the game is loaded" is `devbench-cli.sh wait 300 --ingame` before any live check. Works on pre-1.11.0 servers via the
+  main-thread `inspect state`.
+- **`blockedBy` noise (jq)** -- every reply lists open menus as `blockedBy`, and always-open HUD menus (BTPS Menu,
+  BTPS Ovelay Menu, CastingBar_Center/Left/Right, SkyParkour, TrueHUD, oxygenMeter2, HUD Menu) are permanent
+  "blockers" that do not block anything. Printed JSON drops those entries (and the key when nothing is left); any other
+  entry stays and is named once on stderr (`NOTE: blocked by non-HUD menu: ...`), because a real modal (a message
+  box, a mod menu) is what makes `exec` and `call` stall. `DEVBENCH_HUD_MENUS="A,B,C"` replaces the list (empty strips
+  nothing); `DEVBENCH_RAW=1` or `--raw` (before or after the command) on any command prints the reply untouched.
+- **`exec "<cmd>" --lines`** (jq) prints only the captured console lines, one per line. **`call ... --value`** (jq)
+  prints only `returned` as compact JSON (a string keeps its quotes; an error body prints as-is). Default output
+  stays JSON.
+- **`fps [seconds=5] [--gpu]`** -- two off-thread health samples `seconds` apart, `(frame2 - frame1) / elapsed`.
+  Before sampling it lists open menus (jq); a non-HUD one (the Community Shaders menu or any mod menu) prints a
+  warning, since the game can sit idle behind it and the number then measures nothing. A frozen frame counter prints
+  its own warning (paused, loading or hung: run `alive`). `--gpu` adds `ioreg ... IOAccelerator` "Device
+  Utilization %" on macOS and is silently skipped elsewhere. Exit 3 when no save is loaded.
+- **`call` argument coercion (jq)** -- Papyrus `call` answers 400 "bad type/shape" for an integer where the function
+  declares a `Float` (`SetAngle`, `MoveTo`). Before sending, the wrapper `describe`s the script (walking `parent` for
+  inherited functions), then rewrites JSON numbers to the declared type (`0` becomes `0.0` for a Float; `3.0` becomes
+  `3` for an Int) and prints one `NOTE: coerced ...` line. If describe fails or the function is not found, the
+  arguments go out unchanged. On any 400 the server's `error` text is now printed on stderr as `  server: ...`.
+  Pass every argument explicitly regardless (the 1.25 rule above).
+- **`logmark` / `logdiff [--errors]`** -- `logmark` records the byte size of `Logs/Script/Papyrus.0.log` (found the
+  way `tools/papyrus-triage.py` finds it via `skyrim_paths`; `DEVBENCH_PAPYRUS_LOG=<file>` or `PAPYRUS_LOG_DIR`
+  override) in `.claude/diag/devbench/papyrus-mark` and prints it. `logdiff` prints everything written since;
+  `--errors` keeps entries whose timestamped first line contains error or warning, with their stack continuation
+  lines (a continuation line that merely mentions the word does not keep its entry). A shrunk log, a changed
+  path or changed opening bytes (the mark hashes the first min(size, 256) bytes, so a log that was short when marked
+  is still identified) is reported as "rotated or replaced" and the whole current log is shown.
+  `DEVBENCH_DIAG_DIR` relocates the mark file. Mark, run
+  the test, diff: this replaces tailing the log by hand. It only reads the log.
+- **`inspect <kind> [key=value | {json}]... [--grep <text>]`** -- extra arguments are merged into the request
+  (`formType=Actor radius=800 limit=50 filter=...`; numbers and true/false/null stay unquoted, a JSON object is
+  merged as-is), so the server-side `filter` is passed through. `--grep` (jq) is a client-side, case-insensitive
+  substring filter over each ref's `formType`, `name`, `editorId`, `model` and `base`; the reply keeps `count` as the
+  server's and gains `grep: {text, matched, of}`.
 
 ## bench-vr — frame rate before and after a change
 

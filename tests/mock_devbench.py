@@ -103,7 +103,13 @@ class Handler(BaseHTTPRequestHandler):
         try:
             body = json.loads(raw.decode("utf-8") or "{}")
         except ValueError:
+            if MODE == "strict":  # a real server rejects invalid JSON; the lenient modes hide a malformed payload
+                return self._send(400, {"error": "invalid JSON", "code": 400})
             body = {}
+        if MODE == "strict":
+            if body.get("function") == "Reject":
+                return self._send(400, {"error": "arg 1: expected Float got Int", "code": 400})
+            return self._send(200, {"path": self.path, "args": body})
         if MODE == "busy504":
             return self._send(504, {"error": "main thread did not run task in time",
                                     "code": 504})
