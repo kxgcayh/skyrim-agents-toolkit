@@ -45,11 +45,88 @@ def health_body() -> dict:
         # Frame frozen AND work queued that never completes.
         return {"ok": True, "lastLifecycle": "postLoadGame", "frame": 7777,
                 "lastTaskFrame": 7770, "pendingTasks": 3, **common}
+    if MODE == "sim":
+        loading = _sim_loading()
+        return {"ok": True, "lastLifecycle": "postLoadGame", "frame": 1000 + n * 7, "lastTaskFrame": 1000 + n * 7,
+                "pendingTasks": 0, "menus": ["HUD Menu"] + (["Loading Menu"] if loading else []), **common}
     if MODE == "notingame":
         # Server up, no save loaded: the frame counter is unresolved.
         return {"ok": True, "lastLifecycle": None, "frame": -1,
                 "lastTaskFrame": -1, "pendingTasks": 0, **common}
     raise AssertionError(f"unknown mode {MODE}")
+
+
+# ---- mode "sim": a small stateful game for the coc / goto / msgbox / waitcall / form commands ----------------
+# Load order: BSHeartland.esm is full plugin 0x16, "Some Patch.esp" light plugin 0x324. Reference 0x160012F7 is in
+# memory (3D unloaded until the player is moved), 0x16000999 is not in memory. `coc GoodCell` loads for 1.5 s;
+# `coc NoSuchCell` is rejected. HasSpell answers false twice, then true. A message box "Pray?" [Pray, Leave] is open
+# until answered; its answer is recorded in _sim["answer"].
+import time as _time
+
+_sim = {"cell": "StartCell", "load_until": 0.0, "pending": None, "moved": False, "hasspell": 0,
+        "box": True, "answer": None, "moveto": None}
+
+
+def _sim_loading() -> bool:
+    if _sim["pending"] and _time.time() >= _sim["load_until"]:
+        _sim["cell"], _sim["pending"] = _sim["pending"], None
+    return _sim["pending"] is not None
+
+
+def _sim_post(path: str, body: dict):
+    if path == "/api/tool/inspect":
+        kind = body.get("kind")
+        if kind == "mods":
+            return 200, {"count": 2, "lightCount": 1,
+                         "plugins": [{"index": 0, "name": "Skyrim.esm"}, {"index": 22, "name": "BSHeartland.esm"}],
+                         "lightPlugins": [{"index": 0x324, "name": "Some Patch.esp"}]}
+        if kind == "scene":
+            if _sim_loading():
+                return 504, {"error": "main thread busy", "code": 504}
+            return 200, {"cell": {"editorId": _sim["cell"]}, "playerLoaded": True}
+        return 200, {"playerLoaded": True, "frame": 1000}
+    if path == "/api/tool/console" and body.get("action") == "exec":
+        cmd = str(body.get("command"))
+        if cmd.lower().startswith("coc "):
+            cell = cmd[4:].strip()
+            if cell == "NoSuchCell":
+                return 200, {"completed": True, "lines": ["Cell 'NoSuchCell' not found"]}
+            if cell == "SilentBadCell":  # the real console prints nothing for an unknown cell
+                return 200, {"completed": True, "lines": []}
+            _sim["pending"], _sim["load_until"] = cell, _time.time() + 1.5
+        return 200, {"completed": True, "lines": []}
+    if path == "/api/tool/menu":
+        if body.get("action") == "describe":
+            if _sim["box"]:
+                return 200, {"messageBoxOpen": True, "bodyText": "Pray?", "buttons": ["Pray", "Leave"]}
+            return 200, {"messageBoxOpen": False}
+        if body.get("action") == "accept":
+            _sim["answer"], _sim["box"] = body.get("index"), False
+            return 200, {"accepted": True}
+    if path == "/api/tool/papyrus" and body.get("action") == "describe":
+        return 200, {"memberFunctions": [], "globalFunctions": []}
+    if path == "/api/tool/papyrus" and body.get("action") == "call":
+        fn, self_ = body.get("function"), (body.get("self") or {}).get("form")
+        if self_ == "0x16000999":
+            return 400, {"error": "form '0x16000999' not found", "code": 400}
+        if fn == "Is3DLoaded":
+            return 200, {"returned": bool(_sim["moved"]) if self_ == "0x160012F7" else True}
+        if fn == "GetAngleZ":
+            return 200, {"returned": 90.0}
+        if fn == "MoveTo":
+            _sim["moved"], _sim["moveto"] = True, body.get("args")
+            return 200, {"returned": None}
+        if fn == "HasSpell":
+            _sim["hasspell"] += 1
+            return 200, {"returned": _sim["hasspell"] > 2}
+        if fn == "GetDistance":
+            return 200, {"returned": 150.0}
+        if fn == "Echo":
+            return 200, {"returned": body}
+        return 200, {"returned": None}
+    if path == "/api/tool/sim":  # test hook: the sim's own state
+        return 200, {k: v for k, v in _sim.items() if k != "load_until"}
+    return 200, {"ok": True}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -123,6 +200,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"path": self.path, "args": body})
         if MODE == "bench":
             return self._bench(body)
+        if MODE == "sim":
+            return self._send(*_sim_post(self.path, body))
         if self.path == "/api/tool/ping":
             return self._send(200, {"ok": True})
         if self.path == "/api/tool/inspect":

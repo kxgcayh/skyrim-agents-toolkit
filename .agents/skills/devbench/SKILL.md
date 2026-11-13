@@ -199,7 +199,36 @@ Shapes were checked against the DevBench source (`blockedBy` is `[{name,hint}]`,
   path or changed opening bytes (the mark hashes the first min(size, 256) bytes, so a log that was short when marked
   is still identified) is reported as "rotated or replaced" and the whole current log is shown.
   `DEVBENCH_DIAG_DIR` relocates the mark file. Mark, run
-  the test, diff: this replaces tailing the log by hand. It only reads the log.
+  the test, diff: this replaces tailing the log by hand. It only reads the log. **`--name X`** on both keeps a
+  separate mark (`papyrus-mark.X`), so a listener and a tester never overwrite each other's mark (that clash made the
+  2026-11-13 shrine test skip `logmark`). `logdiff --grep <ERE>` (case-insensitive, anywhere in the entry) and
+  `--ref <0xID | Plugin:id>` (the 8-digit FormID as Papyrus prints it, `(3B015490)`) keep whole entries, stack lines
+  included; they combine with `--errors` and with each other.
+
+Added after the 2026-11-13 live shrine test, where each of these had to be scripted by hand (tests: mode `sim` in
+`tests/mock_devbench.py`):
+
+- **Plugin-relative forms everywhere `call` / `waitcall` take a form**: `{"form":"BSHeartland.esm:0012F7"}` (or
+  `0012F7:BSHeartland.esm`) is turned into the runtime FormID from `inspect mods` (full plugin: index << 24 plus the
+  low 24 bits; light plugin: `0xFE000000 | index << 12` plus the low 12 bits; a load index given in the ID is
+  ignored). Unlike `Game.GetFormFromFile` this also works for a temporary reference in an unloaded cell.
+  **`form <Plugin>:<id>`** prints the runtime ID. An unloaded plugin fails with `plugin not loaded: <name>`.
+- **`coc <Cell> [--timeout 120]`** -- runs `coc`, then waits until there is no `Loading Menu`, the player's cell is the
+  target and the frame counter advances; before the load visibly starts it waits at least 3 s, so the old cell (even
+  the same one) is not taken as arrival. An exterior `coc` that lands in a neighbouring cell is accepted after 5
+  settled seconds and says so. Exit 0 arrived, 3 timeout, 4 cell rejected by the console.
+- **`goto <0xREF | Plugin:id> [--dist 150] [--z 20] [--if-unloaded] [--timeout 30]`** -- never `exec "player.moveto
+  <ref>"` onto a solid activator: it puts the player inside the ref's collision (trapped in a LOTD runestone,
+  2026-11-13). `goto` moves the player `--dist` units in front of the ref along its `GetAngleZ`, `--z` up, turns the
+  player to face it and waits for its 3D. `--if-unloaded` does nothing when the 3D is already loaded (`Activate` works
+  from across the cell). A reference not in memory (temporary, cell unloaded) exits 4 with "coc to its cell first".
+- **`waitcall <Script> <Function> [args] [self] --equals <json> [--timeout 15] [--every 1]`** -- repeats the call until
+  `returned` equals `--equals` (compact JSON; a string needs its quotes). A script's result can land seconds after the
+  trigger (a blessing cast then `AddSpell`): a fixed 3 s sleep gave false failures on 2026-11-13. Exit 0 matched,
+  3 timeout (prints the last value), otherwise the call's own error code.
+- **`msgbox [--wait N] [--answer <label | index>]`** -- prints the open message box as `{bodyText, buttons}`; `--wait`
+  polls up to N s for one; `--answer` clicks a button by case-insensitive label or by index, then prints `ANSWERED:`
+  and any box that opened next (`NEXT BOX:`). Exit 3 no box, 4 no such button (nothing clicked).
 - **`inspect <kind> [key=value | {json}]... [--grep <text>]`** -- extra arguments are merged into the request
   (`formType=Actor radius=800 limit=50 filter=...`; numbers and true/false/null stay unquoted, a JSON object is
   merged as-is), so the server-side `filter` is passed through. `--grep` (jq) is a client-side, case-insensitive

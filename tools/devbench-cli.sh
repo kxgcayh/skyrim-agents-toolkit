@@ -33,8 +33,24 @@
 #                                                         # JSON numbers are coerced to the declared Float/Int
 #                                                         #   (via describe; unchanged if describe fails); --value
 #                                                         #   prints only `returned`, compact JSON
-#   bash tools/devbench-cli.sh logmark                    # record the size of Logs/Script/Papyrus.0.log
-#   bash tools/devbench-cli.sh logdiff [--errors]         # what the Papyrus log gained since the mark
+#                                                         # any {"form": ...} in args/self may be <Plugin>:<id>
+#                                                         #   ("BSHeartland.esm:0012F7"): resolved from the load
+#                                                         #   order, also for refs in unloaded cells
+#   bash tools/devbench-cli.sh form BSHeartland.esm:0012F7               # print the runtime FormID
+#   bash tools/devbench-cli.sh waitcall Actor HasSpell '[{"form":"0x313A9AF6"}]' '{"form":"0x14"}' --equals true
+#                                                         # repeat the call until it returns --equals (compact
+#                                                         #   JSON); --timeout 15 --every 1; 0 matched, 3 timeout
+#   bash tools/devbench-cli.sh coc CYRBrumaChapel [--timeout 120]        # coc, then wait until the load is over
+#                                                         #   and the player is in the cell; 4 = cell rejected
+#   bash tools/devbench-cli.sh goto BSHeartland.esm:0012F7 [--dist 150] [--z 20] [--if-unloaded]
+#                                                         # player BESIDE the ref, facing it (moveto onto a ref
+#                                                         #   traps the player in its collision); 4 = not in memory
+#   bash tools/devbench-cli.sh msgbox [--wait 5] [--answer Pray|0]       # read / answer the open message box
+#                                                         #   by button label or index; 3 none, 4 no such button
+#   bash tools/devbench-cli.sh logmark [--name X]         # record the size of Logs/Script/Papyrus.0.log
+#   bash tools/devbench-cli.sh logdiff [--name X] [--errors] [--grep ERE] [--ref <0xID|Plugin:id>]
+#                                                         # what the Papyrus log gained since the mark, as whole
+#                                                         #   entries (line + stack); named marks never collide
 #                                                         #   (DEVBENCH_PAPYRUS_LOG=<file> overrides the path)
 #   bash tools/devbench-cli.sh tools                      # discover installed tools and schemas
 #   bash tools/devbench-cli.sh gfx '{"op":"get","menu":"Dialogue Menu","path":"_root"}'
@@ -320,9 +336,93 @@ file_head_sum() { # $1 file  $2 byte count -> checksum of the first $2 bytes (th
 }
 mark_field() { sed -n "s/^$1=//p" "$PAPYRUS_MARK" | head -1; }
 
+# --- Plugin-relative forms ----------------------------------------------------
+# "BSHeartland.esm:0012F7" or "0012F7:BSHeartland.esm" -> the runtime FormID, from `inspect mods`: a full plugin
+# gives (index << 24) | low 24 bits, a light plugin 0xFE000000 | (light index << 12) | low 12 bits. Works for a
+# temporary reference in an unloaded cell, where Game.GetFormFromFile returns None.
+MODS_JSON=""
+JQ_FORMS='
+def spec: first((capture("^(?<id>(0[xX])?[0-9A-Fa-f]{1,8}):(?<p>.+\\.(esm|esp|esl|ESM|ESP|ESL))$"),
+                 capture("^(?<p>.+\\.(esm|esp|esl|ESM|ESP|ESL)):(?<id>(0[xX])?[0-9A-Fa-f]{1,8})$")));
+def isspec: type == "string" and ([spec] | length) > 0;
+def hex2n: ascii_downcase | ltrimstr("0x") | explode
+           | reduce .[] as $c (0; . * 16 + (if $c >= 97 then $c - 87 else $c - 48 end));
+def hex8: . as $n | [range(7; -1; -1) as $i | (($n / pow(16; $i)) | floor) % 16]
+          | map("0123456789ABCDEF"[.:. + 1]) | "0x" + join("");
+def res($m): spec as $s | ($s.p | ascii_downcase) as $p | ($s.id | hex2n) as $low
+    | ([($m.plugins // [])[] | select((.name | ascii_downcase) == $p)] | first) as $full
+    | ([($m.lightPlugins // [])[] | select((.name | ascii_downcase) == $p)] | first) as $light
+    | if $full != null then ($full.index * 16777216 + ($low % 16777216)) | hex8
+      elif $light != null then (4261412864 + $light.index * 4096 + ($low % 4096)) | hex8
+      else error("plugin not loaded: " + $s.p) end;
+def resolve_forms($m): walk(if type == "object" then
+        with_entries(if (.key == "form" or .key == "formId") and (.value | isspec) then .value |= res($m) else . end)
+      else . end);'
+
+load_mods() { # fills MODS_JSON once per run
+    [ -n "$MODS_JSON" ] && return 0
+    MODS_JSON=$(post inspect '{"kind":"mods"}') || {
+        echo "ERROR: could not read the load order (inspect mods) to resolve a plugin-relative form." >&2; return 1; }
+}
+
+resolve_json() { # $1 = JSON text; every {"form"|"formId": "<Plugin>:<id>"} becomes the runtime FormID
+    local in="$1" out
+    case "$in" in *.[eE][sS][mMpPlL]*) ;; *) printf '%s' "$in"; return 0 ;; esac
+    need_jq "a plugin-relative form"
+    load_mods || return 1
+    out=$(printf '%s' "$in" | jq -c --argjson m "$MODS_JSON" "$JQ_FORMS"' resolve_forms($m)' 2>&1) || {
+        echo "ERROR: ${out#jq: error (at <stdin>:*): }" >&2; return 1; }
+    printf '%s' "$out"
+}
+
+resolve_form() { # $1 = 0xFORMID | <Plugin>:<id> | <id>:<Plugin> -> 0xFORMID on stdout
+    local r
+    case "$1" in 0x*|0X*) printf '%s' "$1"; return 0 ;; esac
+    r=$(resolve_json "{\"form\":$(json_string "$1")}") || return 1
+    r=$(printf '%s' "$r" | jq -r '.form')
+    case "$r" in 0x*) printf '%s' "$r" ;; *) echo "ERROR: not a FormID or <Plugin>:<id>: $1" >&2; return 1 ;; esac
+}
+
+pcall() { # $1 script $2 function $3 args JSON $4 self JSON (may be empty) -> compact `returned` on stdout; http() rc
+    local payload body rc
+    payload="{\"action\":\"call\",\"script\":$(json_string "$1"),\"function\":$(json_string "$2"),\"args\":$3"
+    [ -n "${4:-}" ] && payload="$payload,\"self\":$4"
+    body=$(post papyrus "$payload}"); rc=$?
+    [ "$rc" -eq 0 ] || return "$rc"
+    printf '%s' "$body" | jq -c '.returned'
+}
+
+player_cell() { # editorId (or formId) of the player's cell; empty while the main thread cannot answer
+    curl -s --max-time 5 -X POST "$BASE/api/tool/inspect" -H "Content-Type: application/json" -d '{"kind":"scene"}' 2>/dev/null \
+        | jq -r '.cell | if . == null then empty else (.editorId // .formId // empty) end' 2>/dev/null
+}
+
+# Papyrus log entries: a timestamped line plus its indented continuation (stack) lines. Keeps whole entries that
+# pass every filter given: errors (error|warning in the entry's first line), grep (case-insensitive ERE anywhere in
+# the entry), ref (the 8-digit FormID anywhere in the entry, as Papyrus prints it: "(3B015490)").
+filter_entries() { # $1 errors 0|1  $2 grep ERE  $3 ref hex (8 digits, upper case)  < log text
+    awk -v errs="$1" -v g="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')" -v ref="$3" '
+        function flush() {
+            if (buf == "") return
+            ok = 1
+            if (errs == 1 && tolower(head) !~ /error|warning/) ok = 0
+            if (ok && g != "" && tolower(buf) !~ g) ok = 0
+            if (ok && ref != "" && toupper(buf) !~ ref) ok = 0
+            if (ok) printf "%s", buf
+            buf = ""
+        }
+        /^\[[0-9][0-9]\/[0-9][0-9]\/[0-9][0-9][0-9][0-9] - / { flush(); head = $0 }
+        { buf = buf $0 "\n" }
+        END { flush() }'
+}
+
 # --- Flags (stripped only for the command they belong to, so a console command or JSON that happens to
 # contain one is never altered) ----------------------------------------------------------------------------
 F_LINES=0; F_VALUE=0; F_GPU=0; F_INGAME=0; F_ERRORS=0; GREP=""; HAVE_GREP=0
+MARK_NAME=""; F_REF=""; F_EQUALS=""; HAVE_EQUALS=0; F_TIMEOUT=""; F_EVERY=1; F_WAIT=0; F_ANSWER=""; HAVE_ANSWER=0
+F_DIST=150; F_Z=20; F_IFUNLOADED=0
+_flagval() { [ $# -ge 2 ] || { echo "ERROR: $CMD $1 needs a value." >&2; exit 1; }; }
+_num() { case "$2" in ''|*[!0-9.-]*) echo "ERROR: $CMD $1 needs a number, got '$2'." >&2; exit 1 ;; esac; }
 _args=()
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -332,15 +432,35 @@ while [ $# -gt 0 ]; do
         --gpu)    if [ "$CMD" = fps ];     then F_GPU=1;    else _args+=("$1"); fi ;;
         --ingame) if [ "$CMD" = wait ];    then F_INGAME=1; else _args+=("$1"); fi ;;
         --errors) if [ "$CMD" = logdiff ]; then F_ERRORS=1; else _args+=("$1"); fi ;;
-        --grep)   if [ "$CMD" = inspect ]; then
-                      [ $# -ge 2 ] || { echo "usage: devbench-cli.sh inspect refs ... --grep <text>" >&2; exit 1; }
+        --grep)   if [ "$CMD" = inspect ] || [ "$CMD" = logdiff ]; then
+                      [ $# -ge 2 ] || { echo "usage: devbench-cli.sh $CMD ... --grep <text>" >&2; exit 1; }
                       shift; GREP="$1"; HAVE_GREP=1
                   else _args+=("$1"); fi ;;
+        --name)   if [ "$CMD" = logmark ] || [ "$CMD" = logdiff ]; then _flagval "$@"; shift; MARK_NAME="$1"
+                  else _args+=("$1"); fi ;;
+        --ref)    if [ "$CMD" = logdiff ]; then _flagval "$@"; shift; F_REF="$1"; else _args+=("$1"); fi ;;
+        --equals) if [ "$CMD" = waitcall ]; then _flagval "$@"; shift; F_EQUALS="$1"; HAVE_EQUALS=1
+                  else _args+=("$1"); fi ;;
+        --timeout) if [ "$CMD" = waitcall ] || [ "$CMD" = coc ] || [ "$CMD" = goto ]; then
+                      _flagval "$@"; _num "$1" "$2"; shift; F_TIMEOUT="$1"; else _args+=("$1"); fi ;;
+        --every)  if [ "$CMD" = waitcall ]; then _flagval "$@"; _num "$1" "$2"; shift; F_EVERY="$1"; else _args+=("$1"); fi ;;
+        --wait)   if [ "$CMD" = msgbox ]; then _flagval "$@"; _num "$1" "$2"; shift; F_WAIT="$1"; else _args+=("$1"); fi ;;
+        --answer) if [ "$CMD" = msgbox ]; then _flagval "$@"; shift; F_ANSWER="$1"; HAVE_ANSWER=1; else _args+=("$1"); fi ;;
+        --dist)   if [ "$CMD" = goto ]; then _flagval "$@"; _num "$1" "$2"; shift; F_DIST="$1"; else _args+=("$1"); fi ;;
+        --z)      if [ "$CMD" = goto ]; then _flagval "$@"; _num "$1" "$2"; shift; F_Z="$1"; else _args+=("$1"); fi ;;
+        --if-unloaded) if [ "$CMD" = goto ]; then F_IFUNLOADED=1; else _args+=("$1"); fi ;;
         *) _args+=("$1") ;;
     esac
     shift
 done
 if [ ${#_args[@]} -gt 0 ]; then set -- "${_args[@]}"; else set --; fi
+
+# Named log marks: `logmark --name X` / `logdiff --name X`, so two testers (or an agent and a listener) never
+# overwrite each other's mark. The unnamed mark keeps its old file.
+if [ -n "$MARK_NAME" ]; then
+    case "$MARK_NAME" in *[!A-Za-z0-9_.-]*|.*) echo "ERROR: mark name may use letters, digits, '_', '-', '.': $MARK_NAME" >&2; exit 1 ;; esac
+    PAPYRUS_MARK="$DIAG_DIR/papyrus-mark.$MARK_NAME"
+fi
 
 
 case "$CMD" in
@@ -570,6 +690,8 @@ case "$CMD" in
       [ $# -ge 2 ] || { echo "usage: devbench-cli.sh call <Script> <Function> [argsJson] [selfJson]" >&2; exit 1; }
       script="$1"; func="$2"; args="${3:-[]}"; slf="${4:-}"
       [ "$F_VALUE" -eq 0 ] || need_jq "call --value"
+      args=$(resolve_json "$args") || exit 4
+      if [ -n "$slf" ]; then slf=$(resolve_json "$slf") || exit 4; fi
       args=$(coerce_args "$script" "$func" "$args" "$slf")
       if [ -n "$slf" ]; then
           payload="{\"action\":\"call\",\"script\":$(json_string "$script"),\"function\":$(json_string "$func"),\"args\":$args,\"self\":$slf}"
@@ -584,6 +706,132 @@ case "$CMD" in
       # vanilla/SKSE defaults are filled and any other omitted param is refused with 400 (nothing runs):
       # pass every param explicitly, or send fillNeutral:true through `tool papyrus '{...}'` for the old padding.
       ;;
+
+  form)
+      # Print the runtime FormID of <Plugin>:<id> (or <id>:<Plugin>), from the loaded load order.
+      [ $# -ge 1 ] || { echo "usage: devbench-cli.sh form <Plugin.esp>:<id>" >&2; exit 1; }
+      resolve_form "$1"; rc=$?; [ "$rc" -eq 0 ] && echo; exit "$rc" ;;
+
+  waitcall)
+      # Repeat a Papyrus call until it returns the --equals value (compared as compact JSON): for results a
+      # script produces late, where a fixed sleep gives false failures. 0 matched, 3 timeout, else the call's error.
+      [ $# -ge 2 ] && [ "$HAVE_EQUALS" -eq 1 ] || {
+          echo "usage: devbench-cli.sh waitcall <Script> <Function> [argsJson] [selfJson] --equals <json> [--timeout 15] [--every 1]" >&2; exit 1; }
+      need_jq waitcall
+      want=$(printf '%s' "$F_EQUALS" | jq -c . 2>/dev/null) || { echo "ERROR: --equals is not JSON: $F_EQUALS (a string needs quotes: '\"text\"')" >&2; exit 1; }
+      script="$1"; func="$2"; args="${3:-[]}"; slf="${4:-}"
+      args=$(resolve_json "$args") || exit 4
+      if [ -n "$slf" ]; then slf=$(resolve_json "$slf") || exit 4; fi
+      args=$(coerce_args "$script" "$func" "$args" "$slf")
+      limit="${F_TIMEOUT:-15}"; start=$(now_ms); got=""
+      while :; do
+          got=$(pcall "$script" "$func" "$args" "$slf"); rc=$?
+          [ "$rc" -eq 0 ] || exit "$rc"
+          el=$(( ($(now_ms) - start) / 1000 ))
+          if [ "$got" = "$want" ]; then echo "MATCHED after ${el}s: $got"; exit 0; fi
+          if awk -v e="$(( $(now_ms) - start ))" -v l="$limit" 'BEGIN { exit !(e >= l * 1000) }'; then
+              echo "TIMEOUT after ${el}s: last value $got (wanted $want)"; exit 3
+          fi
+          sleep "$F_EVERY"
+      done ;;
+
+  msgbox)
+      # Read the open message box; --wait N polls up to N s for one to open; --answer <label|index> clicks a button
+      # (label: case-insensitive exact match). 0 done, 3 no box, 4 no such button.
+      need_jq msgbox
+      start=$(now_ms); box=""
+      while :; do
+          d=$(post menu '{"action":"describe"}' 2>/dev/null)
+          if [ "$(printf '%s' "$d" | jq -r '.messageBoxOpen // false' 2>/dev/null)" = true ]; then box="$d"; break; fi
+          awk -v e="$(( $(now_ms) - start ))" -v l="$F_WAIT" 'BEGIN { exit !(e >= l * 1000) }' && break
+          sleep 0.5
+      done
+      [ -n "$box" ] || { echo "NO MESSAGE BOX (waited ${F_WAIT}s)"; exit 3; }
+      printf '%s' "$box" | jq -c '{bodyText, buttons}'
+      [ "$HAVE_ANSWER" -eq 1 ] || exit 0
+      idx=$(printf '%s' "$box" | jq -r --arg a "$F_ANSWER" '
+          (.buttons // []) as $b
+          | if ($a | test("^[0-9]+$")) then (if ($a | tonumber) < ($b | length) then $a else empty end)
+            else ([range(0; $b | length) | select(($b[.] | ascii_downcase) == ($a | ascii_downcase))] | first // empty | tostring) end')
+      [ -n "$idx" ] || { echo "ERROR: no button '$F_ANSWER' (buttons: $(printf '%s' "$box" | jq -c '.buttons'))" >&2; exit 4; }
+      post menu "{\"action\":\"accept\",\"index\":$idx}" >/dev/null || exit $?
+      label=$(printf '%s' "$box" | jq -r --argjson i "$idx" '.buttons[$i]')
+      sleep 0.5
+      next=$(post menu '{"action":"describe"}' 2>/dev/null | jq -c 'if .messageBoxOpen then {bodyText, buttons} else empty end' 2>/dev/null)
+      echo "ANSWERED: $label (index $idx)"
+      [ -n "$next" ] && echo "NEXT BOX: $next"
+      exit 0 ;;
+
+  coc)
+      # Console `coc <cell>`, then wait until the load is over: no Loading Menu, a loaded player in the target cell,
+      # and the frame counter advancing. 0 arrived, 3 timeout, 4 the console rejected the cell.
+      [ $# -ge 1 ] || { echo "usage: devbench-cli.sh coc <CellEditorID> [--timeout 120]" >&2; exit 1; }
+      need_jq coc
+      target="$1"; limit="${F_TIMEOUT:-120}"; tl=$(printf '%s' "$target" | tr '[:upper:]' '[:lower:]')
+      from=$(player_cell)
+      out=$(post console "{\"action\":\"exec\",\"command\":$(json_string "coc $target"),\"capture\":true}") || exit $?
+      if printf '%s' "$out" | jq -r '(.lines // [])[]' 2>/dev/null | grep -qi 'not found\|invalid'; then
+          echo "ERROR: coc rejected: $(printf '%s' "$out" | jq -r '(.lines // []) | join(" / ")')" >&2; exit 4
+      fi
+      start=$(now_ms); saw_loading=0; arrived=""; settle=0; cur=""; cl=""
+      while :; do
+          sleep 1
+          el=$(( ($(now_ms) - start) / 1000 ))
+          if probe_health && [ "${PH_CODE:-}" = 200 ]; then
+              case "$PH_BODY" in *'"Loading Menu"'*) saw_loading=1; settle=0; continue ;; esac
+              cur=$(player_cell); cl=$(printf '%s' "$cur" | tr '[:upper:]' '[:lower:]')
+              # before the load visibly starts, the old cell (even the same one) proves nothing: wait 3 s for it
+              if [ -n "$cur" ] && { [ "$saw_loading" -eq 1 ] || [ "$el" -ge 3 ]; }; then
+                  f1=$(printf '%s' "$PH_BODY" | jget '.frame'); sleep 0.5; probe_health
+                  f2=$(printf '%s' "$PH_BODY" | jget '.frame')
+                  if [ -n "$f1" ] && [ "$f1" != "$f2" ]; then
+                      if [ "$cl" = "$tl" ]; then echo "ARRIVED: $cur after ${el}s"; exit 0; fi
+                      # an exterior coc can land in a neighbouring cell: accept a changed cell after 5 settled seconds
+                      if [ "$cur" != "$from" ]; then settle=$((settle + 1)); arrived="$cur"
+                          [ "$settle" -ge 5 ] && { echo "ARRIVED: $cur after ${el}s (asked for $target; an exterior coc can land in a neighbouring cell)"; exit 0; }
+                      fi
+                  fi
+              fi
+          fi
+          # The console prints nothing for an unknown cell (checked live 2026-11-13). A real coc always shows the
+          # Loading Menu, so 10 s with no load and the player still in the old cell means it did nothing.
+          if [ "$saw_loading" -eq 0 ] && [ "$el" -ge 10 ] && [ -n "$cur" ] && [ "$cur" = "$from" ] && [ "$cl" != "$tl" ]; then
+              echo "ERROR: coc $target did nothing after ${el}s (no loading screen, still in $cur): unknown cell?" >&2; exit 4
+          fi
+          if [ "$el" -ge "$limit" ]; then
+              echo "TIMEOUT after ${el}s: player in ${cur:-${arrived:-unknown}}, wanted $target"; exit 3
+          fi
+      done ;;
+
+  goto)
+      # Put the player BESIDE a reference, never inside it: `player.moveto <ref>` lands in the ref's own collision
+      # (stuck in a runestone, 2026-11-13). Moves --dist units (150) in front of the ref along its facing, --z (20)
+      # up, turns the player to face it, then waits for its 3D. --if-unloaded: do nothing when the 3D is already
+      # loaded (Activate works from across the cell). 0 there, 3 its 3D did not load, 4 the reference is unknown.
+      [ $# -ge 1 ] || { echo "usage: devbench-cli.sh goto <0xREF | Plugin.esp:id> [--dist 150] [--z 20] [--if-unloaded] [--timeout 30]" >&2; exit 1; }
+      need_jq goto
+      ref=$(resolve_form "$1") || exit 4
+      self="{\"form\":\"$ref\"}"
+      loaded=$(pcall ObjectReference Is3DLoaded '[]' "$self" 2>/dev/null)
+      if [ -z "$loaded" ]; then
+          echo "ERROR: reference $ref is not in memory (a temporary reference in an unloaded cell). 'coc' to its cell first." >&2
+          exit 4
+      fi
+      if [ "$F_IFUNLOADED" -eq 1 ] && [ "$loaded" = true ]; then echo "ALREADY LOADED: $ref (player not moved)"; exit 0; fi
+      az=$(pcall ObjectReference GetAngleZ '[]' "$self") || exit $?
+      read -r dx dy dz face < <(awk -v a="$az" -v d="$F_DIST" -v z="$F_Z" 'BEGIN { r = a * 3.14159265358979 / 180
+          printf "%.1f %.1f %.1f %.1f\n", d * sin(r), d * cos(r), z, (a + 180) % 360 }')
+      pcall ObjectReference MoveTo "[$self,$dx,$dy,$dz,false]" '{"form":"0x14"}' >/dev/null || exit $?
+      limit="${F_TIMEOUT:-30}"; start=$(now_ms)
+      while :; do
+          sleep 1
+          [ "$(pcall ObjectReference Is3DLoaded '[]' "$self" 2>/dev/null)" = true ] && break
+          [ $(( ($(now_ms) - start) / 1000 )) -ge "$limit" ] && { echo "TIMEOUT: moved, but the 3D of $ref did not load in ${limit}s"; exit 3; }
+      done
+      pcall ObjectReference SetAngle "[0.0,0.0,$face]" '{"form":"0x14"}' >/dev/null 2>&1
+      dist=$(pcall ObjectReference GetDistance '[{"form":"0x14"}]' "$self" 2>/dev/null)
+      echo "AT: $ref (distance ${dist:-?}, cell $(player_cell))"
+      exit 0 ;;
 
   describe)
       [ $# -ge 1 ] || { echo "usage: devbench-cli.sh describe <Script>" >&2; exit 1; }
@@ -616,12 +864,12 @@ case "$CMD" in
       hlen=$size; [ "$hlen" -le 256 ] || hlen=256
       printf 'path=%s\nsize=%s\nhead=%s\nheadlen=%s\n' "$log" "$size" "$(file_head_sum "$log" "$hlen")" "$hlen" > "$PAPYRUS_MARK" \
           || { echo "ERROR: cannot write $PAPYRUS_MARK" >&2; exit 1; }
-      echo "mark: $size bytes  $log" ;;
+      echo "mark${MARK_NAME:+ '$MARK_NAME'}: $size bytes  $log" ;;
 
   logdiff)
       # Everything the Papyrus log gained since `logmark`. --errors keeps lines containing error/warning plus
       # their continuation (stack) lines. Says so when the log was rotated or truncated since the mark.
-      [ -f "$PAPYRUS_MARK" ] || { echo "ERROR: no mark yet; run 'devbench-cli.sh logmark' first." >&2; exit 1; }
+      [ -f "$PAPYRUS_MARK" ] || { echo "ERROR: no mark${MARK_NAME:+ '$MARK_NAME'} yet; run 'devbench-cli.sh logmark${MARK_NAME:+ --name $MARK_NAME}' first." >&2; exit 1; }
       log=$(papyrus_log_path) || exit 3
       [ -f "$log" ] || { echo "ERROR: Papyrus log not found: $log" >&2; exit 3; }
       msize=$(mark_field size); mpath=$(mark_field path); mhead=$(mark_field head); mhlen=$(mark_field headlen)
@@ -639,10 +887,14 @@ case "$CMD" in
           echo "(no new Papyrus log output since the mark at $msize bytes)" >&2
           exit 0
       fi
-      if [ "$F_ERRORS" -eq 1 ]; then
-          tail -c +"$start" "$log" | awk '
-              /^\[[0-9][0-9]\/[0-9][0-9]\/[0-9][0-9][0-9][0-9] - / { keep = (tolower($0) ~ /error|warning/) }
-              keep { print }'
+      refhex=""
+      if [ -n "$F_REF" ]; then
+          refhex=$(resolve_form "$F_REF") || exit 4
+          refhex=$(printf '%s' "${refhex#0[xX]}" | tr '[:lower:]' '[:upper:]')
+          while [ ${#refhex} -lt 8 ]; do refhex="0$refhex"; done
+      fi
+      if [ "$F_ERRORS" -eq 1 ] || [ "$HAVE_GREP" -eq 1 ] || [ -n "$refhex" ]; then
+          tail -c +"$start" "$log" | filter_entries "$F_ERRORS" "$GREP" "$refhex"
       else
           tail -c +"$start" "$log"
       fi ;;
@@ -655,6 +907,6 @@ case "$CMD" in
 
   *)
       echo "Unknown command: $CMD" >&2
-      echo "Try: ping | alive | wait | health | state | fps | inspect <kind> | exec | call | describe | notify | logmark | logdiff | tool | gfx | dialogue | tools | port" >&2
+      echo "Try: ping | alive | wait | health | state | fps | inspect <kind> | exec | call | waitcall | form | coc | goto | msgbox | describe | notify | logmark | logdiff | tool | gfx | dialogue | tools | port" >&2
       exit 1 ;;
 esac

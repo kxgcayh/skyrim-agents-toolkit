@@ -355,3 +355,155 @@ def test_logdiff_errors_does_not_latch_on_a_continuation_line(tmp_path):
                  "[11/12/2026 - 01:00:03AM] info after\n   plain continuation\n")
     r = _cli_env(env, "logdiff", "--errors")
     assert r.stdout == "[11/12/2026 - 01:00:02AM] error: real\n   stack frame\n", r.stdout
+
+
+# ------------------------------------------- live-test commands (2026-11-13): form, call specs, waitcall, msgbox,
+# coc, goto, named marks and entry filters. Mode "sim" in mock_devbench.py is a small stateful game.
+
+def _sim_state(port):
+    import json
+    import urllib.request
+    req = urllib.request.Request(f"http://127.0.0.1:{port}/api/tool/sim", data=b"{}", method="POST",
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=5) as r:
+        return json.loads(r.read())
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+@pytest.mark.parametrize("spec, expected", [
+    ("BSHeartland.esm:0012F7", "0x160012F7"), ("0012F7:bsheartland.ESM", "0x160012F7"),
+    ("BSHeartland.esm:3B0012F7", "0x160012F7"),        # a full ID's load index is replaced
+    ("Some Patch.esp:000800", "0xFE324800"), ("Some Patch.esp:FE001800", "0xFE324800"),
+    ("0x14", "0x14"),
+])
+def test_form_resolves_full_and_light_plugins(server, spec, expected):
+    r = run_cli("form", spec, port=server.port)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip() == expected
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_form_unknown_plugin_fails_cleanly(server):
+    r = run_cli("form", "Missing.esp:000800", port=server.port)
+    assert r.returncode == 1 and "plugin not loaded: Missing.esp" in r.stderr, r.stderr
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_call_resolves_plugin_relative_forms_in_args_and_self(server):
+    import json
+    r = run_cli("call", "ObjectReference", "Echo", '[{"form":"Some Patch.esp:000800"},false]',
+                '{"form":"BSHeartland.esm:0012F7"}', "--value", port=server.port)
+    assert r.returncode == 0, r.stderr
+    sent = json.loads(r.stdout)
+    assert sent["args"] == [{"form": "0xFE324800"}, False] and sent["self"] == {"form": "0x160012F7"}
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_waitcall_polls_until_the_value_matches(server):
+    r = run_cli("waitcall", "Actor", "HasSpell", '[{"form":"0x313A9AF6"}]', '{"form":"0x14"}',
+                "--equals", "true", "--timeout", "10", "--every", "0.2", port=server.port)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout.startswith("MATCHED") and _sim_state(server.port)["hasspell"] == 3
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_waitcall_times_out_with_the_last_value(server):
+    r = run_cli("waitcall", "ObjectReference", "GetAngleZ", "[]", '{"form":"0x14"}',
+                "--equals", "0", "--timeout", "1", "--every", "0.2", port=server.port)
+    assert r.returncode == 3 and "last value 90" in r.stdout, r.stdout + r.stderr
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_msgbox_answers_by_label(server):
+    r = run_cli("msgbox", "--wait", "2", "--answer", "leave", port=server.port)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert '"Pray?"' in r.stdout and "ANSWERED: Leave (index 1)" in r.stdout
+    assert _sim_state(server.port)["answer"] == 1
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_msgbox_unknown_button_does_not_click(server):
+    r = run_cli("msgbox", "--answer", "Maybe", port=server.port)
+    assert r.returncode == 4 and "no button 'Maybe'" in r.stderr
+    assert _sim_state(server.port)["answer"] is None
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_coc_waits_for_the_load_and_the_cell(server):
+    t = time.time()
+    r = run_cli("coc", "GoodCell", "--timeout", "20", port=server.port)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout.startswith("ARRIVED: GoodCell") and time.time() - t >= 1.5
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_coc_rejected_cell_exits_4(server):
+    r = run_cli("coc", "NoSuchCell", port=server.port)
+    assert r.returncode == 4 and "rejected" in r.stderr
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_goto_moves_beside_the_ref_not_onto_it(server):
+    r = run_cli("goto", "BSHeartland.esm:0012F7", "--dist", "150", port=server.port)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert r.stdout.startswith("AT: 0x160012F7")
+    target, dx, dy, dz, match = _sim_state(server.port)["moveto"]
+    assert target == {"form": "0x160012F7"} and match is False
+    assert abs(dx - 150.0) < 0.2 and abs(dy) < 0.2 and dz == 20.0    # angle 90: in front = +X
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_goto_if_unloaded_leaves_the_player_alone_when_loaded(server):
+    r = run_cli("goto", "0x14", "--if-unloaded", port=server.port)
+    assert r.returncode == 0 and r.stdout.startswith("ALREADY LOADED")
+    assert _sim_state(server.port)["moveto"] is None
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_goto_ref_not_in_memory_says_coc_first(server):
+    r = run_cli("goto", "0x16000999", port=server.port)
+    assert r.returncode == 4 and "'coc' to its cell first" in r.stderr
+
+
+def test_named_marks_do_not_collide(tmp_path):
+    env = _logs(tmp_path, None)
+    log = tmp_path / "Papyrus.0.log"
+    log.write_text("[11/13/2026 - 01:00:00AM] start\n")
+    assert _cli_env(env, "logmark", "--name", "listener").returncode == 0
+    with log.open("a") as fh:
+        fh.write("[11/13/2026 - 01:00:01AM] one\n")
+    assert _cli_env(env, "logmark", "--name", "test").returncode == 0
+    with log.open("a") as fh:
+        fh.write("[11/13/2026 - 01:00:02AM] two\n")
+    assert _cli_env(env, "logdiff", "--name", "test").stdout == "[11/13/2026 - 01:00:02AM] two\n"
+    assert _cli_env(env, "logdiff", "--name", "listener").stdout.count("\n") == 2
+    assert _cli_env(env, "logdiff").returncode == 1                      # the unnamed mark was never set
+    assert _cli_env(env, "logmark", "--name", "../x").returncode == 1
+
+
+def test_logdiff_ref_and_grep_keep_whole_entries(tmp_path):
+    env = _logs(tmp_path, None)
+    log = tmp_path / "Papyrus.0.log"
+    log.write_text("[11/13/2026 - 01:00:00AM] start\n")
+    assert _cli_env(env, "logmark").returncode == 0
+    with log.open("a") as fh:
+        fh.write("[11/13/2026 - 04:20:02PM] error: Cannot call Show() on a None object, aborting function call\n"
+                 "stack:\n\t[ (3B015490)].TempleBlessingScript.OnActivate() - \"TempleBlessingScript.psc\" Line ?\n"
+                 "[11/13/2026 - 04:20:03PM] error: Unable to call RegisterForSingleUpdate\n"
+                 "stack:\n\t[None].MAG_ResistanceTracker_Script.OnEffectStart() - \"x.psc\" Line ?\n"
+                 "[11/13/2026 - 04:20:04PM] [BHKS] info line mentioning templeblessingscript\n")
+    r = _cli_env(env, "logdiff", "--ref", "0x3b015490")
+    assert r.stdout.startswith("[11/13/2026 - 04:20:02PM] error: Cannot call Show()") and r.stdout.count("[11/13") == 1
+    assert "(3B015490)" in r.stdout                                        # the stack line came along
+    r = _cli_env(env, "logdiff", "--errors", "--grep", "TempleBlessing")
+    assert r.stdout.count("[11/13") == 1 and "3B015490" in r.stdout        # info line dropped by --errors
+    r = _cli_env(env, "logdiff", "--grep", "templeblessing")
+    assert r.stdout.count("[11/13") == 2
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_coc_unknown_cell_with_no_console_output_fails_fast(server):
+    t = time.time()
+    r = run_cli("coc", "SilentBadCell", "--timeout", "60", port=server.port)
+    assert r.returncode == 4 and "did nothing" in r.stderr, r.stdout + r.stderr
+    assert time.time() - t < 20                       # not the 60 s timeout
