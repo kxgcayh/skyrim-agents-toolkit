@@ -237,6 +237,21 @@ def test_scratch_only_applies_inside_the_install():
     assert targets.zone("c:/elsewhere/__pycache__/x", ROOTS) == "outside"
 
 
+@pytest.mark.parametrize("real", ["C:/", "C:\\", "c:/elsewhere/", "d:/loops/back/to/x"])
+def test_zone_follows_realpath_once_and_terminates(monkeypatch, real):
+    """Windows realpath("C:/") keeps the root slash while zone() strips it from its own copy, so the old raw
+    comparison never matched and zone() recursed until RecursionError (CI run 43135316865, every Windows leg of
+    test_skyguard_timing). A realpath that never settles must also end after one hop."""
+    monkeypatch.setattr(targets.os.path, "realpath", lambda q: real)
+    assert targets.zone("C:/", ROOTS) == "outside"
+    assert targets.zone("c:/elsewhere", ROOTS) == "outside"
+
+
+def test_zone_still_follows_a_link_into_a_protected_root(monkeypatch):
+    monkeypatch.setattr(targets.os.path, "realpath", lambda q: "d:/mo2/mods/A/x.esp" if q == "c:/link" else q)
+    assert targets.zone("c:/link", ROOTS) == "mo2"
+
+
 def test_scratch_globs_are_validated_data():
     assert paths.SCRATCH_NAMES == ("__pycache__", "node_modules", ".pytest_cache")
     with pytest.raises(ValueError):

@@ -12,24 +12,27 @@ Run this **from the toolkit root** (the folder containing `tools/` and `examples
 
 ```bash
 npm ci --ignore-scripts --no-audit --no-fund
+python3 tools/xeditlib/fetch.py
 ```
 
-That installs exactly the shipped `package-lock.json`: xeditlib v1.0.2 (kxgcayh fork, commit `0221620`) with koffi 2.15.1, the pair this toolkit was tested with, each checked against its integrity hash; see `docs/installing-tools.md` for why both are pinned and how to verify them.
+`npm ci` installs koffi 2.15.1 from the shipped `package-lock.json`, checked against its integrity hash. `fetch.py`
+downloads xeditlib v1.1.0 (kxgcayh fork, commit `9632663`), checks every file against a pinned SHA-256 manifest and
+installs it into `tools/xeditlib/lib/`; `fetch.py --check` re-verifies it offline. See `docs/installing-tools.md`
+for why both are pinned.
 
-Installing at the root puts `node_modules/xeditlib` where Node's upward module lookup can find it
-from every bundled script — `tools/xelib/*.js`, `tools/resaver-resolve-names.js`, and `examples/*.js`
-all `require('xeditlib')` and resolve it from here. (Install it somewhere deeper and those scripts
-throw `MODULE_NOT_FOUND`.)
+Every bundled script (`tools/xelib/*.js`, `tools/resaver-resolve-names.js`, `examples/*.js`) loads xeditlib through
+`tools/xelib/load.js`, which tries `XEDITLIB_JS`, then `tools/xeditlib/lib/`, then `require('xeditlib')`, and
+finds koffi in the root `node_modules/`.
 
 This installs:
 - `xelib.js` -- The Node.js wrapper (all 163 functions with correct FFI signatures)
 - `XEditLib.dll` + the `*.Hardcoded.dat` game-data files -- the Delphi-compiled binary and its data.
   `xelib.js` loads the DLL relative to its own package folder, and XEditLib finds the `.dat` files
   next to the DLL, so **the scripts work regardless of your current working directory** once the
-  package is installed at the root.
+  package is installed.
 - `koffi` -- The FFI library for calling native DLL functions from Node.js
 
-Verify it resolves: from the toolkit root, `node -e "require('xeditlib')"` should exit clean.
+Verify it: from the toolkit root, `python3 tools/xeditlib/fetch.py --check` should exit 0.
 
 ## Critical Setup: Registry Key
 

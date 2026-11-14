@@ -692,17 +692,16 @@ REGISTRY = [
      "upstream": ("github-head", "kxgcayh/Caprica"),   # like Champollion: a fork with no releases, pinned to a main commit
      "refs": [{"pattern": r"(?:kxgcayh/Caprica\S*(?: fork)? (?:at |\()?commit |Caprica checkout )(?P<v>[0-9a-f]{7,40})\b",
                "compare": "prefix"}]},
-    {"name": "xeditlib", "pins": [("regex", "package.json", r"xeditlib/tar\.gz/(?P<v>[0-9a-f]{40})"),
-                                  ("regex", "package-lock.json", r"xeditlib/tar\.gz/(?P<v>[0-9a-f]{40})")],
+    {"name": "xeditlib", "pins": [("regex", "tools/xeditlib/fetch.py", r'(?m)^COMMIT = "(?P<v>[0-9a-f]{40})"')],
      "refs": [{"pattern": r"(?:kxgcayh|WingedGuardian)/xeditlib#(?P<v>[0-9a-f]{40})"},
-              {"pattern": r"(?:xeditlib/tar\.gz/|commit `)(?P<v>[0-9a-f]{7,40})", "line": r"xeditlib",
+              {"pattern": r"(?:xeditlib/tar\.gz/|xeditlib[^\n]{0,40}?commit `)(?P<v>[0-9a-f]{7,40})", "line": r"xeditlib",
                "compare": "prefix"},
               {"pattern": r'(?m)^\s*echo "\s*xeditlib\b[^"\n]*?= commit (?P<v>[0-9a-f]{7,40})',
                "compare": "prefix"},
               {"pattern": r"\bnpm (?:install|i)\b(?P<tail>[^\n`\"']*(?:kxgcayh|WingedGuardian)/xeditlib[^\n`\"']*)",
                "version": r"xeditlib#(?P<v>[0-9a-f]{40})", "unpinned": "xeditlib install without #<commit>"}],
      "checks": [("commit_package", {"repo": "kxgcayh/xeditlib", "package": "xeditlib",
-                  "version_sites": [("json", "package-lock.json", ["packages", "node_modules/xeditlib", "version"]),
+                  "version_sites": [("regex", "tools/xeditlib/fetch.py", r'(?m)^VERSION = "(?P<v>\d+\.\d+\.\d+)"'),
                                     ("regex", PINNED_DOWNLOADS, r"xeditlib v(?P<v>\d+\.\d+\.\d+) = commit")]})]},
     {"name": "zEdit", "upstream": ("github", "z-edit/zedit"),
      "not_delivered": "credited only: XEditLib.dll reaches users inside the pinned xeditlib commit, not from zEdit"},
@@ -1609,6 +1608,9 @@ _OWN = ("downloads the toolkit's OWN release by its tag in order to verify it: t
 _HOSTREF = ("recipe for the user's OWN machine in a macOS/cross-compile doc or reference skill: quoted for reading, "
             "never run or delivered by the toolkit; versions follow the user's package manager")
 _CI = ("CI runner tooling (T10's workflows): never delivered to a user; versions follow the runner image")
+_BSARCH_HOST = ("build prerequisite of tools/bsarch-native named for the user's own machine (the toolkit never runs "
+                "the package manager); lz4 is linked statically and the build pins and hash-records every source it "
+                "compiles, so the binary does not depend on which lz4 the user's package manager installed")
 DELIVERY_EXEMPT = [
     ("docs/getting-started.md", "npm", r"npm install -g @anthropic-ai/claude-code", _CLAUDE),
     ("kb/esp-xedit.md", "dotnet-tool", r"a `dotnet tool update` on an SDK 6/8/9 machine failed",
@@ -1628,6 +1630,10 @@ DELIVERY_EXEMPT = [
     ("docs/skse-cross-compile.md", "system-package", r"apt-get install -y --no-install-recommends", _SKSE),
     ("docs/skse-cross-compile.md", "pipe-to-shell", r"xmake\.io/shget\.text \| bash", _SKSE),
     ("docs/skse-cross-compile.md", "download-unverified", r"Jake-Shadle/xwin/releases/download", _SKSE),
+    ("setup.sh", "system-package", r"a static lz4 \(brew install lz4\)", _BSARCH_HOST),
+    ("docs/installing-tools.md", "system-package", r"a static lz4: `brew install lz4`", _BSARCH_HOST),
+    ("tools/bsarch-native/README.md", "system-package", r"brew install lz4|apt install liblz4-dev", _BSARCH_HOST),
+    ("tools/bsarch-native/build.py", "system-package", r"static lz4 \(liblz4\.a and lz4frame\.h\) not found", _BSARCH_HOST),
     (".github/workflows/ci.yml", "system-package", r"sudo apt-get install -y|choco install jq -y", _CI),
     (".github/workflows/full-qualification.yml", "system-package", r"sudo apt-get install -y|choco install jq -y", _CI),
     ("*", "follows-latest", r"install locations \(newest version first\)",

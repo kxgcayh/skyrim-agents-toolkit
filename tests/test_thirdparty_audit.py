@@ -1140,11 +1140,11 @@ XEDIT_URL = "https://raw.githubusercontent.com/kxgcayh/xeditlib/" + XEDIT_COMMIT
 
 
 def xedit_repo(tmp_path, *, version="1.0.2", documentation=True, extra_doc="", hint=None):
-    url = "https://codeload.github.com/kxgcayh/xeditlib/tar.gz/" + XEDIT_COMMIT
+    # c4fda38: the pin lives in tools/xeditlib/fetch.py (COMMIT + VERSION), no longer in package.json/-lock.
     files = {
-        "package.json": json.dumps({"optionalDependencies": {"xeditlib": url}}),
-        "package-lock.json": json.dumps({"packages": {"node_modules/xeditlib": {
-            "resolved": url, "version": version}}}),
+        "tools/xeditlib/fetch.py": 'COMMIT = "%s"\nVERSION = "%s"\n'
+                                   'URL = f"https://codeload.github.com/kxgcayh/xeditlib/tar.gz/{COMMIT}"\n'
+                                   % (XEDIT_COMMIT, version),
     }
     if documentation:
         files["docs/installing-tools.md"] = "xeditlib v1.0.2 = commit `" + XEDIT_COMMIT + "`\n" + extra_doc
@@ -1185,9 +1185,9 @@ def test_xeditlib_wrong_upstream_package_is_drift(tmp_path):
     assert code == 1 and any("package name differs" in r.detail for r in by(rows, ta.DRIFT))
 
 
-def test_xeditlib_locked_package_version_must_match_the_commit(tmp_path):
+def test_xeditlib_fetched_package_version_must_match_the_commit(tmp_path):
     rows, code = audit(xedit_repo(tmp_path, version="1.0.1"), xedit_cache(tmp_path), ["xeditlib"])
-    assert code == 1 and any("package-lock.json" in r.detail for r in by(rows, ta.DRIFT))
+    assert code == 1 and any("tools/xeditlib/fetch.py" in r.detail for r in by(rows, ta.DRIFT))
 
 
 def test_xeditlib_missing_documented_package_version_is_unchecked(tmp_path):

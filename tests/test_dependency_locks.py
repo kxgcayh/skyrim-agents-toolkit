@@ -139,20 +139,24 @@ def test_package_json_pins_exact_versions_that_the_lock_resolves_to():
 
 
 def test_xeditlib_and_koffi_are_locked_so_npm_ci_installs_them():
-    """Plan 8 T6d review I3: a `--no-save` install was wiped by the next `npm ci`/`npm install`. xeditlib (a commit
-    tarball over https -- no SSH, no git) and koffi (exact) are optional dependencies with integrity in the lock, so
-    `npm ci` installs exactly them. The kxgcayh fork's wrapper has no `os` restriction; the DLL itself still runs only on Windows or under Wine."""
+    """Plan 8 T6d review I3, after c4fda38 moved xeditlib out of node_modules: koffi stays an exact optional npm
+    dependency with integrity in the lock, so `npm ci` installs exactly it. xeditlib is no longer an npm dependency
+    (an npm entry would install a second, unverified copy that tools/xelib/load.js could pick up); it is fetched
+    by tools/xeditlib/fetch.py from one commit tarball over https and checked file by file."""
     import re
     package = json.loads((REPO / "package.json").read_text())
     lock = json.loads((REPO / "package-lock.json").read_text())["packages"]
     opt = package["optionalDependencies"]
     assert opt["koffi"] == "2.15.1" and lock["node_modules/koffi"]["version"] == "2.15.1"
-    assert re.fullmatch(r"https://codeload\.github\.com/kxgcayh/xeditlib/tar\.gz/[0-9a-f]{40}", opt["xeditlib"])
-    x = lock["node_modules/xeditlib"]
-    assert x["resolved"] == opt["xeditlib"] and x["optional"] is True and "os" not in x
-    for entry in (x, lock["node_modules/koffi"]):
-        assert entry["integrity"].startswith("sha512-") and entry["resolved"].startswith("https://")
+    k = lock["node_modules/koffi"]
+    assert k["integrity"].startswith("sha512-") and k["resolved"].startswith("https://")
     assert lock[""]["optionalDependencies"] == opt     # the lock was generated from this package.json
+    assert "xeditlib" not in opt and "xeditlib" not in package.get("dependencies", {})
+    assert not any(key.endswith("node_modules/xeditlib") for key in lock)
+    fetch = (REPO / "tools" / "xeditlib" / "fetch.py").read_text(encoding="utf-8")
+    commit = re.search(r'(?m)^COMMIT = "([0-9a-f]{40})"$', fetch)
+    assert commit, "fetch.py pins no 40-hex COMMIT"
+    assert 'URL = f"https://codeload.github.com/kxgcayh/xeditlib/tar.gz/{COMMIT}"' in fetch
 
 
 def _steps_named(steps, needle):

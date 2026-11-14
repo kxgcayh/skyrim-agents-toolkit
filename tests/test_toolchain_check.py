@@ -373,7 +373,7 @@ def test_automod_built_from_a_dirty_tree_is_degraded(tmp_path):
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the native bsarch is for macOS and Linux")
 
 
-def _toolkit(tmp_path: Path, automod: bool = True, build: str | None = None, check_rc: int = 0) -> Path:
+def _bsarch_toolkit(tmp_path: Path, automod: bool = True, build: str | None = None, check_rc: int = 0) -> Path:
     """A toolkit root with a FAKE AutoMod wrapper and, when `build` is given, a fake tools/bsarch-native."""
     root = tmp_path / "tk"
     tools = root / "tools"
@@ -403,7 +403,7 @@ def _run_root(root: Path) -> str:
 
 @posix_only
 def test_bsarch_native_not_built_is_informational_and_names_the_build_command(tmp_path):
-    out = _run_root(_toolkit(tmp_path))
+    out = _run_root(_bsarch_toolkit(tmp_path))
     line = _line(out, "bsarch (native)")
     assert "not built (optional" in line and "tools/bsarch-native/build.py" in line, out
     assert "bsarch-native" not in out.split("RESULT:")[-1].split("A documented")[0].replace("tools/bsarch-native", ""), out
@@ -411,18 +411,18 @@ def test_bsarch_native_not_built_is_informational_and_names_the_build_command(tm
 
 @posix_only
 def test_bsarch_native_built_and_verified_is_ok(tmp_path):
-    out = _run_root(_toolkit(tmp_path, build="built"))
+    out = _run_root(_bsarch_toolkit(tmp_path, build="built"))
     assert " ok " in _line(out, "bsarch (native)"), out
 
 
 @posix_only
 def test_bsarch_native_built_but_failing_its_check_is_a_mismatch_and_degrades_the_result(tmp_path):
-    out = _run_root(_toolkit(tmp_path, build="built", check_rc=1))
+    out = _run_root(_bsarch_toolkit(tmp_path, build="built", check_rc=1))
     assert "MISMATCH" in _line(out, "bsarch (native)") and "pin mismatch" in out, out
     assert "RESULT: DEGRADED" in out and "bsarch-native" in out.split("RESULT:")[-1], out
 
 
 @posix_only
 def test_bsarch_native_is_not_asked_about_without_automod(tmp_path):
-    out = _run_root(_toolkit(tmp_path, automod=False, build="built"))
+    out = _run_root(_bsarch_toolkit(tmp_path, automod=False, build="built"))
     assert "bsarch (native)" not in out, out

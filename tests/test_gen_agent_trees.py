@@ -166,6 +166,8 @@ def test_crlf_target_file_generates_lf(tmp_path):
 def test_repo_is_in_sync():
     """The committed generated files equal what agent/ renders. Fails on a hand edit or a stale regen."""
     import pytest
+    if str(REPO / "tools") not in sys.path:   # run alone (a mutation anchor), nothing else has put tools/ there
+        sys.path.insert(0, str(REPO / "tools"))
     from skyguard import guard_hash
     if any(b"{{PYTHON_PATH}}" not in (REPO / rel).read_bytes() for rel in guard_hash.CONFIGURED if (REPO / rel).is_file()):
         pytest.skip("this working tree is configured by setup.sh; the check runs on a clean checkout (CI)")

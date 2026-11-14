@@ -382,7 +382,7 @@ def _under(path: str, root: str) -> bool:
     return path.startswith(root if root.endswith("/") else root + "/")
 
 
-def zone(abs_path: str, roots) -> str:
+def zone(abs_path: str, roots, _followed: bool = False) -> str:
     """The protection zone of a normalised absolute path; the most specific (longest) matching root wins, ties
     going to mo2, then config, then install. Case-insensitive. `scratch` is an install path with a SCRATCH_GLOBS
     component (R8), except under the install's tools/ or Data/ (paths.SCRATCH_EXCLUDED_TOP: tool runtime and game). The config zone also covers any `Documents/My Games/Skyrim*` folder (the legacy literal)."""
@@ -402,14 +402,16 @@ def zone(abs_path: str, roots) -> str:
         if rel[0] and (tools_cache or
                        rel[0] not in paths.SCRATCH_EXCLUDED_TOP and any(c in paths.SCRATCH_NAMES for c in rel)):
             return "scratch"
-    if best == "outside" and abs_path and is_resolvable(abs_path):
+    # One hop only: realpath is idempotent, and p is compared in its own trailing-slash-stripped form. On Windows
+    # realpath("C:/") keeps the slash while p is "c:", so a raw comparison never matched and recursed without end.
+    if best == "outside" and not _followed and abs_path and is_resolvable(abs_path):
         try:
             real_p = os.path.realpath(abs_path).replace("\\", "/")
             norm_rp = paths.norm_abs(real_p)
             if norm_rp:
                 real_p = norm_rp
-            if real_p and real_p.lower() != p:
-                return zone(real_p, roots)
+            if real_p and (real_p.lower().rstrip("/") or "/") != p:
+                return zone(real_p, roots, _followed=True)
         except (OSError, ValueError):
             pass
     return best
