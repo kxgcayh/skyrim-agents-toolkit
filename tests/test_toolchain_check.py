@@ -396,7 +396,12 @@ def _bsarch_toolkit(tmp_path: Path, automod: bool = True, build: str | None = No
 
 
 def _run_root(root: Path) -> str:
+    # Fake spriggit/dotnet first on PATH: a runner without a global spriggit would otherwise fall
+    # through to `dotnet tool run spriggit`, which the package-manager tripwire refuses (CI run 44026388262).
+    b = _fake(root.parent, PIN, ["10.0.100"])
     env = dict(os.environ)
+    env["PATH"] = str(b).replace("\\", "/") + os.pathsep + env.get("PATH", "")
+    env["TOOLCHAIN_DOTNET"] = str(b / "dotnet").replace("\\", "/")
     env["CLAUDE_PROJECT_DIR"] = str(root)
     return subprocess.run([BASH, str(TOOL)], capture_output=True, text=True, env=env, timeout=120).stdout
 
