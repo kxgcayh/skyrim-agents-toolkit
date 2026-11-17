@@ -654,6 +654,13 @@ def test_a_filtered_search_above_the_install_is_judged_as_its_filterless_control
                  id="ps-foreach-outside"),
 ])
 def test_a_filtered_search_that_cannot_reach_a_root_stays_allowed(shell, command, cwd):
+    # The toolkit's own save-backup store lives in this checkout (S-SAVE-STORE refuses it and every ancestor). A
+    # checkout under /tmp (a scratch worktree) puts that store under /tmp, so `find /tmp ... -delete` CAN reach a root
+    # there and the refusal is right: the row's premise holds only for a checkout outside /tmp.
+    if " /tmp " in " {} ".format(command):
+        real_tmp = os.path.realpath("/tmp").replace("\\", "/").rstrip("/")
+        if os.path.realpath(str(REPO)).replace("\\", "/").lower().startswith(real_tmp.lower() + "/"):
+            pytest.skip("this checkout is under /tmp, so its save-backup store is too")
     assert decide(command, cwd=cwd, shell=shell)[0][0] == "allow", command
 
 

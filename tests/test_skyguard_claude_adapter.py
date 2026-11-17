@@ -392,3 +392,11 @@ def test_run_passes_the_shell_dialect(tmp_path):
     assert unknown.decision == "deny" and bash.decision == "allow"
     r = _run("protect-bash", json.dumps({"tool_name": "Bash", "tool_input": {"command": cmd}}), tmp_path)
     assert r.returncode == 0 and json.loads(r.stdout) == {}
+
+
+def test_a_deep_payload_takes_the_not_json_path_by_name():
+    """CPython 3.15 parses 100k levels; the adapter must not judge such a payload as a normal command (review
+    2026-11-17). It is read as no payload: the fail-closed GUARD INERT path, as for text that is not JSON."""
+    deep = '{"tool_name": "Bash", "tool_input": {"command": "ls"}, "x": ' + "[" * 100000 + "]" * 100000 + "}"
+    assert claude.extract(deep) == claude.extract("not json")
+    assert claude.extract('{"tool_name": "Bash", "tool_input": {"command": "ls"}}') != claude.extract("not json")

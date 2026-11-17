@@ -9,6 +9,37 @@ from __future__ import annotations
 from typing import NamedTuple, Optional, Tuple
 
 
+# Payload nesting limit, shared by every adapter that decodes agent JSON (Claude, Codex, neutral entry). A hook payload is a
+# handful of levels deep (tool_input / args / one nested MCP argument object); 200 leaves room for any real MCP
+# argument tree while refusing hostile depth by NAME. The json module's own limit is not a contract: CPython 3.15
+# parses 100,000 levels without RecursionError, and json.dumps of such a tree may still raise later.
+MAX_DEPTH = 200
+
+
+def too_deep(text: str, limit: int = MAX_DEPTH) -> bool:
+    """True when [ / { nest deeper than `limit` outside JSON strings: one linear pass, BEFORE json.loads. Stray
+    closers never lower the count below zero (malformed text cannot buy back depth; json.loads refuses it anyway)."""
+    depth, in_str, esc = 0, False, False
+    for ch in text:
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch in "[{":
+            depth += 1
+            if depth > limit:
+                return True
+        elif ch in "]}":
+            if depth:
+                depth -= 1
+    return False
+
+
 class Request(NamedTuple):
     v: int = 1
     agent: str = ""

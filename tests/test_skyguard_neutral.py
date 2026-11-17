@@ -295,3 +295,17 @@ def test_the_engine_still_parses_on_python_3_8():
     import ast
     src = (REPO / "tools" / "skyguard" / "neutral.py").read_text(encoding="utf-8")
     ast.parse(src, feature_version=(3, 8))
+
+
+def test_the_depth_limit_is_explicit_and_ignores_brackets_inside_strings():
+    """The refusal no longer depends on json raising RecursionError (CPython 3.15 parses 100k levels)."""
+    lim = neutral.MAX_DEPTH
+    assert not neutral._too_deep("[" * lim + "]" * lim)
+    assert neutral._too_deep("[" * (lim + 1) + "]" * (lim + 1))
+    assert not neutral._too_deep('{"command":"' + "[" * (lim * 5) + '\\"{{{"}')
+    assert neutral.mcp_args('{"command":"' + "[" * (lim * 5) + '"}')["command"].startswith("[[")
+
+
+def test_stray_closers_cannot_buy_back_depth():
+    lim = neutral.MAX_DEPTH
+    assert neutral._too_deep("]" * 50 + "[" * (lim + 1))

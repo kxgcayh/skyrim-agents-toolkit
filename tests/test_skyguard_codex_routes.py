@@ -266,3 +266,10 @@ def test_codex_route_rows(inst, row):
     v, fired = _judge(inst, tool, ti, cwd=None if cwd is None else _sub(inst, cwd))
     shown = v.reason if v.decision in ("deny", "ask") else v.context
     assert (v.decision, fired, shown) == (decision, rule_ids, text)
+
+
+def test_deep_mcp_tool_input_is_refused_by_name_before_any_serialisation():
+    """CPython 3.15 parses this depth; json.dumps of the MCP tool_input must never be reached (review 2026-11-17)."""
+    raw = ('{"hook_event_name": "PreToolUse", "cwd": "C:/x", "tool_name": "mcp__devbench__console", "tool_input": '
+           '{"args": ' + "[" * 5000 + "]" * 5000 + "}}")
+    assert codex.to_request(raw, "win32").failure == "payload nested too deeply"

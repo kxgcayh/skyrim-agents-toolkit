@@ -13,7 +13,7 @@ import json
 from typing import Tuple
 
 from . import codes, engine, mcp_rules
-from .request import Request
+from .request import MAX_DEPTH, Request, too_deep as _too_deep  # noqa: F401 (MAX_DEPTH: tests)
 from .verdict import DECISIONS, STATUSES, Verdict
 
 OK = "SKYGUARD-OK"
@@ -79,6 +79,8 @@ def _unique(pairs):
 
 
 def _loads(text: str, what: str, not_json: str):
+    if _too_deep(text):
+        raise BadRequest("{} is too deeply nested".format(what))
     try:
         return json.loads(text, object_pairs_hook=_unique)
     except BadRequest:

@@ -15,7 +15,7 @@ import shlex
 import sys
 
 from .. import patch_paths
-from ..request import Request
+from ..request import Request, too_deep
 from ..verdict import Verdict
 from modding_harness.transport import execution_cwd_known
 
@@ -112,6 +112,8 @@ def to_request(raw: str, platform: str = sys.platform) -> Request:
         text = text[1:]
     if not text.strip():
         return Request(agent=AGENT, event="pre_tool", empty=True, failure="empty payload")
+    if too_deep(text):              # before parsing: CPython 3.15 json no longer raises RecursionError here
+        return Request(agent=AGENT, event="pre_tool", failure="payload nested too deeply")
     try:
         d = json.loads(text)
     except ValueError:

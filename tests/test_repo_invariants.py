@@ -601,4 +601,6 @@ def test_no_skill_is_scoped_only_to_binary_files():
         if scope and all(BINARY_SCOPE.search(p) for p in scope):
             offenders[skill_md.parent.name] = scope
     assert not offenders, "never-listed skill scopes (issue #25): %r" % offenders
-    assert _scope(REPO / "agent" / "skills" / "skyrim-context" / "SKILL.md"), "text-type scoping is kept"
+    # Fork (9a68cdb, 2026-11-04): skyrim-context and the binary-file skills carry no `paths:` gate, so they are always
+    # listed. Upstream keeps a text-type scope on skyrim-context; this fork does not.
+    assert not _scope(REPO / "agent" / "skills" / "skyrim-context" / "SKILL.md"), "fork: skyrim-context is ungated"

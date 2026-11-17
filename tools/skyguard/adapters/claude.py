@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 
+from ..request import too_deep
+
 
 def _jq_r(v) -> str:
     """`jq -r '<path> // empty'`: null/false/missing -> "", strings raw, everything else as JSON."""
@@ -86,8 +88,10 @@ def extract(payload_text: str) -> dict:
     t = payload_text.replace("\x00", "")          # $(cat) drops NUL before jq ever sees it
     empty = t.rstrip("\r\n") == ""                 # [ -z "$INPUT" ]
     try:
-        d = json.loads(t) if t.strip() else None
-    except ValueError:
+        # A payload nested past MAX_DEPTH takes the not-JSON path (no command: GUARD INERT deny), by name rather than
+        # by whether this interpreter's json raises RecursionError (CPython 3.15 does not; review 2026-11-17).
+        d = json.loads(t) if t.strip() and not too_deep(t) else None
+    except (ValueError, RecursionError):
         d = None
     d = d if isinstance(d, dict) else {}
     ti = d.get("tool_input") if isinstance(d.get("tool_input"), dict) else {}
