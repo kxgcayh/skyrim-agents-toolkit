@@ -12,6 +12,7 @@
 #
 # Usage:
 #   bash tools/devbench-cli.sh ping                       # server self-test (NOT proof of liveness)
+#   bash tools/devbench-cli.sh wait [seconds] [--ingame]  # poll until the game answers (default 300 s); --ingame also waits for a loaded save
 #   bash tools/devbench-cli.sh alive                      # is the GAME running / paused / hung?
 #   bash tools/devbench-cli.sh wait [secs=300] [--ingame] # poll /api/health every 3 s until it answers
 #                                                         #   (--ingame: also a loaded player); 0 ready, 3 timeout
@@ -52,6 +53,7 @@
 #                                                         # what the Papyrus log gained since the mark, as whole
 #                                                         #   entries (line + stack); named marks never collide
 #                                                         #   (DEVBENCH_PAPYRUS_LOG=<file> overrides the path)
+#   bash tools/devbench-cli.sh quest 0x1607CADF           # IsRunning / IsCompleted / current stage of a quest, by FormID
 #   bash tools/devbench-cli.sh tools                      # discover installed tools and schemas
 #   bash tools/devbench-cli.sh gfx '{"op":"get","menu":"Dialogue Menu","path":"_root"}'
 #   bash tools/devbench-cli.sh dialogue '{"action":"inspect"}'
@@ -63,7 +65,10 @@
 # replaces that list; DEVBENCH_RAW=1 or --raw (any command) prints replies untouched. Needs jq.
 #
 # Port: read from Data/SKSE/Plugins/devbench/runtime.json when present, else the per-runtime default
-# (VR 8921, SE/AE 8920). Override with DEVBENCH_PORT=nnnn.
+# (VR 8921, SE/AE 8920). Override with DEVBENCH_PORT=nnnn. Under Mod Organizer 2 the file lands in
+# <overwrite>/SKSE/Plugins/devbench/runtime.json; the wrapper finds it through SKYRIM_MO2_OVERWRITE in
+# skyrim-paths.env (override the env file with DEVBENCH_PATHS_ENV).
+# Host: 127.0.0.1 unless DEVBENCH_HOST is set (a game in a VM or bottle with its own network address).
 
 set -u
 # Every command here pipes the HTTP helper into a formatter; without pipefail a dead server (-> 1)
@@ -80,6 +85,12 @@ command -v curl >/dev/null 2>&1 || { echo "ERROR: curl not found." >&2; exit 1; 
 HAVE_JQ=0; command -v jq >/dev/null 2>&1 && HAVE_JQ=1
 
 # --- Resolve the port -------------------------------------------------------
+PATHS_ENV="${DEVBENCH_PATHS_ENV:-$GAME_DIR/skyrim-paths.env}"
+paths_env_value() { # $1 = KEY from skyrim-paths.env (written by setup.sh); prints the unquoted value, or nothing
+    [ -f "$PATHS_ENV" ] || return 0
+    sed -n "s/^$1=//p" "$PATHS_ENV" | head -1 | sed "s/^['\"]//; s/['\"]\$//"
+}
+
 resolve_port() {
     if [ -n "${DEVBENCH_PORT:-}" ]; then echo "$DEVBENCH_PORT"; return; fi
     # DevBench writes the port it actually bound here (it iterates if the default was taken).
@@ -87,6 +98,16 @@ resolve_port() {
         p=$(sed -n 's/.*"port"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$RUNTIME_JSON" | head -1)
         if [ "${p:-0}" -ge 1 ] 2>/dev/null && [ "${p:-0}" -le 65535 ] 2>/dev/null; then
             echo "$p"; return
+        fi
+    fi
+    # Mod Organizer 2: files a plugin writes during a session land in overwrite/, not in Data/.
+    if [ -z "${DEVBENCH_RUNTIME_JSON:-}" ]; then
+        local ow
+        ow="$(paths_env_value SKYRIM_MO2_OVERWRITE)"
+        if [ -n "$ow" ] && [ -f "$ow/SKSE/Plugins/devbench/runtime.json" ]; then
+            RUNTIME_JSON="$ow/SKSE/Plugins/devbench/runtime.json"
+            DEVBENCH_RUNTIME_JSON="$RUNTIME_JSON"
+            resolve_port; return
         fi
     fi
     # Server.cpp mirrors runtime.json outside the mod manager's virtual filesystem.
@@ -105,7 +126,8 @@ resolve_port() {
     echo 8920
 }
 PORT="$(resolve_port)"
-BASE="http://127.0.0.1:$PORT"
+HOST="${DEVBENCH_HOST:-127.0.0.1}"
+BASE="http://$HOST:$PORT"
 
 # --- Output shaping ---------------------------------------------------------
 # Every reply carries `blockedBy` ([{name,hint}]) for open menus, and the always-open HUD menus make it
@@ -167,11 +189,47 @@ now_ms() {
     if [ -n "$t" ]; then echo "$t"; else echo $(( $(date +%s) * 1000 )); fi
 }
 
+file_age_min() { # minutes since a file was last written; nothing if unknown
+    local m now
+    m=$(stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null) || return 0
+    now=$(date +%s); echo $(( (now - m) / 60 ))
+}
+
 dead_port() {
-    echo "ERROR: no response from DevBench on port $PORT." >&2
-    echo "  The game must be RUNNING with a save loaded (VR: with a headset, or headless" >&2
-    echo "  through tools/vr-headless.sh). If it IS running, check the bound port in" >&2
-    echo "  Data/SKSE/Plugins/devbench/runtime.json or set DEVBENCH_PORT." >&2
+    echo "ERROR: no response from DevBench at $HOST:$PORT." >&2
+    # Say WHY, so a closed game is told apart from a wrong port or host without guessing.
+    local src log age
+    if [ -n "${DEVBENCH_PORT:-}" ]; then src="DEVBENCH_PORT"
+    elif [ -n "${DEVBENCH_RUNTIME_JSON:-}" ] && [ -f "$DEVBENCH_RUNTIME_JSON" ]; then src="$DEVBENCH_RUNTIME_JSON"
+    elif [ -f "$RUNTIME_JSON" ]; then src="$RUNTIME_JSON"
+    elif [ -f "$(paths_env_value SKYRIM_MO2_OVERWRITE)/SKSE/Plugins/devbench/runtime.json" ]; then
+        src="$(paths_env_value SKYRIM_MO2_OVERWRITE)/SKSE/Plugins/devbench/runtime.json"
+    else src="per-runtime default (no runtime.json found)"; fi
+    echo "  port $PORT came from: $src" >&2
+    if command -v pgrep >/dev/null 2>&1; then
+        if pgrep -f 'SkyrimSE|SkyrimVR|SkyrimSELauncher|skse64_loader' >/dev/null 2>&1; then
+            echo "  a Skyrim process IS running on this machine: check the port above, or DEVBENCH_HOST" >&2
+        else
+            echo "  no Skyrim process on this machine (a game in a VM or on another machine needs DEVBENCH_HOST)" >&2
+        fi
+    fi
+    log="${DEVBENCH_SKSE_LOG:-}"
+    if [ -z "$log" ]; then
+        local docs; docs="$(paths_env_value SKYRIM_DOCUMENTS_DIR)"
+        [ -n "$docs" ] && for f in "$docs/SKSE/skse64.log" "$docs/SKSE/sksevr.log"; do
+            [ -f "$f" ] && { log="$f"; break; }
+        done
+    fi
+    if [ -n "$log" ] && [ -f "$log" ]; then
+        age="$(file_age_min "$log")"
+        if grep -qi 'devbench.*loaded correctly' "$log" 2>/dev/null; then
+            echo "  SKSE log ($log): DevBench loaded; log last written ${age:-?} min ago" >&2
+        else
+            echo "  SKSE log ($log): no 'DevBench loaded correctly' line; the plugin did not load" >&2
+        fi
+    fi
+    echo "  The game must be RUNNING (a save loaded for world/Papyrus work). 'devbench-cli.sh wait'" >&2
+    echo "  polls until it answers; VR can run headless through tools/vr-headless.sh." >&2
 }
 
 # --- HTTP ------------------------------------------------------------------
@@ -470,6 +528,54 @@ case "$CMD" in
 
   health)
       http GET /api/health | pretty ;;
+
+  wait)
+      # Poll /api/health (answered off the main thread) until the server replies, so a session can
+      # start the moment the user launches the game instead of guessing. Quiet while waiting.
+      secs=300; ingame=0
+      for a in "$@"; do
+          case "$a" in
+              --ingame) ingame=1 ;;
+              ''|*[!0-9]*) echo "usage: devbench-cli.sh wait [seconds] [--ingame]" >&2; exit 1 ;;
+              *) secs="$a" ;;
+          esac
+      done
+      start=$(date +%s)
+      while :; do
+          h=$(curl -s --max-time 5 -w $'\n%{http_code}' "$BASE/api/health" 2>/dev/null) || h=""
+          code="${h##*$'\n'}"
+          case "$code" in
+              2*)
+                  body="${h%$'\n'*}"
+                  f=$(printf '%s' "$body" | jget '.frame')
+                  now=$(date +%s)
+                  if [ "$ingame" -eq 1 ]; then
+                      case "${f:--1}" in -*) f="" ;; esac
+                  fi
+                  if [ "$ingame" -eq 0 ] || [ -n "$f" ]; then
+                      echo "READY after $(( now - start )) s at $HOST:$PORT (frame ${f:-unresolved: no save loaded yet})"
+                      exit 0
+                  fi ;;
+          esac
+          if [ $(( $(date +%s) - start )) -ge "$secs" ]; then
+              if [ "$ingame" -eq 1 ]; then w=" (in game)"; else w=""; fi
+              echo "TIMEOUT after ${secs} s waiting for DevBench${w}." >&2
+              dead_port
+              exit 1
+          fi
+          sleep 3
+      done ;;
+
+  quest)
+      # IsRunning / IsCompleted / current stage of one quest. Quests are forms: pass the FormID
+      # (load-order prefixed, as `sqv` and the CK show it); editor IDs are not resolved here.
+      [ $# -eq 1 ] || { echo "usage: devbench-cli.sh quest <FormID, e.g. 0x1607CADF>" >&2; exit 1; }
+      qid="${1#0x}"; qid="${qid#0X}"
+      case "$qid" in ''|*[!0-9A-Fa-f]*) echo "ERROR: '$1' is not a hex FormID." >&2; exit 1 ;; esac
+      for fn in IsRunning IsCompleted GetCurrentStageID; do
+          printf '%s: ' "$fn"
+          post papyrus "{\"action\":\"call\",\"script\":\"Quest\",\"function\":\"$fn\",\"args\":[],\"self\":{\"form\":\"0x$qid\"}}" | pretty || exit $?
+      done ;;
 
   alive)
       # HARD-WON: `ping` proves only that the HTTP thread is alive -- it runs on a SEPARATE thread
@@ -907,6 +1013,6 @@ case "$CMD" in
 
   *)
       echo "Unknown command: $CMD" >&2
-      echo "Try: ping | alive | wait | health | state | fps | inspect <kind> | exec | call | waitcall | form | coc | goto | msgbox | describe | notify | logmark | logdiff | tool | gfx | dialogue | tools | port" >&2
+      echo "Try: ping | alive | wait | health | quest | state | fps | inspect <kind> | exec | call | waitcall | form | coc | goto | msgbox | describe | notify | logmark | logdiff | tool | gfx | dialogue | tools | port" >&2
       exit 1 ;;
 esac

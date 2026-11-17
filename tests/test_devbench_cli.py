@@ -507,3 +507,67 @@ def test_coc_unknown_cell_with_no_console_output_fails_fast(server):
     r = run_cli("coc", "SilentBadCell", "--timeout", "60", port=server.port)
     assert r.returncode == 4 and "did nothing" in r.stderr, r.stdout + r.stderr
     assert time.time() - t < 20                       # not the 60 s timeout
+# ------------------------------------------- wait, quest, host, runtime.json
+
+@pytest.mark.parametrize("server", ["running"], indirect=True)
+def test_wait_returns_when_the_game_answers(server):
+    r = run_cli("wait", "30", port=server.port)
+    assert r.returncode == 0, r.stderr
+    assert "READY" in r.stdout and "frame" in r.stdout
+
+
+def test_wait_times_out_with_the_diagnosis():
+    sock, port = held_dead_port()
+    try:
+        r = run_cli("wait", "1", port=port)
+    finally:
+        sock.close()
+    assert r.returncode == 1
+    out = r.stdout + r.stderr
+    assert "TIMEOUT" in out and "no response" in out.lower()
+    assert f"port {port} came from: DEVBENCH_PORT" in out
+
+
+def test_wait_rejects_a_bad_argument():
+    r = run_cli("wait", "soon", port=1)
+    assert r.returncode == 1 and "usage" in r.stderr
+
+
+@pytest.mark.parametrize("server", ["echo"], indirect=True)
+def test_quest_asks_three_questions_of_the_quest_form(server):
+    import json
+    r = run_cli("quest", "0x1607CADF", port=server.port)
+    assert r.returncode == 0, r.stderr
+    lines = [ln for ln in r.stdout.splitlines() if ln.startswith(("IsRunning", "IsCompleted", "GetCurrentStageID"))]
+    assert [ln.split(":")[0] for ln in lines] == ["IsRunning", "IsCompleted", "GetCurrentStageID"]
+    assert '"form": "0x1607CADF"' in r.stdout or '"form":"0x1607CADF"' in r.stdout
+
+
+def test_quest_refuses_a_non_hex_id():
+    r = run_cli("quest", "CYRStatsQuest", port=1)
+    assert r.returncode == 1 and "hex FormID" in r.stderr
+
+
+@pytest.mark.parametrize("server", ["running"], indirect=True)
+def test_runtime_json_is_found_in_the_mo2_overwrite_folder(server, tmp_path):
+    """No DEVBENCH_PORT: the port must come from <overwrite>/SKSE/Plugins/devbench/runtime.json."""
+    rt = tmp_path / "overwrite" / "SKSE" / "Plugins" / "devbench"
+    rt.mkdir(parents=True)
+    (rt / "runtime.json").write_text('{"port":%d}' % server.port)
+    env_file = tmp_path / "paths.env"
+    env_file.write_text("SKYRIM_MO2_OVERWRITE='%s'\n" % (tmp_path / "overwrite"))
+    env = {k: v for k, v in os.environ.items() if k not in ("DEVBENCH_PORT", "DEVBENCH_RUNTIME_JSON", "LOCALAPPDATA")}
+    env["DEVBENCH_PATHS_ENV"] = str(env_file)
+    r = subprocess.run([BASH, str(CLI), "port"], cwd=str(REPO), env=env, capture_output=True, text=True, timeout=60)
+    assert r.stdout.strip() == str(server.port), r.stderr
+
+
+@pytest.mark.parametrize("server", ["running"], indirect=True)
+def test_devbench_host_is_used(server):
+    env = dict(os.environ, DEVBENCH_PORT=str(server.port), DEVBENCH_HOST="127.0.0.1")
+    ok = subprocess.run([BASH, str(CLI), "health"], cwd=str(REPO), env=env, capture_output=True, text=True, timeout=60)
+    assert ok.returncode == 0, ok.stderr
+    env["DEVBENCH_HOST"] = "invalid.invalid"   # never resolves: proves the host is really used, not 127.0.0.1
+    bad = subprocess.run([BASH, str(CLI), "health"], cwd=str(REPO), env=env, capture_output=True, text=True, timeout=60)
+    assert bad.returncode == 1
+    assert "no response from DevBench at invalid.invalid:%d" % server.port in bad.stderr
