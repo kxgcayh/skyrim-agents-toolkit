@@ -33,9 +33,34 @@ def is_save(path):
             or '/save/' in low and low.endswith(('.xml','.xml.gz')))
 
 
-def _plain(path):
+def _trusted_bases():
+    """Fixed locations the OS or the user chose: home, the system temp folder and the toolkit root (resolved and as
+    located). Never $PWD or the cwd: the caller's environment must not widen the exemption (review 2026-11-17)."""
+    here = Path(__file__)
+    bases = [os.path.expanduser("~"), tempfile.gettempdir(), str(here.resolve().parent.parent), str(here.parent.parent)]
+    return {Path(os.path.abspath(b)) for b in bases if b}
+
+
+def link_exempt(path):
+    """The components of `path` whose link-ness is the spelling of a trusted base: each base that holds `path`, and
+    every ancestor of it (macOS /var -> /private/var, TMPDIR=/tmp, a symlinked toolkit root). Links BELOW a base
+    are never exempt. housekeep_backups.plain_path loads this same function."""
     path = Path(os.path.abspath(path))
+    exempt = set()
+    for base in _trusted_bases():
+        if base == path or base in path.parents:
+            exempt.update((base, *base.parents))
+    return exempt
+
+
+def _plain(path):
+    """The absolute path, refused when it passes through a link or reparse point below a trusted base (or anywhere,
+    for a path under no base). 2026-11-17: every macOS temp path was refused through /var."""
+    path = Path(os.path.abspath(path))
+    exempt = link_exempt(path)
     for part in (path,*path.parents):
+        if part in exempt:
+            continue
         try:
             st = part.lstat()
         except FileNotFoundError:
@@ -406,7 +431,10 @@ def restore_archive(stub: Path) -> Path:
             p = dest/i.filename
             if is_save(p):
                 raise ArchiveError('restore would write a protected save/profile path')
+            exempt = link_exempt(p)
             for ancestor in (p, *p.parents):
+                if Path(os.path.abspath(ancestor)) in exempt:
+                    continue
                 if ancestor.is_symlink() or (ancestor.exists() and getattr(ancestor.lstat(), 'st_file_attributes', 0) & 0x400):
                     raise ArchiveError('restore path contains a link/reparse point')
             if p.exists():

@@ -105,7 +105,17 @@ def main():
         "if pip_module(sys.orig_argv[1:]):\n"
         " with open(os.environ['HARNESS_TRIPWIRE_LOG'], 'a') as log: log.write('python -m pip\\n')\n"
         " os.write(2, b'PACKAGE-MANAGER TRIPWIRE: python -m pip\\n'); os._exit(97)\n"
-        "from harness_isolation import install\ninstall()\n")
+        "from harness_isolation import install\ninstall()\n"
+        # This file shadows the interpreter's own sitecustomize; Homebrew's is what puts its site-packages (and so
+        # pytest) on sys.path. Run it AFTER the tripwire and the isolation, and only the one the interpreter itself
+        # ships (under sys.base_prefix), never a sitecustomize from elsewhere on sys.path.
+        "import importlib.util as _u\n"
+        "_base = os.path.realpath(sys.base_prefix) + os.sep\n"
+        "for _d in sys.path:\n"
+        " _f = os.path.realpath(os.path.join(_d or '.', 'sitecustomize.py'))\n"
+        " if _f.startswith(_base) and os.path.isfile(_f):\n"
+        "  _s = _u.spec_from_file_location('_host_sitecustomize', _f); _s.loader.exec_module(_u.module_from_spec(_s))\n"
+        "  break\n")
     env = {k: v for k, v in os.environ.items() if k.upper() in FORWARDED_ENV}
     # pytest's basetemp (every tmp_path) lives OUTSIDE the repo, in system temp: tests that run repo
     # tools such as scripts/guard-corpus refuse an --out-dir inside the checkout, and tmp_path under

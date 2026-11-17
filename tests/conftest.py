@@ -211,16 +211,46 @@ def copy_repo(dest: Path, ignore=IGNORE) -> Path:
         shutil.copytree(REPO, dest, ignore=ignore)
         return dest
     skip = set(ignore(str(REPO), [p for rel in out.split(b"\0") for p in rel.decode().split("/") if p]))
+    # setup.sh fills some tracked files with this machine's paths and marks them skip-worktree (CLAUDE.md, the hooks,
+    # .codex/hooks.json): a fresh clone and the release zip (git archive of HEAD) hold the committed bytes, so the copy
+    # takes those from HEAD, not the working tree or the index.
+    pinned = _skip_worktree_bytes()
     dest.mkdir(parents=True, exist_ok=True)
     for rel in filter(None, out.decode().split("\0")):
         src = REPO / rel
         if skip.intersection(rel.split("/")) or not src.is_file():  # deleted-but-tracked files are absent
             continue
         (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+        if pinned.get(rel) is not None:
+            (dest / rel).write_bytes(pinned[rel])
+            continue
         shutil.copy2(src, dest / rel)
         if rel in _template_forms():   # a configured working tree holds setup's fill: a test copy starts from the template
             (dest / rel).write_bytes(_template_forms()[rel](src.read_bytes()))
     return dest
+
+
+_PINNED = None
+
+
+def _skip_worktree_bytes():
+    """{rel: committed bytes} for every skip-worktree file, read once per run. A file git cannot show (no HEAD,
+    a conflict) maps to None and is copied from the working tree as before."""
+    global _PINNED
+    if _PINNED is None:
+        _PINNED = {}
+        try:
+            flags = subprocess.run(["git", "-C", str(REPO), "ls-files", "-v", "-z"],
+                                   capture_output=True, check=True, timeout=60).stdout.decode()
+        except (OSError, subprocess.SubprocessError):
+            return _PINNED
+        for rel in (e[2:] for e in flags.split("\0") if e[:2] == "S "):
+            try:
+                _PINNED[rel] = subprocess.run(["git", "-C", str(REPO), "show", "HEAD:" + rel],
+                                              capture_output=True, check=True, timeout=60).stdout
+            except (OSError, subprocess.SubprocessError):
+                _PINNED[rel] = None
+    return _PINNED
 
 
 _TEMPLATES = None

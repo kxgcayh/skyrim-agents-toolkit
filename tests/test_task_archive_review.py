@@ -331,3 +331,47 @@ def test_cli_version_is_read_only_and_names_the_current_cleanup_code(tmp_path,ca
     assert h.main(['--config',str(path),'version'])==0
     assert capsys.readouterr().out.strip()==h.cleanup_code_sha256()
     assert list(tmp_path.iterdir())==[path]
+
+
+def _link(at, to):
+    try:
+        at.symlink_to(to, target_is_directory=True)
+    except OSError as exc:   # Windows without Developer Mode: WinError 1314
+        pytest.skip('symlink creation unavailable on this host: {}'.format(exc))
+
+
+def test_an_os_alias_above_temp_is_accepted_but_a_link_inside_the_tree_is_refused(tmp_path):
+    """macOS spells temp through /var -> /private/var: that is the location, not a link this tool follows. A link
+    inside the managed tree (here the archive root itself) is still refused (2026-11-17)."""
+    cfg = config(tmp_path); payload(cfg)
+    assert ha.review_archives(cfg)['state'] == 'complete'
+    real = tmp_path / 'elsewhere'
+    real.mkdir()
+    _link(tmp_path / 'linked', real)
+    result = ha.review_archives(dict(cfg, archive_root=str(tmp_path / 'linked')))
+    assert result['state'] == 'partial' and 'link/reparse' in result['held'][0]['reason']
+
+
+def test_the_callers_environment_cannot_widen_the_exemption(tmp_path, monkeypatch):
+    """Review 2026-11-17: $PWD / cwd inside the managed tree used to exempt every link above them."""
+    real = tmp_path / 'elsewhere'
+    real.mkdir()
+    _link(tmp_path / 'linked', real)
+    inner = tmp_path / 'linked' / 'archives' / 'deep'
+    inner.mkdir(parents=True)
+    monkeypatch.setenv('PWD', str(inner))
+    monkeypatch.chdir(inner)
+    with pytest.raises(ha.ArchiveError, match='link/reparse'):
+        ha._plain(inner / 'x.zip')
+
+
+def test_a_base_that_is_itself_a_link_is_its_own_spelling(tmp_path, monkeypatch):
+    """TMPDIR=/tmp on macOS, or a symlinked toolkit root: the base itself may be a link; below it may not."""
+    real = tmp_path / 'realtmp'
+    (real / 'sub').mkdir(parents=True)
+    _link(tmp_path / 'tmplink', real)
+    monkeypatch.setattr(ha.tempfile, 'gettempdir', lambda: str(tmp_path / 'tmplink'))
+    assert ha._plain(tmp_path / 'tmplink' / 'sub' / 'x.zip')
+    _link(real / 'hop', tmp_path)
+    with pytest.raises(ha.ArchiveError, match='link/reparse'):
+        ha._plain(tmp_path / 'tmplink' / 'hop' / 'x.zip')

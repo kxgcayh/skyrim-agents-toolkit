@@ -153,12 +153,32 @@ def snapshot_refusal(action, cfg, guard, hasher):
     return ''
 
 
+def _link_exempt(p):
+    """housekeep_archive.link_exempt: the one definition of which link components are a trusted base's spelling.
+    Loaded by file path, as housekeep.py loads both helpers."""
+    global _ARCHIVE
+    if _ARCHIVE is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("housekeep_archive_links",
+                                                      Path(__file__).with_name("housekeep_archive.py"))
+        _ARCHIVE = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(_ARCHIVE)
+    return _ARCHIVE.link_exempt(p)
+
+
+_ARCHIVE = None
+
+
 def plain_path(path):
-    """Refuse links/junctions at every existing component, including the root."""
+    """Refuse links/junctions at every existing component below a trusted base, including the root (every component,
+    for a path under no base)."""
     p = Path(path)
     if not p.is_absolute():
         raise Refused('backup paths must be absolute')
+    exempt = _link_exempt(p)
     for part in (p, *p.parents):
+        if Path(os.path.abspath(part)) in exempt:
+            continue
         if part.exists() or part.is_symlink():
             s = part.lstat()
             if stat.S_ISLNK(s.st_mode) or getattr(s, 'st_file_attributes', 0) & 0x400:
