@@ -6326,8 +6326,8 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
      _T + "test_skyguard_neutral.py::test_an_mcp_call_the_rules_do_not_judge_is_labelled_unjudged_not_evaluated[mcp__other__thing]",
      "p7final-neutral-unjudged-mcp-reads-evaluated"),
     # M1: the release gate's line continuation.
-    (".github/workflows/release.yml", "refs/remotes/origin/master >/dev/null " + BS + "\n            || { echo",
-     "refs/remotes/origin/master >/dev/null             || { echo",
+    (".github/workflows/release.yml", '"refs/remotes/origin/$BASE" >/dev/null ' + BS + "\n            || { echo",
+     '"refs/remotes/origin/$BASE" >/dev/null             || { echo',
      _T + "test_adapter_payload.py::test_the_release_gates_parse_and_lost_no_line_continuation",
      "p7final-release-loses-line-continuation"),
     # M2: the payload check lists what ADAPTING.md names.
@@ -7172,7 +7172,7 @@ _T10 = [
     ("t10-wf-input-spliced", ".github/workflows/release.yml", '          TAG="${INPUT_TAG:-$REF_NAME}"',
      '          TAG="${{ github.event.inputs.tag }}"', _WT + "test_no_user_input_is_spliced_into_a_script[release.yml]"),
     ("t10-wf-not-on-master", ".github/workflows/release.yml",
-     '          git merge-base --is-ancestor "$SHA" refs/remotes/origin/master ', "          true ",
+     '          git merge-base --is-ancestor "$SHA" "refs/remotes/origin/$BASE" ', "          true ",
      _WT + "test_release_gates_are_in_order"),
     ("t10-wf-release-verify-not-scrubbed", ".github/workflows/release.yml",
      'run: bash tools/verify-release.sh --local "$ZIP" --scrubbed --expect-commit "$SHA" --tag "$TAG"',

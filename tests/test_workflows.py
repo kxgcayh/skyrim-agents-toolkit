@@ -235,7 +235,8 @@ def test_release_gates_are_in_order():
     v = steps[verify]["run"]
     for flag in ("--scrubbed", '--expect-commit "$SHA"', '--tag "$TAG"'):
         assert flag in v, flag
-    assert "origin/master" in steps[master]["run"]
+    assert '"refs/remotes/origin/$BASE"' in steps[master]["run"]
+    assert steps[master]["env"]["BASE"] == "${{ github.event.repository.default_branch }}"
     # Review I1: the identity comes from the LEAK_TOKENS secret, and an absent one fails the step closed.
     env = steps[verify].get("env", {})
     assert env.get("LEAK_TOKENS") == "${{ secrets.LEAK_TOKENS }}" and str(env.get("VERIFY_REQUIRE_LEAK_TOKENS")) == "1", env
