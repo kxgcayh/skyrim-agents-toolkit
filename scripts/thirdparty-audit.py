@@ -1644,6 +1644,9 @@ DELIVERY_EXEMPT = [
      "skyguard's own rule documentation, describing what that rule does not treat as decoded text"),
     ("setup.sh", "git-clone", r'git clone -q "\$SURFER_REPO"',
      "the clone is moved to the pinned commit (SURFER_COMMIT) by surfer_to_pin before setup reports success"),
+    ("agent/workspace/link-submodules.sh", "git-clone", r'git clone -q "\$(?:url|2)"',
+     "the workspace helper clones the upstream URL the user hands it (a submodule's own pinned URL, or the one named on "
+     "the command line), then links it at the commit the parent repository pins; the toolkit never runs it"),
     ("docs/installing-tools.md", "package-runner", r"\(`npx playwright install`\)",
      "runs the playwright that `npm ci` installed from nexusmods-surfer's package-lock.json, not a registry fetch"),
 ]

@@ -38,8 +38,9 @@ PROTECTION_KEYS = ("SKYRIM_GAME_ROOT", "SKYRIM_CONFIG_DIR", "SKYRIM_DOCUMENTS_DI
 # notice at session start (session.py). setup.sh writes the root file.
 PATHS_FILE = "skyrim-paths.env"
 LEGACY_PATHS_FILE = ".claude/" + PATHS_FILE
-# Read from the file (and the environment) but NO root: the interpreter setup.sh resolved at install time (spec 4).
-TOOL_KEYS = ("SKYGUARD_PYTHON",)
+# Read from the file (and the environment) but NO root: the interpreter setup.sh resolved at install time (spec 4),
+# and the user's workspace folder (SKYRIM_WORKSPACE_DIR), which agents must stay free to delete in, so never guarded.
+TOOL_KEYS = ("SKYGUARD_PYTHON", "SKYRIM_WORKSPACE_DIR")
 DEPRECATION = ("NOTICE: the old paths file, .claude/skyrim-paths.env, is still in use. The guard reads "
                "skyrim-paths.env in the toolkit folder first and still adds the folders the old file protects. "
                "Re-run setup.sh so skyrim-paths.env lists every folder you want guarded, then remove the old file.")

@@ -2278,7 +2278,7 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
                  "tests/test_gen_agent_trees.py::test_budget_holds_room_for_the_codex_addendum",
                  id="budget-reserves-the-codex-addendum"),
     # Measure the repo file instead of the installed one.
-    pytest.param("scripts/gen_agent_trees.py", "INSTALL_EXPANSION_RESERVE = 2048", "INSTALL_EXPANSION_RESERVE = 0",
+    pytest.param("scripts/gen_agent_trees.py", "INSTALL_EXPANSION_RESERVE = 2304", "INSTALL_EXPANSION_RESERVE = 0",
                  "tests/test_gen_agent_trees.py::test_budget_holds_room_for_install_expansion",
                  id="budget-measures-the-installed-size"),
     # Unwire the budget from --check: every test of budget_problems() stays green, CI stops enforcing it.

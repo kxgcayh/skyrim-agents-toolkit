@@ -130,6 +130,27 @@ def game_root(environ=None, toolkit: Path | None = None):
     return root, "the toolkit folder"
 
 
+def workspace_dir(environ=None, toolkit: Path | None = None):
+    """The workspace folder where every new file goes (docs/workspace.md), or None when none is configured.
+
+    1. $SKYRIM_WORKSPACE_DIR;
+    2. SKYRIM_WORKSPACE_DIR in the toolkit's skyrim-paths.env (written by setup.sh), read as DATA like game_root.
+
+    No fallback: an install made before the workspace existed has no key, and the answer is then None, not a guess.
+    An unreadable paths file raises ValueError, as in game_root.
+    """
+    from skyguard import paths as sg_paths
+
+    env = os.environ if environ is None else environ
+    root = Path(toolkit) if toolkit is not None else TOOLKIT_ROOT
+    try:
+        cfg = sg_paths.read_install(str(root), env)
+    except (OSError, ValueError) as e:
+        raise ValueError(f"cannot read {sg_paths.PATHS_FILE} in {root}: {e}") from e
+    value = cfg.first("SKYRIM_WORKSPACE_DIR")
+    return Path(value) if value else None
+
+
 # Console builds, in preference order: 7z (Windows 7-Zip, p7zip's full build), 7zz (7-Zip's own Linux/macOS
 # build), 7za (the standalone console build).
 SEVENZIP_NAMES = ("7z", "7zz", "7za")

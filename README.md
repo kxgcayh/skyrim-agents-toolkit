@@ -292,6 +292,8 @@ authorization sentence in the prompt yourself. Just answer any questions it asks
 
 Check the canary before relying on the guards. Install optional tools only as needed.
 
+Setup also creates a **workspace** folder next to the toolkit (`skyrim-workspace`, or the one you name with `--workspace <dir>`) and records it in `skyrim-paths.env`. Every new file an agent creates goes there, so this folder stays clean and updates never touch your work. Details and how to opt out: [docs/workspace.md](docs/workspace.md).
+
 ---
 
 ## Optional: Nexus API Integration

@@ -525,14 +525,14 @@ Branch `ae-1.7.104`; the release is packaged with `package-release.sh` in the so
   - Key mapping queries `ControlMap::GetMappedKey()` dynamically on dispatch to guarantee full key-remap compatibility without hooking `Journal_SystemTab`.
 
 ### 13.3 Build and deployment
-- Port source: `skyrim-workspace/mods/ExitSneakOnSprint`.
+- Port source: `<workspace>/mods/ExitSneakOnSprint`.
 - Submodule: `extern/CommonLibSSE-NG` checked out to tag `v14.0.1`.
 - Built with `clang-cl-msvc.cmake` toolchain targeting `Release` with C++23. Output `SprintCancelsSneak.dll` has `versionIndependenceEx = 0x3` (`AddressLibraryV5 | NoStructUse`).
 - Deployed to `<mo2>/mods/Exit Sneak On Sprint/SKSE/Plugins/SprintCancelsSneak.dll`. Original backed up as `SprintCancelsSneak.dll.bak`.
 
 ## 14. Immersive Activate (ImmersiveActivate.dll v1.4.1, dann1)
 
-Upstream `dann1/ImmersiveActivate`. Source: `skyrim-workspace/mods/ImmersiveActivate-src`.
+Upstream `dann1/ImmersiveActivate`. Source: `<workspace>/mods/ImmersiveActivate-src`.
 
 **Cause.** Built on old CommonLibSSE (not NG) with a `SKYRIM_AE` build switch, `SKSEPlugin_Version` without the V5 flag
 and `OFFSET(se, ae)` macros resolved at compile time. Same phase 1/2/3 failures as section 1.
@@ -555,7 +555,7 @@ and `OFFSET(se, ae)` macros resolved at compile time. Same phase 1/2/3 failures 
 
 ## 15. SkyUI AIO Survival (SAS) 7.4, `SAS AE+.dll` (AE 1.6.640 build, no source)
 
-**Measured (static analysis), not run in game.** Files: `skyrim-workspace/mods/SAS/` (`src/patch_sas.py`, `src/make_versionl2b.py`, `NOTES.md`).
+**Measured (static analysis), not run in game.** Files: `<workspace>/mods/SAS/` (`src/patch_sas.py`, `src/make_versionl2b.py`, `NOTES.md`).
 Only the DLL needs a patch; the SWFs, `.pex` and `SAS.esl` are version independent. Three failures, in load order:
 
 | # | Failure | Evidence | Fix |
@@ -571,7 +571,7 @@ layouts and vtable indices the DLL assumes are unverified on 1.7.104. Residual r
 
 ## 16. Skyrim Character Sheet 1.1.4.0 (Nexus 56069), `SkyrimCharacterSheet.dll`
 
-**Measured (static analysis and a clean cross-build), not run in game.** Files: `skyrim-workspace/mods/SkyrimCharacterSheet/`
+**Measured (static analysis and a clean cross-build), not run in game.** Files: `<workspace>/mods/SkyrimCharacterSheet/`
 (branch `ae-1.7.104`, `NOTES.md`). Built on a pre-AE-1.7 fork of CommonLibSSE-NG (`extern/CommonLibSSE-NG`), so it has the
 section 1 failures. Rebuilt against `alandtse/CommonLibSSE-NG` 14.0.1 (`find_package`, `add_commonlibsse_plugin`,
 `SKSEPluginLoad`); `versionIndependenceEx = 0x3`.
@@ -606,12 +606,12 @@ file offset/size parsed consistent and inside the file. The archive is not corru
 `.pex`, 9 translation `.txt`, `statsmenu.swf`, `console.swf`. No DLL.
 
 **Fix.** Extract the BSA to loose files and move the BSA aside (community advice for SSE/AE, matches this crash). Extracted
-tree: `skyrim-workspace/mods/ExtendedUI/`. Conflicts: the mod overrides `statsmenu.swf` and `console.swf`; as loose files
+tree: `<workspace>/mods/ExtendedUI/`. Conflicts: the mod overrides `statsmenu.swf` and `console.swf`; as loose files
 they now beat other mods' BSA copies. Cause of the engine fault on a valid v104 archive is **not** established.
 **Not tested in game.**
 
 **Source.** `github.com/Kapiainen/Extended-UI` (README credits MrJack; no license stated; 50 commits, last 2015-02-24),
-cloned to `skyrim-workspace/mods/ExtendedUI/upstream/`. Holds `Data/` (scripts, SWFs), `Flash source/` (`.fla` +
+cloned to `<workspace>/mods/ExtendedUI/upstream/`. Holds `Data/` (scripts, SWFs), `Flash source/` (`.fla` +
 ActionScript for `console` and `statsmenu`) and `TranslationGenerator.py`. Compiling the Flash needs Adobe Flash
 Professional CS4 and the Unofficial Skyrim UI SDK. Compared with the shipped 1.2.0d BSA: the 4 `.psc`, both SWFs and
 `Extended UI_ENGLISH.txt` are byte-identical; the other 8 translation files differ (upstream has English placeholders,
@@ -625,7 +625,7 @@ not confirmed. Root cause not established; settling it needs reverse engineering
 
 **1.7 compatibility of the two SWFs (measured).** Extended UI replaces `statsmenu.swf` and `console.swf` with SWF version 10
 files built on LE 1.9.32. The vanilla 1.7.104 ones (extracted from `Skyrim - Interface.bsa`, saved in
-`skyrim-workspace/mods/ExtendedUI/extracted/vanilla-se-1.7.104/`) are SWF version 15 and contain code Extended UI's lacks:
+`<workspace>/mods/ExtendedUI/extracted/vanilla-se-1.7.104/`) are SWF version 15 and contain code Extended UI's lacks:
 `statsmenu`: `CrossPlatformButtons`, `PLATFORM_NX/PROSPERO/SCARLETT`, `LegendaryButtonInstance`, `LegendaryCountText`,
 `LegendaryIconInfoInstance`; `console`: `InputDetails` with `controllerIdx` and `navEquivalent`. Loose files win, so the LE
 builds replace those. In-game effect not tested. Port route: recompile vanilla SE ActionScript with the Extended UI edits
@@ -636,7 +636,7 @@ Java 27 present).
 
 **Built (clang-cl cross-build, clean), not run in game.** Port DLL SHA-256
 `aef7d87b5918974df3ec710d69fca341218954b9a81cc52e41c29bfd0b332c1c`, `versionIndependenceEx = 0x3`,
-`versionIndependence = 0x1`. Files: `skyrim-workspace/mods/TakeAPeek/` is the git checkout itself (branch `ae-1.7.104`, fork in section 2).
+`versionIndependence = 0x1`. Files: `<workspace>/mods/TakeAPeek/` is the git checkout itself (branch `ae-1.7.104`, fork in section 2).
 Released 2026-11-01 as `v1.3.1-ae1.7` on the fork (tag on `698f120`), asset `keyholepeekmenu-1.3.1-AE-1.7.zip`
 (`SKSE/Plugins/keyholepeekmenu.dll`), zip SHA-256 `f0c9e7852d7513dac19ae49b4d4d4375bfd43c220cb141a96ef4214edeee758f`.
 Installed DLL SHA-256 `f8d61588f7bb338527fb78784a1f7d98bf1065834acf5d50a5a906c6feec72d5`, built 2022 on vcpkg
@@ -647,7 +647,7 @@ match the shipped DLL. The plugin has no game hooks: three Papyrus natives on `K
 
 ## 19. dTry's Key Utils 1.1 (Nexus 69944), `DtryKeyUtil.dll`
 
-**Built (clang-cl cross-build), not run in game.** Files: `skyrim-workspace/mods/DtryKeyUtil/` is the git checkout of
+**Built (clang-cl cross-build), not run in game.** Files: `<workspace>/mods/DtryKeyUtil/` is the git checkout of
 `D7ry/DtryKeyUtil` (no license; personal use only), branch `ae-1.7.104` commit `5e7ac10`, not pushed. Port DLL SHA-256
 `f96803d470956259f42d60a4246e66f12c377251d7f33d3be42df84dccbade6d`. Shipped DLL (SHA-256
 `5261d3459f3c56bd0787d5b2bca9fd57dbc1471c39f8188e312d4d4d6baef777`) exports `SKSEPlugin_Query` only; SKSE 2.3.1 logs
@@ -666,7 +666,7 @@ installed file before applying a hardcoded RVA override; the corrupt mapping may
 
 ## 20. Hair Colour Sync NG 1.4.1 (Nexus 156414, kingeric1992), `HairColourSyncNg.dll`
 
-**Measured: the rebuild loads in game (2026-11-02).** Source: `skyrim-workspace/mods/HairColourSyncNG/` (git repo, branch `ae-1.7.104`; rebuild with section 7 of `skse-cross-compile-macos.md`, no CommonLib prefix needed). The binary patch below is documented byte for byte; its script was not kept.
+**Measured: the rebuild loads in game (2026-11-02).** Source: `<workspace>/mods/HairColourSyncNG/` (git repo, branch `ae-1.7.104`; rebuild with section 7 of `skse-cross-compile-macos.md`, no CommonLib prefix needed). The binary patch below is documented byte for byte; its script was not kept.
 Source: `kingeric1992/HairColourSyncNg` (old `commonlibsse-ng-fork` vcpkg port).
 Port: `kxgcayh/HairColourSyncNg` branch `ae-1.7.104` (CommonLibSSE-NG v15.5.0 submodule); upstream PR kingeric1992/HairColourSyncNg#1.
 

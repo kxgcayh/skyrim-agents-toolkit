@@ -16,6 +16,7 @@ A modded Skyrim installation. This fork targets Skyrim on PC (SE and AE). Adapt 
 - **Load order**: `{{LOADORDER_DIR}}/loadorder.txt` and `plugins.txt`
 - **SKSE plugins**: `Data/SKSE/Plugins/`
 - **Mod data**: `Data/` (ESPs, BSAs, meshes, textures, scripts)
+- **Workspace**: `{{WORKSPACE_DIR}}` — every new file goes here, never in the toolkit; read its `AGENTS.md` first
 {{MOD_MANAGER_PATHS}}
 
 ## Installed Modding Tools

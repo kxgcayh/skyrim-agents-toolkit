@@ -4,7 +4,7 @@
 # This script is designed to be run FROM your Skyrim folder, after
 # extracting the toolkit zip into it. It configures everything in-place.
 #
-# Usage: bash setup.sh [--agent claude|codex|all|auto|generic|opencode] [--game <dir>] [--lock] [--save-lock|--no-save-lock] [--with-surfer] [--refresh-docs]
+# Usage: bash setup.sh [--agent claude|codex|all|auto|generic|opencode] [--game <dir>] [--lock] [--save-lock|--no-save-lock] [--with-surfer] [--refresh-docs] [--workspace <dir>|--no-workspace]
 #   --agent auto    (the default) every agent found on PATH; when none is found, all of them
 #   --agent claude  Claude Code only      --agent codex  Codex only (Windows only)
 #   --agent all     every named adapter (`both` is accepted as another name for it)
@@ -19,6 +19,9 @@
 #                   moves an existing clean clone's main branch to the pinned commit.
 #   --refresh-docs  rebuild an already configured CLAUDE.md / AGENTS.md from the committed template and fill in
 #                   the current paths (git checkouts only). Your copy is kept under .claude/backups/docs/ first.
+#   --workspace <dir>  the folder where every new file goes, never the toolkit (default: skyrim-workspace next to the
+#                   toolkit folder). Created from agent/workspace/ for whatever is missing; nothing is overwritten.
+#   --no-workspace  record no workspace (docs/workspace.md)
 # Setup never installs software. Every install command it prints is for you to run.
 
 set -e
@@ -26,7 +29,7 @@ set -e
 # --- Options: checked before anything is written ----------------------------------------------------------
 # An unknown option or --agent value is a usage error (exit 2) and nothing is touched.
 usage() {
-    echo "usage: bash setup.sh [--agent claude|codex|all|auto|generic|opencode] [--game <dir>] [--lock] [--save-lock|--no-save-lock] [--with-surfer] [--refresh-docs]"
+    echo "usage: bash setup.sh [--agent claude|codex|all|auto|generic|opencode] [--game <dir>] [--lock] [--save-lock|--no-save-lock] [--with-surfer] [--refresh-docs] [--workspace <dir>|--no-workspace]"
     echo "  --agent auto    the default: every agent found on PATH (claude, codex); all of them when none is found"
     echo "  --agent claude  configure Claude Code only"
     echo "  --agent codex   configure Codex only (Windows only)"
@@ -39,6 +42,8 @@ usage() {
     echo "  --no-save-lock  leave save locking off without asking"
     echo "  --with-surfer   also clone the private nexusmods-surfer (Nexus page scraper); ask the maintainer for access"
     echo "  --refresh-docs  rebuild a configured CLAUDE.md / AGENTS.md from the committed template (git checkouts; backed up first)"
+    echo "  --workspace <dir>  the folder where every new file goes (default: skyrim-workspace next to the toolkit folder)"
+    echo "  --no-workspace  record no workspace folder"
 }
 AGENT_ARG="auto"
 GAME_ARG=""
@@ -46,6 +51,8 @@ WANT_LOCK=""
 WANT_SAVE_LOCK=""
 WANT_SURFER=""
 WANT_REFRESH_DOCS=""
+WORKSPACE_ARG=""
+WANT_NO_WORKSPACE=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --agent)
@@ -65,10 +72,20 @@ while [ $# -gt 0 ]; do
         --no-save-lock) WANT_SAVE_LOCK=no; shift ;;
         --with-surfer) WANT_SURFER=1; shift ;;
         --refresh-docs) WANT_REFRESH_DOCS=1; shift ;;
+        --workspace)
+            if [ $# -lt 2 ] || [ -z "$2" ]; then
+                echo "setup.sh: --workspace needs a path. Nothing was changed." >&2; usage >&2; exit 2
+            fi
+            WORKSPACE_ARG="$2"; shift 2 ;;
+        --workspace=*) WORKSPACE_ARG="${1#--workspace=}"; shift ;;
+        --no-workspace) WANT_NO_WORKSPACE=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "setup.sh: unknown option '$1'. Nothing was changed." >&2; usage >&2; exit 2 ;;
     esac
 done
+if [ -n "$WORKSPACE_ARG" ] && [ -n "$WANT_NO_WORKSPACE" ]; then
+    echo "setup.sh: --workspace and --no-workspace contradict each other. Nothing was changed." >&2; usage >&2; exit 2
+fi
 case "$AGENT_ARG" in
     claude|codex|all|auto|generic|opencode) ;;
     both) AGENT_ARG="all" ;;
@@ -97,7 +114,7 @@ DIRTY_AT_START=" $(cd "$TOOLKIT_DIR" && git diff --name-only HEAD -- $FILLED_TEM
 # --- This machine's paths (setup.local.env, gitignored; format: setup.local.env.example) ---
 # For installs setup cannot detect (CrossOver/Wine on macOS). Read as KEY=VALUE data, never sourced; a variable
 # already set in the environment wins.
-LOCAL_ENV_KEYS=" SKYRIM_GAME_DIR SKYRIM_CONFIG_DIR SKYRIM_LOADORDER_DIR SKYRIM_MO2_MODS SKYRIM_MO2_OVERWRITE "
+LOCAL_ENV_KEYS=" SKYRIM_GAME_DIR SKYRIM_CONFIG_DIR SKYRIM_LOADORDER_DIR SKYRIM_MO2_MODS SKYRIM_MO2_OVERWRITE SKYRIM_WORKSPACE_DIR "
 if [ -f "$TOOLKIT_DIR/setup.local.env" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
         line="${line%$'\r'}"
@@ -885,7 +902,7 @@ elif mode == "readback":
     if cfg.malformed:
         sys.exit(3)
     for k in ("SKYRIM_GAME_ROOT", "SKYRIM_CONFIG_DIR", "SKYRIM_LOADORDER_DIR", "SKYRIM_MO2_MODS",
-              "SKYRIM_MO2_OVERWRITE", "SKYGUARD_PYTHON"):
+              "SKYRIM_MO2_OVERWRITE", "SKYGUARD_PYTHON", "SKYRIM_WORKSPACE_DIR"):
         lines.append((cfg.file.get(k) or ("",))[0])
 else:
     cfg = paths.read_install(root, {})
@@ -1005,6 +1022,31 @@ _keep SKYRIM_DOCUMENTS_DIR DOCUMENTS_GAME_DIR
 _keep SKYRIM_LOADORDER_DIR LOADORDER_DIR
 _keep SKYRIM_MO2_MODS MO2_MODS
 _keep SKYRIM_MO2_OVERWRITE MO2_OVERWRITE
+
+# --- The workspace: where every new file goes, never the toolkit (docs/workspace.md) ---
+# Absolute, forward slashes, native form under Git Bash; a folder that does not exist yet is named by its parent.
+ws_norm() {
+    local d b p
+    d=$(dirname "$1"); b=$(basename "$1")
+    p=$( { cd "$d" 2>/dev/null && (pwd -W 2>/dev/null || pwd); } ) || p="$d"
+    p=$(printf '%s' "$p" | tr '\134' '/'); p=${p%/}
+    printf '%s/%s' "$p" "$b"
+}
+if [ -n "$WANT_NO_WORKSPACE" ]; then
+    WORKSPACE_DIR=""
+elif [ -n "$WORKSPACE_ARG" ]; then
+    WORKSPACE_DIR=$(ws_norm "$WORKSPACE_ARG")
+elif [ -n "${SKYRIM_WORKSPACE_DIR:-}" ]; then
+    WORKSPACE_DIR=$(ws_norm "$SKYRIM_WORKSPACE_DIR")
+else
+    WORKSPACE_DIR=$(ws_norm "$(dirname "$TOOLKIT_DIR")/skyrim-workspace")
+fi
+# A flag is this run's answer; without one, a path set by hand in skyrim-paths.env survives like the others.
+if [ -n "$WANT_NO_WORKSPACE" ] || [ -n "$WORKSPACE_ARG" ]; then
+    SKYRIM_PREFER_DETECTED=1 _keep SKYRIM_WORKSPACE_DIR WORKSPACE_DIR
+else
+    _keep SKYRIM_WORKSPACE_DIR WORKSPACE_DIR
+fi
 # Written beside it, then renamed: a crash never leaves half a file, or an empty one, in place.
 {
     printf '# Written by setup.sh. Machine-local: not tracked, not shipped.\n'
@@ -1018,6 +1060,8 @@ _keep SKYRIM_MO2_OVERWRITE MO2_OVERWRITE
     # protect them if it is told where they are. Empty ('') on a non-MO2 install: declares nothing.
     printf 'SKYRIM_MO2_MODS=%s\n' "$(sq "$MO2_MODS")"
     printf 'SKYRIM_MO2_OVERWRITE=%s\n' "$(sq "$MO2_OVERWRITE")"
+    # The workspace folder (docs/workspace.md): where every new file goes. No guarded root; '' = none recorded.
+    printf 'SKYRIM_WORKSPACE_DIR=%s\n' "$(sq "$WORKSPACE_DIR")"
     # What setup found, so a re-run can tell a path edited by hand from one it wrote itself.
     printf '%s' "$DETECTED_LINES"
     # The interpreter the hooks were configured with ('' when no Python was found).
@@ -1034,13 +1078,13 @@ if [ -z "$PATHS_OK" ]; then
     rm -f "$PATHS_ENV.new"
     echo "  WARNING: could not write skyrim-paths.env. The hooks still guard this folder, but not the config directory."
 else
-    _want=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$GAME_ROOT_WIN" "$CONFIG_DIR" "$LOADORDER_DIR" "$MO2_MODS" \
-            "$MO2_OVERWRITE" "$PYTHON_PATH")
+    _want=$(printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n' "$GAME_ROOT_WIN" "$CONFIG_DIR" "$LOADORDER_DIR" "$MO2_MODS" \
+            "$MO2_OVERWRITE" "$PYTHON_PATH" "$WORKSPACE_DIR")
     # Cleared first: a value exported by the caller's own shell must not stand in for one the file lacks.
-    _got=$( unset SKYRIM_GAME_ROOT SKYRIM_CONFIG_DIR SKYRIM_LOADORDER_DIR SKYRIM_MO2_MODS SKYRIM_MO2_OVERWRITE SKYGUARD_PYTHON
+    _got=$( unset SKYRIM_GAME_ROOT SKYRIM_CONFIG_DIR SKYRIM_LOADORDER_DIR SKYRIM_MO2_MODS SKYRIM_MO2_OVERWRITE SKYGUARD_PYTHON SKYRIM_WORKSPACE_DIR
             set -a; . "$PATHS_ENV" 2>/dev/null
-            printf '%s\n%s\n%s\n%s\n%s\n%s\n' "${SKYRIM_GAME_ROOT:-}" "${SKYRIM_CONFIG_DIR:-}" "${SKYRIM_LOADORDER_DIR:-}" \
-                "${SKYRIM_MO2_MODS:-}" "${SKYRIM_MO2_OVERWRITE:-}" "${SKYGUARD_PYTHON:-}" )
+            printf '%s\n%s\n%s\n%s\n%s\n%s\n%s\n' "${SKYRIM_GAME_ROOT:-}" "${SKYRIM_CONFIG_DIR:-}" "${SKYRIM_LOADORDER_DIR:-}" \
+                "${SKYRIM_MO2_MODS:-}" "${SKYRIM_MO2_OVERWRITE:-}" "${SKYGUARD_PYTHON:-}" "${SKYRIM_WORKSPACE_DIR:-}" )
     # ...and what the GUARD reads (its own parser, UTF-8). Sourcing alone passed a file of cp437 bytes that the
     # guard cannot decode, which makes it refuse every command (T7 review C1). No Python = no hook runs anyway.
     _guard="$_want"; _grc=0
@@ -1064,6 +1108,51 @@ else
         echo "  !! Fix that path (or set the folder by hand in skyrim-paths.env) and re-run: bash setup.sh"
     fi
 fi
+
+# --- Create the workspace (docs/workspace.md) ---
+# Only what is missing, from agent/workspace/: an existing file is never overwritten, so a workspace you already use is
+# left as it is. toolkit.env is the one file rewritten (it records where THIS toolkit is, and the toolkit may have moved).
+# The workspace is not a guarded folder, and never inside the toolkit or the game folder: a file there would ship or be guarded.
+WS_STATUS=""
+if [ -z "$WORKSPACE_DIR" ]; then
+    WS_STATUS="not set (--no-workspace); see docs/workspace.md"
+elif [ -z "$PATHS_OK" ]; then
+    WS_STATUS="not created: skyrim-paths.env could not be written"
+else
+    case "$WORKSPACE_DIR/" in
+        "$TOOLKIT_ROOT_WIN"/*|"$GAME_ROOT_WIN"/*|"$TOOLKIT_DIR"/*|"$GAME_DIR"/*)
+            WS_STATUS="NOT created: $WORKSPACE_DIR is inside the toolkit or the game folder. Pick another with --workspace <dir>"
+            ;;
+        *)
+            WS_SRC="$TOOLKIT_DIR/agent/workspace"
+            WS_MADE=""
+            if mkdir -p "$WORKSPACE_DIR" 2>/dev/null; then
+                for d in mods tools reports scratch; do
+                    [ -d "$WORKSPACE_DIR/$d" ] || { mkdir -p "$WORKSPACE_DIR/$d" && WS_MADE="$WS_MADE $d/"; }
+                done
+                for f in README.md AGENTS.md link-submodules.sh; do
+                    if [ ! -e "$WORKSPACE_DIR/$f" ] && [ -f "$WS_SRC/$f" ]; then
+                        cp "$WS_SRC/$f" "$WORKSPACE_DIR/$f" && WS_MADE="$WS_MADE $f"
+                    fi
+                done
+                [ -x "$WORKSPACE_DIR/link-submodules.sh" ] || chmod +x "$WORKSPACE_DIR/link-submodules.sh" 2>/dev/null || true
+                if [ ! -e "$WORKSPACE_DIR/CLAUDE.md" ]; then
+                    printf '%s\n' "Read AGENTS.md in this folder first: it holds the rules for every agent working in the workspace." \
+                        > "$WORKSPACE_DIR/CLAUDE.md" && WS_MADE="$WS_MADE CLAUDE.md"
+                fi
+                WS_POINTER="SKYRIM_TOOLKIT_DIR=$(sq "$TOOLKIT_ROOT_WIN")"
+                if [ "$(cat "$WORKSPACE_DIR/toolkit.env" 2>/dev/null)" != "$WS_POINTER" ]; then
+                    printf '%s\n' "$WS_POINTER" > "$WORKSPACE_DIR/toolkit.env.new" \
+                        && mv -f "$WORKSPACE_DIR/toolkit.env.new" "$WORKSPACE_DIR/toolkit.env" && WS_MADE="$WS_MADE toolkit.env"
+                fi
+                WS_STATUS="$WORKSPACE_DIR${WS_MADE:+ (wrote:$WS_MADE)}"
+            else
+                WS_STATUS="NOT created: could not make $WORKSPACE_DIR"
+            fi
+            ;;
+    esac
+fi
+echo "  Workspace: $WS_STATUS"
 
 # --- Configure the Codex hook definitions (.codex/hooks.json) ---
 #
@@ -1202,7 +1291,7 @@ fi
 # "Skyrim & Mods" re-inserted the placeholder, so CLAUDE.md grew on every run), and `\` and the `|` delimiter are
 # special too. The same escape the interpreter path gets above.
 sed_repl() { printf '%s' "$1" | sed -e 's/[\\|&]/\\&/g'; }
-DOC_PLACEHOLDERS='{{GAME_ROOT}}\|{{CONFIG_DIR}}\|{{LOADORDER_DIR}}\|{{SKYRIM_FOLDER}}\|{{MOD_MANAGER_PATHS}}'
+DOC_PLACEHOLDERS='{{GAME_ROOT}}\|{{CONFIG_DIR}}\|{{LOADORDER_DIR}}\|{{SKYRIM_FOLDER}}\|{{MOD_MANAGER_PATHS}}\|{{WORKSPACE_DIR}}'
 for DOC in CLAUDE.md AGENTS.md; do
 case "$DOC" in
     CLAUDE.md) DOC_ON="$DO_CLAUDE" ;;
@@ -1243,6 +1332,7 @@ elif grep -q "$DOC_PLACEHOLDERS" "$TOOLKIT_DIR/$DOC"; then
     sedit "s|{{CONFIG_DIR}}|$(sed_repl "$CONFIG_DIR")|g" "$TOOLKIT_DIR/$DOC"
     sedit "s|{{LOADORDER_DIR}}|$(sed_repl "$LOADORDER_DIR")|g" "$TOOLKIT_DIR/$DOC"
     sedit "s|{{SKYRIM_FOLDER}}|$(sed_repl "$SKYRIM_FOLDER")|g" "$TOOLKIT_DIR/$DOC"
+    sedit "s|{{WORKSPACE_DIR}}|$(sed_repl "${WORKSPACE_DIR:-not set (docs/workspace.md)}")|g" "$TOOLKIT_DIR/$DOC"
 
     # Mod-manager block. Built in a temp file and spliced in with sed's `r`, so no amount of
     # punctuation in a path can break the substitution.

@@ -11,7 +11,8 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from skyguard import codex_definitions, guard_hash, paths
 
-DOC_TOKENS = ("{{GAME_ROOT}}", "{{CONFIG_DIR}}", "{{LOADORDER_DIR}}", "{{SKYRIM_FOLDER}}", "{{MOD_MANAGER_PATHS}}")
+DOC_TOKENS = ("{{GAME_ROOT}}", "{{CONFIG_DIR}}", "{{LOADORDER_DIR}}", "{{SKYRIM_FOLDER}}", "{{MOD_MANAGER_PATHS}}",
+              "{{WORKSPACE_DIR}}")
 BOM = b"\xef\xbb\xbf"
 STOCK = ("- **Mod manager**: stock layout (Vortex or manual) — mods deploy their files directly into `Data/`,\n"
          "  so `Data/` is the real, merged view of everything installed.")
@@ -80,6 +81,12 @@ def _config(root, config):
     data["game_root"] = _path(config.get("game_root", installed.first("SKYRIM_GAME_ROOT") or data["root"]))
     if installed.first("SKYRIM_GAME_ROOT") and _path_key(installed.first("SKYRIM_GAME_ROOT")) != _path_key(data["game_root"]):
         raise ValueError("render configuration differs from retained game root")
+    # The workspace is not part of the frozen render configuration: it is read from the installed paths file, and an
+    # absent or unusable value reads "not set" rather than failing an upgrade over a folder that is not guarded.
+    try:
+        data["workspace"] = _path(installed.first("SKYRIM_WORKSPACE_DIR"))
+    except ValueError:
+        data["workspace"] = "not set (docs/workspace.md)"
     data["posix"] = ("/" + data["root"][0].lower() + data["root"][2:]
                      if re.match(r"^[A-Za-z]:/", data["root"]) else data["root"])
     return data
@@ -111,7 +118,7 @@ def _hook(name, raw, config):
 def prepare(root, staged, files, config):
     data = _config(root, config)
     replacements = dict(zip(DOC_TOKENS, (data["game_root"], data["config_dir"], data["loadorder_dir"],
-                                        data["skyrim_folder"], data["block"])))
+                                        data["skyrim_folder"], data["block"], data["workspace"])))
     result = {}
     for name in ("AGENTS.md", "CLAUDE.md"):
         if name in files:

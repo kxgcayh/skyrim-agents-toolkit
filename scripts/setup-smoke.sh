@@ -28,7 +28,7 @@ ok() { echo "  ok: $*"; }
 # Everything setup may write, by content. The backups folder is excluded (records, not configuration).
 snapshot() { (cd "$GAME" && find . -type f ! -path './.claude/backups/*' ! -name '*.pyc' -print0 | sort -z \
               | xargs -0 cksum) ; }
-has_marks() { grep -qE '\{\{(GAME_ROOT|CONFIG_DIR|LOADORDER_DIR|MOD_MANAGER_PATHS)\}\}' "$GAME/$1"; }
+has_marks() { grep -qE '\{\{(GAME_ROOT|CONFIG_DIR|LOADORDER_DIR|MOD_MANAGER_PATHS|WORKSPACE_DIR)\}\}' "$GAME/$1"; }
 case "$(cd "$GAME" && { pwd -W 2>/dev/null || pwd; })" in [A-Za-z]:/*) WIN=1 ;; *) WIN="" ;; esac
 
 # 1. A bad value is a usage error and writes nothing.

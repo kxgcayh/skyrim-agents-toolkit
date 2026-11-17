@@ -27,7 +27,7 @@ WIN = sys.platform == "win32"
 windows_only = pytest.mark.skipif(not WIN, reason="the toolkit's Codex hooks are rendered on Windows only")
 posix_only = pytest.mark.skipif(WIN, reason="needs a non-Windows install root")
 CODEX_OS = WIN or sys.platform == "darwin"   # where setup.sh configures the Codex hooks
-DOC_MARKS = ("{{GAME_ROOT}}", "{{CONFIG_DIR}}", "{{LOADORDER_DIR}}", "{{MOD_MANAGER_PATHS}}")
+DOC_MARKS = ("{{GAME_ROOT}}", "{{CONFIG_DIR}}", "{{LOADORDER_DIR}}", "{{MOD_MANAGER_PATHS}}", "{{WORKSPACE_DIR}}")
 GUARD_FILES = [".claude/hooks/" + n for n in ("protect-bash.sh", "protect-files.sh", "protect-mcp.sh",
                                               "backup-before-edit.sh", "snapshot-before-tool.sh",
                                               "session-kb-guard.sh")] + [

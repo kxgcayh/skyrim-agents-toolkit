@@ -148,6 +148,8 @@ Press Enter. Your agent will:
 4. **Verify everything works**
 5. **Show you what you can do**
 
+Setup also creates a **workspace** folder next to the toolkit (`skyrim-workspace`) for everything you and your agent build or download. The agent keeps new files there, never in the toolkit. See [workspace.md](workspace.md).
+
 Just answer its questions as they come up. If something fails, it will explain the problem and walk you through fixing it.
 
 ---
