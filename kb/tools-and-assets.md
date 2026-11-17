@@ -2,6 +2,40 @@
 
 Part of the Skyrim modding knowledgebase; index: `KNOWLEDGEBASE.md`. Covers NIF, audio, music, BSA, saves, co-saves, crash logs.
 
+**Contents** (search for a heading's text to jump to it):
+
+- Save File Analysis
+  - .ess Save Format
+  - What Can Be Done
+  - What Cannot Be Done (Without Full Parser)
+  - Common Debugging Use Cases
+- Headless Save Editing (ReSaver CLI)
+- Co-save (.skse) Structural Survey (cosave-info)
+  - Decoding co-save chunks: `PLGN` and 8-byte counts
+  - Node/koffi helper exit codes are unreliable on Windows
+- Music System
+  - MUSC vs MUST — Critical Distinction
+  - FNAM Flags on MUSC Records
+  - Papyrus MusicType.Add() Bypasses Engine Ducking (Critical)
+  - BossMusic.esm Stacking Pattern
+  - CombatMusicFixNG.dll — Incompatible with Multi-Enemy Fights
+- Orphaned Extended Skeletons -> Havok Contact-Solver CTD
+- Audio & Tooling Lessons
+  - Freeze/Timestop scripts that kill enemies → vanished corpses (the JCE "disappear" fix)
+  - `PushActorAway` argument direction (caused a self-knockback bug)
+  - AutoMod CLI cannot read MGEF / SNDR internals
+  - WAV → XWM audio pipeline (for SNDR sound files)
+  - Adding new SNDR/SOUN records via Spriggit + the Write-tool `/tmp` gotcha
+- NIF Tooling — PyFFI Limits, PyNifly, and CTD Prevention
+- NIF Validation & Render Trichotomy
+- Crash logs: CrashLogger writes `.LOG`, not `.txt`
+- AutoMod `archive list` shows 100 files unless told otherwise
+- AutoMod BSA extract/repack needs `bsarch.exe`
+- Reading a BSA or plugin header without AutoMod or xEdit (measured 2026-11-04, macOS)
+- FOMOD Installers: Authoring and Mod Manager Behaviour (measured 2026-11-01, MO2)
+- Releasing: MO2 `meta.ini` and the Nexus API
+- nifly/PyNifly saves can change what you did not touch
+
 ## Save File Analysis
 
 ### .ess Save Format
@@ -73,7 +107,11 @@ ops always run the STOCK jar** so an authored parse fix can never reach `ChangeF
 corruption safety. If the overlay can't compile against your ReSaver version, the wrapper falls back
 to stock parsing automatically (basic ops unaffected).
 
-**Write safety:** every write op is **dry-run by default** and only applies with `--apply`. An applied write always goes to a **NEW file** — it never overwrites the input save. Every `--apply` is additionally **verify-gated**: a private candidate is re-read and compared to the written model. Failed candidates are quarantined in their owned staging directory with recovery evidence; existing destinations stay intact and no successful publication is reported. As always, **loading the result in-game is the final validation gate.**
+**Write safety:** every write op is **dry-run by default** and only applies with `--apply`. An applied write always
+goes to a **NEW file** — it never overwrites the input save. Every `--apply` is additionally **verify-gated**: a
+private candidate is re-read and compared to the written model. Failed candidates are quarantined in their owned
+staging directory with recovery evidence; existing destinations stay intact and no successful publication is reported.
+As always, **loading the result in-game is the final validation gate.**
 
 **Performance:** a full structured parse of a ~45MB save runs in about **2.4s**, including building the cross-reference index — fast enough to use interactively during debugging.
 
@@ -128,7 +166,11 @@ Vanilla MUSCombat FNAM = `0x09` (PlaysOneSelection + MaintainTrackOrder). Withou
 
 **Correct Spriggit YAML flag names** for MUSC FNAM: `PlaysOneSelection`, `AbruptTransition`, `CycleTracks`, `MaintainTrackOrder`, `DucksCurrentTrack` (=0x20). Use these in Flags list. Do NOT try to set via xelib `setValue()` with a binary string — xelib writes the wrong value silently (verified: produced `0x34` instead of intended `0x0B`). Always use Spriggit YAML for FNAM edits on MUSC records.
 
-**Personalized Music - Remade.esp** overrides MUSCombat FNAM to `0x24` = CycleTracks + DucksCurrentTrack. This is intentional — PM's 88 combat tracks require CycleTracks to cycle through the pool. Removing CycleTracks causes the engine to fail to play any track and leaves the music manager in a deadlocked state (MUSCombat never becomes Playing, exploration music is cut by AbruptTransition, total silence results). Always preserve PM's flags when patching MUSCombat.
+**Personalized Music - Remade.esp** overrides MUSCombat FNAM to `0x24` = CycleTracks + DucksCurrentTrack. This is
+intentional — PM's 88 combat tracks require CycleTracks to cycle through the pool. Removing CycleTracks causes the
+engine to fail to play any track and leaves the music manager in a deadlocked state (MUSCombat never becomes Playing,
+exploration music is cut by AbruptTransition, total silence results). Always preserve PM's flags when patching
+MUSCombat.
 
 Target FNAM for working MUSCombat with Abrupt Transition on top of PM's override: `0x26` = AbruptTransition + CycleTracks + DucksCurrentTrack. In Spriggit YAML:
 ```yaml
@@ -157,7 +199,10 @@ Diagnostic: `DbSKSEFunctions.GetMusicTypeStatus(BossXxx)` going to `1` (Playing)
 
 ### CombatMusicFixNG.dll — Incompatible with Multi-Enemy Fights
 
-Despite its name, CombatMusicFixNG.dll **must not be used** here. It hooks actor-death events and calls `Game.GetPlayer().IsInCombat()`. In a multi-enemy fight, there's a brief window after killing one enemy where `IsInCombat()` returns false before the player acquires the next target. The plugin force-terminates combat music in that window even though combat is ongoing. Result: combat music plays 3-4 seconds then stops mid-fight. Keep disabled.
+Despite its name, CombatMusicFixNG.dll **must not be used** here. It hooks actor-death events and calls
+`Game.GetPlayer().IsInCombat()`. In a multi-enemy fight, there's a brief window after killing one enemy where
+`IsInCombat()` returns false before the player acquires the next target. The plugin force-terminates combat music in
+that window even though combat is ongoing. Result: combat music plays 3-4 seconds then stops mid-fight. Keep disabled.
 
 ---
 

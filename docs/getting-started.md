@@ -220,5 +220,11 @@ replace this file. For example:
 - Make sure you extracted the toolkit into your Skyrim folder (Step 3)
 - Make sure Claude Code is running in that folder (Step 4)
 
+**CLAUDE.md or AGENTS.md names an old folder or profile, or misses newer instructions**
+- `setup.sh` fills these two files once. If you installed from the zip, extract them again and re-run `bash setup.sh`
+- In a git checkout, run `bash setup.sh --refresh-docs`: it rebuilds them from the committed template with your
+  current paths and keeps your old copy under `.claude/backups/docs/`. Anything you added to them by hand is in that
+  copy, not in the new file
+
 **Something else?**
 - Just ask Claude: *"Something went wrong with my toolkit setup. Can you help me fix it?"*

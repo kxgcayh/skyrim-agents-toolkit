@@ -1,6 +1,6 @@
 ---
 name: inspect-esp
-description: Inspect an ESP/ESM plugin file and show a summary of all records
+description: Inspect an ESP/ESM plugin file and show a summary of all records. Use when the user asks what a plugin contains or changes (masters, record types, scripts, likely problems), before editing, patching or installing it.
 argument-hint: <PluginName.esp>
 ---
 

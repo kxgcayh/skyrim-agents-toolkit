@@ -616,3 +616,53 @@ def test_a_hand_set_path_that_is_not_a_folder_is_not_kept(tmp_path):
                    encoding="utf-8")
     assert run_setup(game).returncode == 0
     assert re.search(r"(?m)^SKYRIM_MO2_MODS=''$", env.read_text(encoding="utf-8"))
+
+
+# ------------------------------------------------------------------------------------------- --refresh-docs --
+def _git(game, *args, data=None):
+    import subprocess
+    return subprocess.run(["git", "-C", str(game), *args], input=data, capture_output=True, check=True).stdout
+
+
+def test_refresh_docs_rebuilds_a_configured_file_from_the_committed_template(portable_mo2):
+    """A configured CLAUDE.md was filled once and never again: in a git checkout it kept the instructions and the
+    paths of that day. --refresh-docs puts the committed template back, fills it, and keeps the old copy."""
+    game, _inst, _mods = portable_mo2
+    doc = game / "CLAUDE.md"
+    template = doc.read_bytes()
+    _git(game, "init", "-q")
+    _git(game, "add", "CLAUDE.md")
+    _git(game, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "template")
+    r = run_setup(game, args=("--agent", "claude"))
+    assert r.returncode == 0, r.stdout[-1500:] + r.stderr[-1500:]
+    filled = doc.read_bytes()
+    root_before = key_path(game, "Game root")
+    assert b"{{" not in filled and filled != template
+
+    newer = template + b"\nA LINE A LATER TOOLKIT ADDED\n"                 # the template moved on in the index
+    blob = _git(game, "hash-object", "-w", "--stdin", data=newer).decode().strip()
+    _git(game, "update-index", "--cacheinfo", "100644,{},CLAUDE.md".format(blob))
+
+    r = run_setup(game, args=("--agent", "claude"))                       # without the flag: untouched, as before
+    assert r.returncode == 0 and doc.read_bytes() == filled, r.stdout
+
+    r = run_setup(game, args=("--agent", "claude", "--refresh-docs"))
+    assert r.returncode == 0, r.stdout + r.stderr
+    text = doc.read_text(encoding="utf-8")
+    assert "A LINE A LATER TOOLKIT ADDED" in text and "{{" not in text, r.stdout
+    assert "MO2 has no real" in text and key_path(game, "Game root") == root_before
+    kept = list((game / ".claude" / "backups" / "docs").glob("*/CLAUDE.md"))
+    assert len(kept) == 1 and kept[0].read_bytes() == filled, r.stdout
+    assert "--refresh-docs: your copy is kept at" in r.stdout
+
+
+def test_refresh_docs_without_a_template_leaves_the_file_alone(game_dir):
+    """No git checkout means no committed template: say so, and change nothing."""
+    assert run_setup(game_dir, args=("--agent", "claude")).returncode == 0
+    doc = game_dir / "CLAUDE.md"
+    filled = doc.read_bytes()
+    r = run_setup(game_dir, args=("--agent", "claude", "--refresh-docs"))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert doc.read_bytes() == filled
+    assert "no template to rebuild CLAUDE.md from" in r.stdout
+    assert not (game_dir / ".claude" / "backups" / "docs").exists()

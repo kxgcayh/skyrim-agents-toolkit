@@ -13,6 +13,49 @@ maintainer's setup (AE 1.7.104, SKSE 2.3.1, CrossOver on Apple Silicon) and carr
 > Every RVA, file offset and hash here is valid for **1.7.104.0 only** (and the other build named next to it). Re-derive
 > them for any other build; do not paste them in.
 
+**Contents** (search for a heading's text to jump to it):
+
+- 1. The three failure phases
+- 2. Where the code lives
+- 3. Dynamic Armor Variants Extended (DAVE)
+- 4. ImprovedCameraSE-NG
+  - 4.1 Six bugs on 1.7.104
+  - 4.2 Verified 1.7.104 hook map (23 sites, each checked with `llvm-objdump`)
+- 5. Verifying a hook site (the method behind 4.2)
+- 6. Sprint Swim Redux SKSE
+- 7. Quest Journal Overhaul (QJO), `QuestJournalOverhaul.dll` v1.2.0
+- 8. Interrupt Package Deadlock Fix, `InterruptPackageDeadlockFix.dll`
+- 9. DovaJump (v1.1.0 Blessed NG patch)
+  - 9.1 Why jumping stopped on 1.7.104
+  - 9.2 Jump multiplier call site (identical on all AE builds)
+  - 9.3 The fix
+- 10. SkyParkourNG (v3.6.3, AE 1.7.104 port)
+  - 10.1 Failure modes
+  - 10.2 Reusable vtable resolution
+- 11. EngineFixesSkyrim64
+  - 11.1 Memory and hook safety
+  - 11.2 CrossOver, D3DMetal and Apple Silicon
+  - 11.3 Memory manager override and temporary-form save crash (issue #98)
+- 12. Better Third Person Selection (BTPS)
+  - 12.1 Two failures
+  - 12.2 Null-dereference hardening in BTPS
+  - 12.3 Dismount hook verification (1.7.104)
+  - 12.4 clang-cl C++23 fixes
+  - 12.5 Build and packaging
+- 13. Exit Sneak On Sprint (SprintCancelsSneak.dll)
+  - 13.1 Root cause on Skyrim AE 1.7.104
+  - 13.2 Hook verification and implementation (1.7.104)
+  - 13.3 Build and deployment
+- 14. Immersive Activate (ImmersiveActivate.dll v1.4.1, dann1)
+- 15. SkyUI AIO Survival (SAS) 7.4, `SAS AE+.dll` (AE 1.6.640 build, no source)
+- 16. Skyrim Character Sheet 1.1.4.0 (Nexus 56069), `SkyrimCharacterSheet.dll`
+- 17. Extended UI 1.2.0d (Nexus 57873, MrJack), `Extended UI.bsa`
+- 18. Take a Peek 1.31 (Nexus 66908, jayserpa), `keyholepeekmenu.dll`
+- 19. dTry's Key Utils 1.1 (Nexus 69944), `DtryKeyUtil.dll`
+- 20. Hair Colour Sync NG 1.4.1 (Nexus 156414, kingeric1992), `HairColourSyncNg.dll`
+- 21. Porting traps common to every rebuild (CommonLibSSE-NG 12 -> 14/15)
+- Sources
+
 ## 1. The three failure phases
 
 | Phase | Message or symptom | Cause | Fix |

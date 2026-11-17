@@ -27,11 +27,20 @@ Part of the Skyrim modding knowledgebase; index: `KNOWLEDGEBASE.md`. Covers engi
 
 ### SKSE Plugin Version Compatibility
 
-**PapyrusTweaks NG v4.1.1 (Oct 2025) breaks NPC dialogue in VR.** The newer version's `ValidationSignaturesHook` and `AttemptFunctionCallHook` cause NPC dialogue options to never appear — NPC speaks their greeting but the player choice menu doesn't show. **Use the stable 2023 version instead.** Symptom: NPC speaks but dialogue menu never opens; Papyrus log shows many `Unbound native function` and `does not match existing signature` errors at load time.
+**PapyrusTweaks NG v4.1.1 (Oct 2025) breaks NPC dialogue in VR.** The newer version's `ValidationSignaturesHook` and
+`AttemptFunctionCallHook` cause NPC dialogue options to never appear — NPC speaks their greeting but the player choice
+menu doesn't show. **Use the stable 2023 version instead.** Symptom: NPC speaks but dialogue menu never opens; Papyrus
+log shows many `Unbound native function` and `does not match existing signature` errors at load time.
 
 **po3_PapyrusExtender updates can break backward compatibility.** The March 2025 update changed function signatures for `PO3_SKSEFunctions`, causing mods compiled against older versions to fail with "does not match existing signature" errors. Functions like `GetSkinColor`, `GetHairColor`, `GetAllSpellsInMod`, `ToggleChildNode`, `ResetActor3D` all affected.
 
-**The DLL on disk is the source of truth for "what version is actually installed" — not the mod manager.** For any SKSE plugin, read the embedded File/Product version of `Data/SKSE/Plugins/*.dll` directly (e.g. the stable PapyrusTweaks build reports `4.1.0.x`). A manually-installed or hand-reverted plugin is invisible to Vortex/MO2, so the manager's reported version can disagree with what the game actually loads. Because these are DLLs with no save data, reverting one is safe mid-playthrough — the problem disappears on an existing save. Keep a personal "do-not-update-past" list; a plugin that is silently broken in VR while fine on SE/AE is easy to misattribute and easy to reinstall months later.
+**The DLL on disk is the source of truth for "what version is actually installed" — not the mod manager.** For any
+SKSE plugin, read the embedded File/Product version of `Data/SKSE/Plugins/*.dll` directly (e.g. the stable
+PapyrusTweaks build reports `4.1.0.x`). A manually-installed or hand-reverted plugin is invisible to Vortex/MO2, so
+the manager's reported version can disagree with what the game actually loads. Because these are DLLs with no save
+data, reverting one is safe mid-playthrough — the problem disappears on an existing save. Keep a personal
+"do-not-update-past" list; a plugin that is silently broken in VR while fine on SE/AE is easy to misattribute and easy
+to reinstall months later.
 
 ### Engine Fixes Available
 
@@ -55,7 +64,10 @@ agent instructions):
 
 ### Stagger-archetype spell cast from Papyrus → no visible animation
 
-`Spell.Cast(source, target)` where the spell wraps a `Stagger` archetype MGEF produces NO visible stagger animation on the target. Vanilla Skyrim never delivers stagger this way — vanilla staggers come from perk entry points on weapon hit, shout impact data, or spell impact data on projectile collision. None of those paths are accessible from a Papyrus `Spell.Cast()` call. Do not pursue this approach.
+`Spell.Cast(source, target)` where the spell wraps a `Stagger` archetype MGEF produces NO visible stagger animation on
+the target. Vanilla Skyrim never delivers stagger this way — vanilla staggers come from perk entry points on weapon
+hit, shout impact data, or spell impact data on projectile collision. None of those paths are accessible from a
+Papyrus `Spell.Cast()` call. Do not pursue this approach.
 
 **Practical substitute:** `Caster.PushActorAway(target, 1.0–3.0)` produces a physical stumble that reads visually as stagger. It fires reliably from script, scales with force, and matches the user's expectation of "hit = stumble."
 
@@ -75,7 +87,10 @@ Vanilla bleed (e.g. Bleeding Strikes perk, `0C367A:Skyrim.esm`):
 
 ### `GetActorValue("IsBlocking")` is NOT a valid actor value
 
-Throws `Error: Actor value "IsBlocking" does not exist` on every call. This error has non-trivial VM overhead, especially in hot paths. **Use `Actor.GetAnimationVariableBool("IsBlocking")` instead** — it reads the animation graph variable. Animal and creature graphs may not supply it: there the call logs a missing-variable error and returns false, so skip actors whose race has no such graph rather than probing them every hit.
+Throws `Error: Actor value "IsBlocking" does not exist` on every call. This error has non-trivial VM overhead,
+especially in hot paths. **Use `Actor.GetAnimationVariableBool("IsBlocking")` instead** — it reads the animation graph
+variable. Animal and creature graphs may not supply it: there the call logs a missing-variable error and returns
+false, so skip actors whose race has no such graph rather than probing them every hit.
 
 The **`IsBlocking` condition function** (on a magic effect or spell condition) evaluates its subject natively. If that subject can be a non-actor reference — a cone or area effect hitting a door or other scenery — guard it with `IsActor == 1` first. INFERRED from one VR crash log (a native null read inside condition evaluation with a door as the subject); the guard is cheap either way.
 

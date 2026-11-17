@@ -2,6 +2,66 @@
 
 Part of the Skyrim modding knowledgebase; index: `KNOWLEDGEBASE.md`. Covers VR vs SSE differences, VR input, VR Papyrus findings, VR physics (inherited, untested in this fork).
 
+**Contents** (search for a heading's text to jump to it):
+
+- VR vs SSE Differences
+  - Engine Foundation
+  - SKSE: SE vs VR
+  - Animation System
+  - Camera System
+  - Player Control Functions in VR
+  - UI System
+  - ImageSpace (Post-Processing)
+  - Weather
+  - Physics & Havok
+  - Input & Controllers
+  - VR Playroom
+  - OpenComposite / OpenXR
+  - Mod Framework VR Status
+  - Common Mod Breakage Categories
+  - Which INI Skyrim VR actually reads, and VR shadow settings
+  - A mod's MCM Helper settings file can override its SKSE INI
+- VR Controller Input Detection
+  - SKSE Input API — DOES NOT WORK for VR Controllers
+  - VRIK API — THE Correct Method for VR Input
+  - Direction from VR Hand Position
+- Weapon Manipulation at Runtime
+  - What WORKS
+  - What DOES NOT WORK at Runtime
+  - VR Weapon Collision / Reach
+  - OL_WEAPON Projectile Routing — Damage Through Extended Weapon Collision
+  - VR Weapon Draw State
+  - Reach Formula (Vanilla, without Precision)
+  - PLANCK — VR melee hit detection + runtime settings API
+- VR Papyrus — Confirmed Findings
+  - Player Movement
+  - Papyrus Tick Rate with Heavy Plugin Load
+  - PapyrusUtil in VR
+  - Targeting (TDM Replacement)
+  - Spell/Effect Architecture
+  - Object Spawning
+  - Formation Math (object rings)
+  - Decompilation (Champollion)
+  - Skyrim Sound System: SOUN vs SNDR (CRITICAL — do not confuse)
+  - Spriggit WEAP YAML Format (CRITICAL — invisible weapons if wrong)
+  - Spell Effect Area is in FEET (CRITICAL)
+  - ESP/Spriggit
+  - ImageSpaceModifier
+  - Staff AnimationType, WNAM, and VR In-Hand Render
+  - Staff vs Sword Skeleton: Blade Inversion + Grip Offset
+  - Cell.GetNthRef is UNRELIABLE for Real-Time Actor Detection
+  - Concentration Beam OnEffectStart Behavior
+  - Staff AnimationType Melee Auto-Fires Enchantment
+  - Useful Vanilla MGEFs / Reference FormIDs
+  - PushActorAway — Caller is the Source, Parameter is the One Pushed
+  - Block Detection in Papyrus
+  - DbSKSEFunctions — Projectile Collision Tracking
+  - Core Modding Philosophy: Prefer Native Engine Solutions
+- Havok Units & VR Hit-Detection
+  - Havok game units
+  - VR melee hit-detection stack
+- Immobilizing the Player / NPCs in VR (aggro + VRIK)
+
 ## VR vs SSE Differences
 
 ### Engine Foundation
@@ -51,7 +111,10 @@ Part of the Skyrim modding knowledgebase; index: `KNOWLEDGEBASE.md`. Covers VR v
 **CORRECTED + VERIFIED from reference VR mod (`JudgementCutEnd.esp`):**
 
 - `DisablePlayerControls()` does **NOT** prevent VR controller thumbstick movement. VR controller input (thumbstick/wand movement) is a separate engine-level input system that bypasses the traditional control disable flags. Calling it during a scripted sequence does nothing to stop the player from walking around.
-- **`DisablePlayerControls(True, True, False, False, False, True, True, False, 0)` + `Actor.SetDontMove(True)`** together is the correct approach (the second argument, abFighting, sheathes a drawn weapon: see VR Weapon Draw State). `SetDontMove` is the key — `DisablePlayerControls` alone or `SetRestrained` alone do not stop VR movement. Source: decompiled `EndMagicEndScript.pex` from `JudgementCutEnd.esp`, confirmed working in VR.
+- **`DisablePlayerControls(True, True, False, False, False, True, True, False, 0)` + `Actor.SetDontMove(True)`**
+  together is the correct approach (the second argument, abFighting, sheathes a drawn weapon: see VR Weapon Draw
+  State). `SetDontMove` is the key — `DisablePlayerControls` alone or `SetRestrained` alone do not stop VR movement.
+  Source: decompiled `EndMagicEndScript.pex` from `JudgementCutEnd.esp`, confirmed working in VR.
 - **`Actor.SetRestrained(true)`** was tried but also NOT effective for VR movement. It operates at the actor level (not the input level), intercepting movement before the VR input reaches the character. Per CK wiki: "disables player movement, camera switching and camera rotating." Confidence: 85% (tested in VR context).
 - `Game.SetPlayerAIDriven(true)` can be combined for belt-and-suspenders — overrides player control with AI behavior.
 - Over-encumbrance (adding heavy items / reducing carry weight) only slows to walk speed — does NOT prevent movement.
@@ -205,7 +268,12 @@ All functions are native globals on the `VRIK` scriptname (`Data/Scripts/VRIK.ps
 - `VrikGetFingerPos` has a **signature mismatch** with current VRIK VR build — function will not be bound. All other VRIK functions work fine.
 - Duration functions (`VrikTriggerPressDuration`, etc.) — not tested but likely work
 
-**VRIK "Adjust Held Weapon Positions" causes concentration beam angle offset.** In VRIK Options, the setting "Adjust Held Weapon Positions" subtly rotates held weapons to fit better in the hand. For normal melee weapons this is fine. For a staff firing a concentration beam, it deflects the projectile origin ~15 degrees off-center, making the beam fire noticeably to one side instead of straight. **Fix: disable "Adjust Held Weapon Positions" in VRIK Options.** The beam then fires exactly along the controller direction via MISVR. This is a per-save MCM setting, not stored in vrik.ini.
+**VRIK "Adjust Held Weapon Positions" causes concentration beam angle offset.** In VRIK Options, the setting "Adjust
+Held Weapon Positions" subtly rotates held weapons to fit better in the hand. For normal melee weapons this is fine.
+For a staff firing a concentration beam, it deflects the projectile origin ~15 degrees off-center, making the beam
+fire noticeably to one side instead of straight. **Fix: disable "Adjust Held Weapon Positions" in VRIK Options.** The
+beam then fires exactly along the controller direction via MISVR. This is a per-save MCM setting, not stored in
+vrik.ini.
 
 **Usage Pattern (from POS3/POS4 mods):**
 ```papyrus
@@ -240,7 +308,11 @@ This gives the horizontal direction from body center to sword hand — accurate 
 
 ### What DOES NOT WORK at Runtime
 - **Weapon.SetModelPath(string)** — changes the internal path but does **NOT update the visual** of an already-equipped weapon. Even unequip→SetModelPath→re-equip cycle just shows disappear/reappear with the same model.
-- **Weapon.SetEquippedModel(Static)** — native SKSE function (Weapon.psc line 55). **CONFIRMED DESTRUCTIVE in VR.** Called correctly with valid Static forms — no visual change, but actively corrupts the weapon's equipped model reference. Combined with `QueueNiNodeUpdate()`, causes the weapon to **disappear from the player's hand entirely**. The weapon shows as equipped in inventory but is invisible/gone in-world. Only fixable by manually unequipping and re-equipping. **NEVER USE THIS FUNCTION.**
+- **Weapon.SetEquippedModel(Static)** — native SKSE function (Weapon.psc line 55). **CONFIRMED DESTRUCTIVE in VR.**
+  Called correctly with valid Static forms — no visual change, but actively corrupts the weapon's equipped model
+  reference. Combined with `QueueNiNodeUpdate()`, causes the weapon to **disappear from the player's hand entirely**.
+  The weapon shows as equipped in inventory but is invisible/gone in-world. Only fixable by manually unequipping and
+  re-equipping. **NEVER USE THIS FUNCTION.**
 - **SetReach at runtime** — value changes but hit detection range doesn't update until game restart
 - **Effect Shader via GetFormFromFile** — `Game.GetFormFromFile(0x00010DDD, "Skyrim.esm") as EffectShader` returned None. FormID may be wrong or form type mismatch.
 - **`ModAV("SpeedMult", -70)` for VR locomotion slowdown** — has NO effect on VR thumbstick movement. User confirmed no slowdown felt at all. VR locomotion bypasses SpeedMult.
@@ -264,9 +336,17 @@ This gives the horizontal direction from body center to sword hand — accurate 
 - Absorb MGEF, Atronach Stone perk — operate on the spell-cast path, not the OL_WEAPON path.
 - Po3 `OnProjectileHit` event — **not available in VR**. Po3 VR only exports projectile property accessors (GetProjectileSpeed, etc.), no event handlers.
 
-**WeaponCollision.dll (ijwzac/WeaponCollisionVR) cannot help**: The plugin uses hardcoded per-weapon-type reach values (sword=90, greatsword=100, axe=70 game units, scaled by `WeaponRangeMultiply` INI setting). It reads neither the NIF collision geometry nor the weapon record's Reach field. Visual debug (`DebugShowPlayerWeaponRange=true`) confirms the parry line is always ~90 units regardless of equipped weapon. A custom NIF capsule of 5000 units is completely invisible to it.
+**WeaponCollision.dll (ijwzac/WeaponCollisionVR) cannot help**: The plugin uses hardcoded per-weapon-type reach values
+(sword=90, greatsword=100, axe=70 game units, scaled by `WeaponRangeMultiply` INI setting). It reads neither the NIF
+collision geometry nor the weapon record's Reach field. Visual debug (`DebugShowPlayerWeaponRange=true`) confirms the
+parry line is always ~90 units regardless of equipped weapon. A custom NIF capsule of 5000 units is completely
+invisible to it.
 
-**Clean fix path (bookmarked, not yet implemented)**: Fork `github.com/ijwzac/WeaponCollisionVR` (Apache 2.0, explicitly fork-permitted). Add ~10 lines: INI flag `bUseWeaponLengthOverride = true` + a custom keyword on the weapon form → when that keyword is present, replace the hardcoded sword line length with a configurable value (e.g., 5000 units). Build requires Visual Studio + CommonLibSSE-NG + CMake 3.21+ + C++23. Confidence: 70% (risks: VR-specific CommonLibSSE-NG quirks, SKSE update breakage, maintenance burden).
+**Clean fix path (bookmarked, not yet implemented)**: Fork `github.com/ijwzac/WeaponCollisionVR` (Apache 2.0,
+explicitly fork-permitted). Add ~10 lines: INI flag `bUseWeaponLengthOverride = true` + a custom keyword on the weapon
+form → when that keyword is present, replace the hardcoded sword line length with a configurable value (e.g., 5000
+units). Build requires Visual Studio + CommonLibSSE-NG + CMake 3.21+ + C++23. Confidence: 70% (risks: VR-specific
+CommonLibSSE-NG quirks, SKSE update breakage, maintenance burden).
 
 **Accepted workaround**: Frame spell vulnerability as a deliberate design tradeoff — extending the blade exposes the player; retracting (releasing trigger) restores normal hit detection.
 
@@ -295,7 +375,11 @@ PLANCK replaces vanilla/Precision melee hit detection in VR. Config: `Data/SKSE/
 - `hitStabSpeedThreshold` (def 2.5) — same for stabs
 - `hitRequiredHandSpeedRoomspace` (def 1.5) — the hand must be moving this fast; "walk the weapon into an enemy without moving your hand" won't register otherwise
 
-Setting all three to **0** → any contact registers a melee hit regardless of swing speed. The setting is global (all the player's melee); toggle to 0 for a weapon-state and restore on exit to scope it per-weapon. Useful for an extended-blade weapon that should damage on any contact (toggle the gates from the weapon's script and restore on exit). This is the engine-native "weapon damages on any touch" fix — PLANCK collision runs at engine framerate, no script-sampling gap.
+Setting all three to **0** → any contact registers a melee hit regardless of swing speed. The setting is global (all
+the player's melee); toggle to 0 for a weapon-state and restore on exit to scope it per-weapon. Useful for an
+extended-blade weapon that should damage on any contact (toggle the gates from the weapon's script and restore on
+exit). This is the engine-native "weapon damages on any touch" fix — PLANCK collision runs at engine framerate, no
+script-sampling gap.
 
 ---
 
@@ -486,7 +570,15 @@ use RightHand (1,213 of 1,258 records; 42 EitherHand, 3 BothHands), greatswords,
 
 **`AnimationType: Staff` causes visual blade inversion when using a sword NIF.** The staff skeleton orients the weapon bone differently than the sword skeleton. Result: blade appears held backwards. **Fix: apply a Y-axis rotation matrix to all child NiTriShape geometry nodes in the NIF.** This successfully corrects the inversion without breaking beam direction.
 
-**VRIK uses the 3rd-person weapon NIF *only when WNAM is null***. In Skyrim VR with VRIK active, the engine attaches the 3rd-person model (`MODL`) to the avatar hand bone — UNLESS the WEAP record has a `WNAM` (FirstPersonModel) field set to a STAT that wraps a different NIF. **Setting `WNAM = SomeStat` redirects the in-hand render to the STAT's NIF.** Confirmed: pointing `WNAM` at a STAT that wraps a vanilla 1st-person NIF causes the in-hand mesh to render that vanilla blade instead of the edited 3rd-person NIF. An earlier diagnostic (swapping the custom 1st-person NIF for an iron dagger had zero visual effect) was true *because WNAM was null at the time* — the auto-fallback 1st-person NIF lookup was indeed unused, but an *explicit* WNAM redirect is honored. **Practical rule: if you want VR in-hand to show NIF X, either edit the 3rd-person Model AND leave WNAM null, OR set WNAM to a STAT wrapping NIF X.** Both work; mixing them produces the override case where WNAM wins.
+**VRIK uses the 3rd-person weapon NIF *only when WNAM is null***. In Skyrim VR with VRIK active, the engine attaches
+the 3rd-person model (`MODL`) to the avatar hand bone — UNLESS the WEAP record has a `WNAM` (FirstPersonModel) field
+set to a STAT that wraps a different NIF. **Setting `WNAM = SomeStat` redirects the in-hand render to the STAT's
+NIF.** Confirmed: pointing `WNAM` at a STAT that wraps a vanilla 1st-person NIF causes the in-hand mesh to render that
+vanilla blade instead of the edited 3rd-person NIF. An earlier diagnostic (swapping the custom 1st-person NIF for an
+iron dagger had zero visual effect) was true *because WNAM was null at the time* — the auto-fallback 1st-person NIF
+lookup was indeed unused, but an *explicit* WNAM redirect is honored. **Practical rule: if you want VR in-hand to show
+NIF X, either edit the 3rd-person Model AND leave WNAM null, OR set WNAM to a STAT wrapping NIF X.** Both work; mixing
+them produces the override case where WNAM wins.
 
 **Inventory icon UI also follows WNAM.** When WNAM is null, the inventory icon viewport renders blank (or nothing reasonable). Setting WNAM to a valid STAT activates the icon. The rendered icon is the STAT's NIF (same one used for in-hand). To get a glowing inventory icon, point WNAM at a STAT wrapping a glowing NIF.
 
@@ -520,7 +612,10 @@ calibration (not via `vrik.ini`, which has only a global `weaponAdjustment`).
 
 ### Cell.GetNthRef is UNRELIABLE for Real-Time Actor Detection
 
-**`Cell.GetNumRefs(0)` + `Cell.GetNthRef(i, 0)` does NOT reliably return all loaded actors.** Confirmed via Papyrus logging: a Frost Troll being continuously hit by an engine beam (dozens of BEAM CONTACT events per second) appeared in only 2 out of 24 consecutive `GetNthRef` scans (~1s each). The ref count jumped from 17→18→19 when the troll appeared, suggesting dynamic load/unload of the ref list.
+**`Cell.GetNumRefs(0)` + `Cell.GetNthRef(i, 0)` does NOT reliably return all loaded actors.** Confirmed via Papyrus
+logging: a Frost Troll being continuously hit by an engine beam (dozens of BEAM CONTACT events per second) appeared in
+only 2 out of 24 consecutive `GetNthRef` scans (~1s each). The ref count jumped from 17→18→19 when the troll appeared,
+suggesting dynamic load/unload of the ref list.
 
 **Fix: Use `PO3_SKSEFunctions.GetActorsByProcessingLevel(0)` instead.** Returns an `Actor[]` array directly — no ObjectReference casting needed, far more reliable. Processing level 0 = high (nearby, combat-active actors). Confirmed working: 14 actors found per tick in the same area where GetNthRef found 1-2.
 
@@ -556,7 +651,11 @@ calibration (not via `vrik.ini`, which has only a global `weaponAdjustment`).
 
 ### Block Detection in Papyrus
 
-Vanilla Papyrus and SKSE have no `IsBlocking()` function. **Do not use `GetActorValue("IsBlocking")`** — it is not an actor value and errors on every call (see the correction below; an earlier version of this file recommended it). Use `Actor.GetAnimationVariableBool("IsBlocking")` on actors whose behavior graph supplies the variable. DbSKSE's source declares a native `IsActorBlocking(Actor)` (READ: `DbSKSEFunctions.psc`); a declaration does not prove it works on your runtime, so verify it before relying on it.
+Vanilla Papyrus and SKSE have no `IsBlocking()` function. **Do not use `GetActorValue("IsBlocking")`** — it is not an
+actor value and errors on every call (see the correction below; an earlier version of this file recommended it). Use
+`Actor.GetAnimationVariableBool("IsBlocking")` on actors whose behavior graph supplies the variable. DbSKSE's source
+declares a native `IsActorBlocking(Actor)` (READ: `DbSKSEFunctions.psc`); a declaration does not prove it works on
+your runtime, so verify it before relying on it.
 
 ### DbSKSEFunctions — Projectile Collision Tracking
 

@@ -43,8 +43,15 @@ Everything else, and how to upgrade from 3.x: [CHANGELOG.md](CHANGELOG.md).
 
 v2 could read, edit, and build ESPs. **v3 adds the ability to author 3D mesh content and animation, and to verify it visually before it ever touches your headset.** This is the big leap, so it goes first:
 
-- **Author animated NIFs from scratch.** Using PyNifly (the library behind BodySlide/Outfit Studio), Claude can write the animation-controller blocks that make a mesh *move on its own* — a self-spinning effect that auto-loops the instant it's placed in the world (a `SpecialIdle` animation sequence on a placed Activator, **zero Papyrus scripting required**), telescoping/extending geometry, or transform-keyframed motion. Hand-rolling these controller blocks is exactly the kind of thing that crashes the game when done wrong; the toolkit knows the correct way to write them.
-- **Headless render-verification loop.** Claude can render a NIF straight to a PNG with headless Blender and **show you the result right in chat** — so a mesh or VFX fix is confirmed *before* you spend a game-load on it. NifSkope acts as an independent render gate and PyNifly as an independent parse gate, so a bad file gets caught in tooling, not in your headset. Author → validate → render-proof, all without a launch per iteration.
+- **Author animated NIFs from scratch.** Using PyNifly (the library behind BodySlide/Outfit Studio), Claude can write
+  the animation-controller blocks that make a mesh *move on its own* — a self-spinning effect that auto-loops the
+  instant it's placed in the world (a `SpecialIdle` animation sequence on a placed Activator, **zero Papyrus scripting
+  required**), telescoping/extending geometry, or transform-keyframed motion. Hand-rolling these controller blocks is
+  exactly the kind of thing that crashes the game when done wrong; the toolkit knows the correct way to write them.
+- **Headless render-verification loop.** Claude can render a NIF straight to a PNG with headless Blender and **show
+  you the result right in chat** — so a mesh or VFX fix is confirmed *before* you spend a game-load on it. NifSkope
+  acts as an independent render gate and PyNifly as an independent parse gate, so a bad file gets caught in tooling,
+  not in your headset. Author → validate → render-proof, all without a launch per iteration.
 - **NIF geometry surgery.** Mesh splitting and subdivision, vertex and bounds edits, partial-mesh glow maps (a blade glows while the hilt doesn't), collision/Havok edits, and detection of VR-breaking skeleton nodes.
 - **Full audio pipeline.** Extract, convert, and create Skyrim sound files (FUZ/XWM/WAV), and wire up the SNDR/SOUN record pair correctly.
 - **Everything from v2.** ESP read/write/diff, Spriggit YAML editing, BSA archive CRUD, MCM menu generation, and save-file scanning are all still here.
@@ -83,16 +90,40 @@ This isn't a guide that tells you what to install and configure yourself. It's a
 
 ### A Toolset Built and Tested for Skyrim
 
-Skyrim modding is full of undocumented engine quirks, version-specific differences, and tools that silently fail. This fork is built for **Skyrim SE and AE on PC**. The upstream toolkit was built and tested on a live **Skyrim VR** install, so the VR sections are inherited and untested here; the knowledge, hooks, and scripts apply across versions, and the knowledgebase has version-specific sections so Claude knows what differs and what doesn't.
+Skyrim modding is full of undocumented engine quirks, version-specific differences, and tools that silently fail. This
+fork is built for **Skyrim SE and AE on PC**. The upstream toolkit was built and tested on a live **Skyrim VR**
+install, so the VR sections are inherited and untested here; the knowledge, hooks, and scripts apply across versions,
+and the knowledgebase has version-specific sections so Claude knows what differs and what doesn't.
 
-The clearest example: **xeditlib**. XEditLib.dll is the engine inside SSEEdit/xEdit -- the most powerful ESP editing tool in the Skyrim modding ecosystem. Getting it working from Node.js (so Claude Code could actually read and write ESP files) required cracking open the Delphi FFI layer and fixing a cascade of subtle bugs: strings encoded as UCS-2 instead of UTF-8, `InitXEdit()` silently corrupting the call stack when declared wrong, booleans that are actually 2-byte integers, a non-obvious two-step string-return pattern. None of this is documented anywhere. We debugged it, fixed it, and open-sourced the working wrapper as [xeditlib](https://github.com/kxgcayh/xeditlib) so you never have to deal with any of it. Claude Code can now read any ESP file and write new ones -- something that wouldn't work at all before this toolkit.
+The clearest example: **xeditlib**. XEditLib.dll is the engine inside SSEEdit/xEdit -- the most powerful ESP editing
+tool in the Skyrim modding ecosystem. Getting it working from Node.js (so Claude Code could actually read and write
+ESP files) required cracking open the Delphi FFI layer and fixing a cascade of subtle bugs: strings encoded as UCS-2
+instead of UTF-8, `InitXEdit()` silently corrupting the call stack when declared wrong, booleans that are actually
+2-byte integers, a non-obvious two-step string-return pattern. None of this is documented anywhere. We debugged it,
+fixed it, and open-sourced the working wrapper as [xeditlib](https://github.com/kxgcayh/xeditlib) so you never have to
+deal with any of it. Claude Code can now read any ESP file and write new ones -- something that wouldn't work at all
+before this toolkit.
 
 ### Everything Included
 
 - **2,000+ lines of Skyrim modding knowledge** -- Papyrus quirks, version-specific differences, xEdit pitfalls, engine bugs, NIF/animation authoring, VR hit-detection, and more (including VR-specific sections). Loaded into every Claude session automatically.
 - **NIF authoring & animation** -- Author self-animating meshes (self-spinning, telescoping, keyframed motion) with PyNifly, edit LE geometry with PyFFI, and verify everything with a headless render before you load the game.
 - **Render-verification loop** -- Headless Blender renders any NIF to a PNG so fixes are confirmed in chat; NifSkope and PyNifly act as independent render/parse gates so bad files are caught in tooling.
-- **Safety hooks** -- Claude is refused outright on the things that are never correct (writing a plugin or archive as raw text -- through the edit tools **and** through the shell -- deleting inside the game, config or Mod Organizer folders or moving files out of them, moving the install, `Data`, the settings folder or `Saves` away, deleting Bethesda registry keys, running decoded text as commands, DevBench's `smp reset`), and is warned -- without interrupting you -- on the things that are consequential but legitimate. Files it edits are backed up first, with a full audit trail. Only five rules ask *you* to decide: a git command that would throw away uncommitted changes in a protected folder, a `lock disable` that turns the vanilla-file lock off for good, an in-place snapshot restore (`snapshot restore --in-place`), which writes over live files, a program the guard cannot name (a variable such as `$R`) given one of your saves, and such a program -- or an `eval` of code a variable holds -- naming another protected path (the install, `Data`, the settings or MO2 folders, a plugin or archive). Any other change to your saves does not ask: one or two saves (a save and its co-save count as one) are backed up first, verified, and kept forever; more than two, or a wildcard, is refused until you type the `SAVE_ACCESS_APPROVAL` line that `python tools/agent-harness.py check --preview` prints for that exact command (the refusal points there). Run `bash tools/hook-canary.sh` any time to confirm the hooks are alive and actually receiving their input -- they once were not, and nothing looked wrong.
+- **Safety hooks** -- Claude is refused outright on the things that are never correct (writing a plugin or archive as
+  raw text -- through the edit tools **and** through the shell -- deleting inside the game, config or Mod Organizer
+  folders or moving files out of them, moving the install, `Data`, the settings folder or `Saves` away, deleting
+  Bethesda registry keys, running decoded text as commands, DevBench's `smp reset`), and is warned -- without
+  interrupting you -- on the things that are consequential but legitimate. Files it edits are backed up first, with a
+  full audit trail. Only five rules ask *you* to decide: a git command that would throw away uncommitted changes in a
+  protected folder, a `lock disable` that turns the vanilla-file lock off for good, an in-place snapshot restore
+  (`snapshot restore --in-place`), which writes over live files, a program the guard cannot name (a variable such as
+  `$R`) given one of your saves, and such a program -- or an `eval` of code a variable holds -- naming another
+  protected path (the install, `Data`, the settings or MO2 folders, a plugin or archive). Any other change to your
+  saves does not ask: one or two saves (a save and its co-save count as one) are backed up first, verified, and kept
+  forever; more than two, or a wildcard, is refused until you type the `SAVE_ACCESS_APPROVAL` line that
+  `python tools/agent-harness.py check --preview` prints for that exact command (the refusal points there). Run
+  `bash tools/hook-canary.sh` any time to confirm the hooks are alive and actually receiving their input -- they once
+  were not, and nothing looked wrong.
 - **Confidence system** -- Claude rates its confidence (0-100%) and lists its assumptions before proposing any change. No guessing, no "this should work."
 - **ESP editing via Spriggit** -- Serialize any ESP to human-readable YAML, edit it directly, deserialize back. Claude's native file editing works on YAML out of the box — no FFI layer, no scripting, and changes diff cleanly in git.
 - **ESP analysis via xeditlib** -- Programmatic inspection, diffing, and bulk queries across records. The hard Delphi FFI work is already done. ([xeditlib on GitHub](https://github.com/kxgcayh/xeditlib))
@@ -104,10 +135,18 @@ The clearest example: **xeditlib**. XEditLib.dll is the engine inside SSEEdit/xE
 - **MCM menu generation** -- Programmatically create SkyUI mod configuration menus with toggles, sliders, and pages.
 - **Save file analysis** -- Decompress and binary-scan .ess saves. Search for orphaned scripts, count effect accumulation, check mod footprint, detect save bloat.
 - **Conflict resolution answered by xEdit, not guessed** -- `skyrim-winner` loads your **full** active load order and asks xEdit which plugin actually wins a record, prints the whole override chain, or lists every record a plugin loses. No index and no cache, so there is nothing to go stale.
-- **Log triage that cannot quietly drop rows** -- `papyrus-triage` buckets and attributes a Papyrus log; `crash-triage` reduces ~5,500-line CrashLogger dumps to ranked signatures and labels the ones your knowledgebase already ruled on. Both print the denominator first, sum their rows against independently counted totals, and print the not-shown row even when it is zero -- and both are mutation-tested, so a check that stopped biting fails CI.
+- **Log triage that cannot quietly drop rows** -- `papyrus-triage` buckets and attributes a Papyrus log;
+  `crash-triage` reduces ~5,500-line CrashLogger dumps to ranked signatures and labels the ones your knowledgebase
+  already ruled on. Both print the denominator first, sum their rows against independently counted totals, and print
+  the not-shown row even when it is zero -- and both are mutation-tested, so a check that stopped biting fails CI.
 - **Dry-run workflow** -- All ESP and asset changes go through a preview pass first. Claude shows you exactly what it will do before touching anything.
 - **Claude Code skills** -- Slash commands like `/inspect-esp MyMod.esp`, `/port-to-vr`, and `/create-mod` that trigger guided workflows. Auto-loading context that injects critical Skyrim gotchas when Claude works with game files.
-- **Requirements** -- **Claude Code 2.1.295+** when you use Claude Code (its guard hooks set `"onFailure": "block"`, so a guard that crashes or times out blocks the call; `setup.sh` refuses an older one). **Python 3.10+ is required** for the safety hooks and offline shared harness (tested on 3.10–3.13; without a suitable Python they refuse commands until it is installed and `setup.sh` is re-run). `jq` is optional. xeditlib needs Node.js; the OpenCode JavaScript transport has separate [setup and qualification notes](.opencode/SKYRIM-OPENCODE.md), and its standalone transport tests use Node.
+- **Requirements** -- **Claude Code 2.1.295+** when you use Claude Code (its guard hooks set `"onFailure": "block"`,
+  so a guard that crashes or times out blocks the call; `setup.sh` refuses an older one). **Python 3.10+ is required**
+  for the safety hooks and offline shared harness (tested on 3.10–3.13; without a suitable Python they refuse commands
+  until it is installed and `setup.sh` is re-run). `jq` is optional. xeditlib needs Node.js; the OpenCode JavaScript
+  transport has separate [setup and qualification notes](.opencode/SKYRIM-OPENCODE.md), and its standalone transport
+  tests use Node.
 - **Auto-setup** -- One prompt installs prerequisites, configures paths, sets up hooks, and optionally installs modding tools. No manual configuration.
 
 ### Optional tools (install as needed)
@@ -122,18 +161,57 @@ None of these are bundled; setup walks you through any you pick.
 - **PyNifly** -- SSE BSTriShape + animation authoring (download `io_scene_nifly.zip` of release **V27.2.0** and check its SHA-256 against docs/installing-tools.md *Pinned downloads*; a release zip, not a repo clone — the compiled DLL ships only in the release zip; no build)
 - **Blender (headless) / NifSkope** -- NIF mesh repair + render verification (large external apps; Blender 4.2.9 LTS and NifSkope v2.0.dev9, hashes in docs/installing-tools.md *Pinned downloads*)
 - **nexusmods-surfer** -- reads nexusmods.com pages (description, permissions, posts, bug reports) past Cloudflare as JSON. **Private repo**: contact the maintainer (GitHub: kxgcayh) for access, then `bash setup.sh --with-surfer` (pinned commit `343790f`; steps in docs/installing-tools.md)
-- **ReSaver CLI** -- headless `.ess` save parse / cross-reference / clean / changeform-level diagnostics (ReSaver **6.0.643** from **Nexus mod 5031** / FallrimTools into `tools/resaver-cli/`, `ReSaver.jar` and `lib/` checked against docs/installing-tools.md *Pinned downloads* by `bash tools/resaver-cli.sh verify`; requires **JDK 17+**, JDK 21 LTS recommended). Optional on Windows: **ReSaver Plus**, a native backend for the same operations that `python tools/resaver-plus/build.py` builds locally from a pinned upstream commit plus the toolkit's patches (no binary ships; needs Visual Studio 2022 Build Tools); Java stays the default, opt in with `RESAVER_BACKEND=native` (`tools/resaver-plus/README.md`)
-- **DevBench** -- LIVE in-game inspect / console / Papyrus while the game runs (**Nexus mod 181326** / alandtse; GPL-3.0, dev-only, no gameplay change and no save data). Unlike everything else here it's a **mod, not a `tools/` utility** -- install it with your own mod manager like any other SKSE plugin, rather than letting Claude drop the DLL into `Data/`. The toolkit bundles the wrapper `tools/devbench-cli.sh`, which works as soon as DevBench is installed.
+- **ReSaver CLI** -- headless `.ess` save parse / cross-reference / clean / changeform-level diagnostics (ReSaver
+  **6.0.643** from **Nexus mod 5031** / FallrimTools into `tools/resaver-cli/`, `ReSaver.jar` and `lib/` checked
+  against docs/installing-tools.md *Pinned downloads* by `bash tools/resaver-cli.sh verify`; requires **JDK 17+**, JDK
+  21 LTS recommended). Optional on Windows: **ReSaver Plus**, a native backend for the same operations that
+  `python tools/resaver-plus/build.py` builds locally from a pinned upstream commit plus the toolkit's patches (no
+  binary ships; needs Visual Studio 2022 Build Tools); Java stays the default, opt in with `RESAVER_BACKEND=native`
+  (`tools/resaver-plus/README.md`)
+- **DevBench** -- LIVE in-game inspect / console / Papyrus while the game runs (**Nexus mod 181326** / alandtse;
+  GPL-3.0, dev-only, no gameplay change and no save data). Unlike everything else here it's a **mod, not a `tools/`
+  utility** -- install it with your own mod manager like any other SKSE plugin, rather than letting Claude drop the
+  DLL into `Data/`. The toolkit bundles the wrapper `tools/devbench-cli.sh`, which works as soon as DevBench is
+  installed.
 - **papyrus-triage / crash-triage** -- Papyrus log and CrashLogger dump triage. No install beyond Python 3; bundled (`tools/papyrus-triage.py`, `tools/crash-triage.py`).
 - **logging-registry** -- Read-only discovery of logging/debug controls, configured values and explicit coverage gaps. Search and compare saved inventories; [guide](docs/logging-registry.md), skill `logging-registry`.
 - **skse-load-status** -- what SKSE did with each plugin DLL at the last launch (loaded, incompatible, not an SKSE plugin) and the version each reports about itself, from `sksevr.log` / `skse64.log`. No install beyond Python 3; bundled (`tools/skse-load-status.py`).
 - **archive-triage** -- what a mod archive would change before you install it: each file NEW / SAME / CHANGED against what is installed, every destination shown and any outside `Data/` flagged; read-only. Bundled (`tools/archive-triage.py`); needs **7-Zip 26.00** (pinned in docs/installing-tools.md).
 - **mirror-launch-logs** -- one-shot, append-only copy of the SKSE, crash and Papyrus logs into `.claude/backups/log-mirror/`, so the next launch cannot rotate the evidence away; a replaced log keeps its previous copy. No install beyond Python 3; bundled (`tools/mirror-launch-logs.py`).
-- **housekeep** -- disk retention for agent output (`docs/RETENTION.md`): report, plan, then apply exactly the plan. Copies of live game files go to the Recycle Bin, duplicates become read-only hard links, launch logs are compressed, and finished task folders are zipped and verified. Build intermediates and old logs go only with an explicit, content-bound obsolete decision; saves, backup folders, git-tracked files, doc-linked evidence and active task folders are never touched. Session start also sweeps the toolkit's own stale temp dirs and the guard's settled `.claude/retired/` batches to the Recycle Bin in the background (never pytest's shared folder; `SKYGUARD_HOUSEKEEP_SWEEP=off` turns it off) and says when disk needs your attention. No install beyond Python 3; bundled (`tools/housekeep.py`).
-- **mod-install** -- a manual mod install that is a dry run unless `--apply`: every destination shown, every replaced file backed up, a SHA-256 manifest to undo it, existing configs kept with the new copy beside them as `.new`, hardlink-safe writes, plugins never activated; installs into a new mod folder under Mod Organizer 2 (`--update` replaces an existing one after keeping the old folder whole). Bundled (`tools/mod-install.py`); needs **7-Zip 26.00**.
-- **nexus.sh `find` / `page` / `contents`** -- the desk review before an update (skill `mod-update-check`): name search, the page with author-declared requirements and every changelog since your installed version (sorted by version, not as text), and file contents from Nexus previews where Nexus serves them to the tool. Failures print `RESULT: COULD-NOT-CHECK` (exit 3), never a blank answer. Bundled (`tools/nexus.sh`, `tools/nexus-render.py`); needs your Nexus key.
-- **bench-vr** -- frame rate at fixed locations through DevBench, before and after a change, with `compare`; it pins timescale, hour, weather and god mode, discards each location's first window, and puts back god mode, timescale and hour even on failure. The forced weather and the player's location are left as they are, and every run says so (`LEFT AS IS (by design)`, with the start and end cell): reload your save to return. Read-only otherwise. Bundled (`tools/bench-vr.py`); needs DevBench and a running game.
-- **vr-headless** (Skyrim VR only) -- boots the game on SteamVR's null driver with no headset, so DevBench tests that do not depend on head or hand position can run unattended; `off` restores `openvr_api.dll` and `steamvr.vrsettings` byte-exact and verifies them; a file that changed after `on` is first copied, verified, into the run's `changed-after-on-<stamp>/` folder, and the state file is kept as `state-closed-<stamp>.json`. `run --desktop background|current` owns a whole session and restores in `finally` when safe. Retained launcher handles allow children to outlive short-lived launchers. A current-desktop Steam handoff is observed for readiness without granting termination rights: close that SteamVR yourself before restoring. A simultaneous user launch cannot be distinguished. A failed ownership or placement proof keeps headless files and state; close unproved processes yourself, then use `stop`/`off`. An optional pose-emulating driver (the official SkyrimVR Devkit v2.0.1) is downloaded on your machine from its pinned release commit and hash-verified (`tools/vr-emu-driver/README.md`); the toolkit ships no copy. Bundled (`tools/vr-headless.sh`).
+- **housekeep** -- disk retention for agent output (`docs/RETENTION.md`): report, plan, then apply exactly the plan.
+  Copies of live game files go to the Recycle Bin, duplicates become read-only hard links, launch logs are compressed,
+  and finished task folders are zipped and verified. Build intermediates and old logs go only with an explicit,
+  content-bound obsolete decision; saves, backup folders, git-tracked files, doc-linked evidence and active task
+  folders are never touched. Session start also sweeps the toolkit's own stale temp dirs and the guard's settled
+  `.claude/retired/` batches to the Recycle Bin in the background (never pytest's shared folder;
+  `SKYGUARD_HOUSEKEEP_SWEEP=off` turns it off) and says when disk needs your attention. No install beyond Python 3;
+  bundled (`tools/housekeep.py`).
+- **mod-install** -- a manual mod install that is a dry run unless `--apply`: every destination shown, every replaced
+  file backed up, a SHA-256 manifest to undo it, existing configs kept with the new copy beside them as `.new`,
+  hardlink-safe writes, plugins never activated; installs into a new mod folder under Mod Organizer 2 (`--update`
+  replaces an existing one after keeping the old folder whole). Bundled (`tools/mod-install.py`); needs **7-Zip
+  26.00**.
+- **nexus.sh `find` / `page` / `contents`** -- the desk review before an update (skill `mod-update-check`): name
+  search, the page with author-declared requirements and every changelog since your installed version (sorted by
+  version, not as text), and file contents from Nexus previews where Nexus serves them to the tool. Failures print
+  `RESULT: COULD-NOT-CHECK` (exit 3), never a blank answer. Bundled (`tools/nexus.sh`, `tools/nexus-render.py`); needs
+  your Nexus key.
+- **bench-vr** -- frame rate at fixed locations through DevBench, before and after a change, with `compare`; it pins
+  timescale, hour, weather and god mode, discards each location's first window, and puts back god mode, timescale and
+  hour even on failure. The forced weather and the player's location are left as they are, and every run says so
+  (`LEFT AS IS (by design)`, with the start and end cell): reload your save to return. Read-only otherwise. Bundled
+  (`tools/bench-vr.py`); needs DevBench and a running game.
+- **vr-headless** (Skyrim VR only) -- boots the game on SteamVR's null driver with no headset, so DevBench tests that
+  do not depend on head or hand position can run unattended; `off` restores `openvr_api.dll` and `steamvr.vrsettings`
+  byte-exact and verifies them; a file that changed after `on` is first copied, verified, into the run's
+  `changed-after-on-<stamp>/` folder, and the state file is kept as `state-closed-<stamp>.json`.
+  `run --desktop background|current` owns a whole session and restores in `finally` when safe. Retained launcher
+  handles allow children to outlive short-lived launchers. A current-desktop Steam handoff is observed for readiness
+  without granting termination rights: close that SteamVR yourself before restoring. A simultaneous user launch cannot
+  be distinguished. A failed ownership or placement proof keeps headless files and state; close unproved processes
+  yourself, then use `stop`/`off`. An optional pose-emulating driver (the official SkyrimVR Devkit v2.0.1) is
+  downloaded on your machine from its pinned release commit and hash-verified (`tools/vr-emu-driver/README.md`); the
+  toolkit ships no copy. Bundled (`tools/vr-headless.sh`).
 - **skyrim-winner** -- which plugin wins a record, per the full load order. Bundled (`tools/skyrim-winner.sh`) but needs **xeditlib** installed to do anything.
 - **cosave-info** -- read-only structural survey of an SKSE `.skse` co-save → JSON (which mods stashed co-save data + how much). No install beyond Python 3; bundled (`tools/cosave-cli.sh`).
 
@@ -177,7 +255,15 @@ Open a terminal in the folder containing your game's executable, then start `cla
 
 **On a Mac with CrossOver:** set `SKYRIM_CONFIG_DIR` and `SKYRIM_LOADORDER_DIR` before running setup, or the guards protect Windows paths that do not exist on your machine. See [docs/macos-crossover.md](docs/macos-crossover.md).
 
-Deeper pages for that setup, each with the root cause and the fix: [Caprica / Papyrus under CrossOver](docs/papyrus-caprica-crossover.md), [D3D11 swapchain crash](docs/crossover-d3d11-swapchain.md), [LOOT, Qt 6 and MO2 TLS](docs/crossover-loot-and-qt6.md), [BodySlide OpenGL](docs/crossover-bodyslide-opengl.md), [cross-compiling SKSE plugins](docs/skse-cross-compile-macos.md) and [Windows `.exe` tools](docs/windows-exe-cross-compile-macos.md). For SKSE plugin failures on AE 1.7.99+: [internals](docs/skse-internals.md), [per-plugin fixes](docs/ae-1-7-104-plugin-fixes.md), [binary patcher guide](docs/binary-patcher-guide.md) and [licensing and delta patching](docs/licensing-and-delta-patching.md).
+Deeper pages for that setup, each with the root cause and the fix:
+[Caprica / Papyrus under CrossOver](docs/papyrus-caprica-crossover.md),
+[D3D11 swapchain crash](docs/crossover-d3d11-swapchain.md), [LOOT, Qt 6 and MO2 TLS](docs/crossover-loot-and-qt6.md),
+[BodySlide OpenGL](docs/crossover-bodyslide-opengl.md),
+[cross-compiling SKSE plugins](docs/skse-cross-compile-macos.md) and
+[Windows `.exe` tools](docs/windows-exe-cross-compile-macos.md). For SKSE plugin failures on AE 1.7.99+:
+[internals](docs/skse-internals.md), [per-plugin fixes](docs/ae-1-7-104-plugin-fixes.md),
+[binary patcher guide](docs/binary-patcher-guide.md) and
+[licensing and delta patching](docs/licensing-and-delta-patching.md).
 
 `setup.sh` accepts `--game <dir>` (points to game; keeps Skyrim clean), `--agent claude|codex|all|auto` (default `auto` detects agents on PATH), and `--lock` (optional read-only lock on vanilla masters/archives).
 
@@ -197,7 +283,10 @@ Copy this entire prompt and paste it into your coding agent (Claude Code, Codex,
 I just installed the Skyrim modding toolkit into this folder. Read AGENTS.md (Claude Code reads CLAUDE.md, which says the same), then read the skill toolkit-setup (.agents/skills/toolkit-setup/SKILL.md; Claude Code: .claude/skills/toolkit-setup/SKILL.md) and follow it: it inventories Python, Git and Node by launching them, then you run "bash setup.sh". Host-software installs: NOT AUTHORIZED. That means: do not install, upgrade, repair or remove Python, Git, Node or any other system software (a JDK, .NET, Blender) on my computer; if something is missing or broken, tell me the exact manual steps and wait for me. (To authorize installing Python, Git or Node I will change that sentence myself, to this form: Host-software installs: AUTHORIZED python=<winget id>==<exact version>. The only winget ids it can name are Python.Python.3.<minor> (3.10 or newer) for python, Git.Git for git, and OpenJS.NodeJS or OpenJS.NodeJS.LTS for node, each at the exact version I write, installed with --no-upgrade. That sentence never covers a JDK, .NET or Blender: for those, and for anything else, you only give me manual steps.) If you are an agent other than Claude Code or Codex, read ADAPTING.md after setup and tell me honestly which protection layers you can provide and which you cannot. After setup, ask me which optional modding tools I'd like (xeditlib, Champollion, Caprica, Spriggit, AutoMod CLI, PyFFI, PyNifly, Blender, NifSkope, ReSaver CLI, ReSaver Plus) and set up the ones I pick, only inside this folder (git clones or downloads into tools/), each at exactly the version docs/installing-tools.md names, checking every download's SHA-256 against its Pinned downloads table -- never a newer or older version, and stop and tell me if a hash does not match. AutoMod CLI adds NIF mesh editing, BSA archive tools, audio processing, and MCM menu generation -- it is a real tool you install by cloning https://github.com/SpookyPirate/spookys-automod-toolkit at tag v1.11.2 (commit e1c34ea, the version this toolkit tested) into tools/automod and then running bash tools/automod-cli.sh --rebuild, which checks out that commit, retargets it to the .NET 10 SDK and builds only the Cli project (never build it with a bare dotnet build; the first build needs internet), after which it runs via tools/automod-cli.sh. PyFFI + PyNifly add NIF geometry and animation/controller authoring; Blender (headless) + NifSkope add mesh repair and render-verification of meshes before in-game testing. ReSaver CLI adds headless .ess save parsing, cross-referencing, cleaning, and changeform-level diagnostics (ReSaver 6.0.643 from Nexus mod 5031 into tools/resaver-cli/, its ReSaver.jar and lib/ checked against Pinned downloads with bash tools/resaver-cli.sh verify; needs JDK 17+ (JDK 21 LTS recommended; a JDK is system software: never install it yourself, give me the manual steps)). ReSaver Plus is an optional second, native ReSaver backend for Windows: python tools/resaver-plus/build.py builds it here from the pinned upstream commit plus the shipped patches and installs it only if its seven tests pass; it needs Visual Studio 2022 Build Tools with Desktop development with C++ (system software: never install it yourself, give me the manual steps); the Java ReSaver CLI stays the default and I opt in with RESAVER_BACKEND=native. Separately, TELL me about DevBench but do NOT install it: it is an optional dev-only SKSE plugin (Nexus mod 181326 by alandtse, no gameplay change and no save data) that runs a localhost server inside the running game, letting you inspect live state, run console commands and read their output, and call Papyrus functions -- so you can test your own fixes while I keep playing, instead of asking me to launch, trigger, and report back. Unlike everything else in that list it is a mod, not a dev tool, so if I want it I install it through my own mod manager like any other SKSE plugin -- never copy files into Data/ yourself. The wrapper tools/devbench-cli.sh is already bundled and works as soon as it's installed. The bundled cosave-info tool (tools/cosave-cli.sh, Python 3, no download) gives a read-only structural survey of an SKSE .skse co-save. Be sure to tailor the environment specifically to my Skyrim version and install (may or may not be VR). Also ask me whether I want to enable the optional Nexus API integration (mod update-detection / version & changelog checks); if yes, explain how to get a free Personal API Key and save it to tools/.nexus_api_key (which is gitignored). Explain everything in plain English and ask me any questions you may need to.
 ```
 
-Your agent handles the rest. It checks which of Python, Git and Node actually start, configures paths, sets up the safety hooks, and walks you through the optional tools (installed only inside this folder). It does not install Python, Git, Node or any other system software: if one is missing it tells you the manual steps, unless you change the authorization sentence in the prompt yourself. Just answer any questions it asks.
+Your agent handles the rest. It checks which of Python, Git and Node actually start, configures paths, sets up the
+safety hooks, and walks you through the optional tools (installed only inside this folder). It does not install
+Python, Git, Node or any other system software: if one is missing it tells you the manual steps, unless you change the
+authorization sentence in the prompt yourself. Just answer any questions it asks.
 
 > **Note on the NIF render loop:** The headless render-verification step uses Blender (and, optionally, NifSkope for an independent visual check). These are large external GUI apps, so — like Champollion/Caprica — they aren't bundled in the zip; the setup will point you to install them and wire up the addon. PyFFI and PyNifly themselves are lightweight and handled by setup.
 
@@ -596,17 +685,40 @@ probed live (`codex exec` and the TUI) are claimed, and why the desktop app and 
 
 ## Other agents
 
-Any agent that reads files gets the toolkit's instructions, skills and tools, with no hook (Layers 0 and 1, plus Layer 2 if the user turns it on: a read-only lock on the vanilla files below the agent, off by default, Windows only). [`ADAPTING.md`](ADAPTING.md) is written for such an agent: it lets the agent wire up the rest itself and describes how far it can prove it got. The toolkit does not call such an agent supported; only Claude Code and Codex are listed as supported here.
+Any agent that reads files gets the toolkit's instructions, skills and tools, with no hook (Layers 0 and 1, plus Layer
+2 if the user turns it on: a read-only lock on the vanilla files below the agent, off by default, Windows only).
+[`ADAPTING.md`](ADAPTING.md) is written for such an agent: it lets the agent wire up the rest itself and describes how
+far it can prove it got. The toolkit does not call such an agent supported; only Claude Code and Codex are listed as
+supported here.
 
 ---
 
 ## FAQ
 
 **Q: Does this work with Skyrim VR?**
-A: This fork is focused on SE and AE. The VR sections of the knowledgebase and the VR-only tools (`vr-headless`, `bench-vr`, `/port-to-vr`) come from upstream and are not tested here, because the maintainer has no VR setup. The safety hooks and workflow are version-independent. For VR, prefer the [upstream repository](https://github.com/WingedGuardian/skyrimvr-claude-toolkit). Tell Claude Code your Skyrim version so it adapts.
+A: This fork is focused on SE and AE. The VR sections of the knowledgebase and the VR-only tools (`vr-headless`,
+`bench-vr`, `/port-to-vr`) come from upstream and are not tested here, because the maintainer has no VR setup. The
+safety hooks and workflow are version-independent. For VR, prefer the
+[upstream repository](https://github.com/WingedGuardian/skyrimvr-claude-toolkit). Tell Claude Code your Skyrim version
+so it adapts.
 
 **Q: Can Claude break my mods or save files?**
-A: The safety hooks refuse the destructive cases outright rather than asking you to confirm them: writing a plugin or archive (through the edit tools or a shell write such as `>`, `tee`, `Set-Content`), deleting inside the game, config or Mod Organizer folders, and deleting Bethesda's registry keys are all denied. The delete rule is anchored on the *program that runs* (`rm`, `rmdir`, `del`, `Remove-Item`, `shutil.rmtree`, `find -delete`, in Bash and PowerShell) and on where its operand **resolves**, relative paths against the working directory Claude reports, in either slash direction and either path dialect -- an earlier version keyed on one spelling of `rm` and eleven others walked past it, and matched the words of a `grep` as if they were a delete. The install is *resolved*, from the hooks' own location plus the paths `setup.sh` records in `skyrim-paths.env` at the toolkit root (a 3.x install's `.claude/skyrim-paths.env` is still read); it is not "any path containing the word Skyrim", which used to match a temp folder, a checkout of this toolkit, and even a git URL, refusing ordinary work as though it were deleting your game. If the hooks cannot work out where the install is, they **refuse rather than allow** -- a guard that checked nothing must not answer "fine". **It is still pattern matching, not a sandbox**, so treat it as a guard against accidents rather than a guarantee against everything. Ordinary edits proceed with a warning in Claude's context instead of a prompt at you, and files it edits through the Edit/Write tools are copied to `.claude/backups/` first with an audit-log entry -- work done by external tools through Bash is covered by the `.psc`/`.pex` snapshot instead. Verify the hooks are actually live with `bash tools/hook-canary.sh`, and keep your own backups regardless.
+A: The safety hooks refuse the destructive cases outright rather than asking you to confirm them: writing a plugin or
+archive (through the edit tools or a shell write such as `>`, `tee`, `Set-Content`), deleting inside the game, config
+or Mod Organizer folders, and deleting Bethesda's registry keys are all denied. The delete rule is anchored on the
+*program that runs* (`rm`, `rmdir`, `del`, `Remove-Item`, `shutil.rmtree`, `find -delete`, in Bash and PowerShell) and
+on where its operand **resolves**, relative paths against the working directory Claude reports, in either slash
+direction and either path dialect -- an earlier version keyed on one spelling of `rm` and eleven others walked past
+it, and matched the words of a `grep` as if they were a delete. The install is *resolved*, from the hooks' own
+location plus the paths `setup.sh` records in `skyrim-paths.env` at the toolkit root (a 3.x install's
+`.claude/skyrim-paths.env` is still read); it is not "any path containing the word Skyrim", which used to match a temp
+folder, a checkout of this toolkit, and even a git URL, refusing ordinary work as though it were deleting your game.
+If the hooks cannot work out where the install is, they **refuse rather than allow** -- a guard that checked nothing
+must not answer "fine". **It is still pattern matching, not a sandbox**, so treat it as a guard against accidents
+rather than a guarantee against everything. Ordinary edits proceed with a warning in Claude's context instead of a
+prompt at you, and files it edits through the Edit/Write tools are copied to `.claude/backups/` first with an
+audit-log entry -- work done by external tools through Bash is covered by the `.psc`/`.pex` snapshot instead. Verify
+the hooks are actually live with `bash tools/hook-canary.sh`, and keep your own backups regardless.
 
 **Q: Do I need Blender or NifSkope?**
 A: Only for the optional headless render-verification loop. The core NIF authoring/editing (PyFFI, PyNifly) works without them. If you want Claude to render a mesh to a PNG and show it to you in chat, install Blender; NifSkope adds an independent visual gate. Setup will walk you through it.
@@ -615,11 +727,30 @@ A: Only for the optional headless render-verification loop. The core NIF authori
 A: The safety hooks run on Python 3 and refuse everything when they cannot start it (that is deliberate: a guard that cannot run must not allow). Install Python 3 (for you to run: `winget install --id Python.Python.3.12 --exact --version 3.12.10 --no-upgrade`: inside the tested 3.10-3.13 range and the Python the optional tools were verified on; winget checks the installer's hash), then run `bash setup.sh` again so it records the interpreter's path in the hooks. `jq` is no longer needed by the hooks; it is optional and only prettifies `tools/devbench-cli.sh` and `tools/nexus.sh` output.
 
 **Q: How do I update the toolkit?**
-A: (1) Unpack the new zip into a separate folder. The zip holds one versioned folder, `skyrim-ai-assistant-toolkit-<version>/`: that inner folder is `<new folder>` below, the one with `setup.sh` and `tools/` directly inside it. (2) From your Skyrim folder, run `bash "<new folder>/tools/pre-update-snapshot.sh" .` to keep a copy of what the update replaces. (3) Copy the new folder's contents over your Skyrim folder; shipped files are replaced. (4) Run `bash setup.sh --agent auto` (or `claude`, `codex`, `all`); on a 3.x install it runs `tools/migrate-3x.py`, which carries your own edits to CLAUDE.md, the hook settings and KNOWLEDGEBASE.md forward and deletes nothing. (5) Complete the hook review (Codex: `/hooks`) and check `bash tools/hook-canary.sh` after real tool calls. If you wrote your own pre-tool hook handlers or a personal save policy, use the reviewed upgrade in [docs/upgrading-native-hooks.md](docs/upgrading-native-hooks.md) instead of step 3.
+A: (1) Unpack the new zip into a separate folder. The zip holds one versioned folder,
+`skyrim-ai-assistant-toolkit-<version>/`: that inner folder is `<new folder>` below, the one with `setup.sh` and
+`tools/` directly inside it. (2) From your Skyrim folder, run `bash "<new folder>/tools/pre-update-snapshot.sh" .` to
+keep a copy of what the update replaces. (3) Copy the new folder's contents over your Skyrim folder; shipped files are
+replaced. (4) Run `bash setup.sh --agent auto` (or `claude`, `codex`, `all`); on a 3.x install it runs
+`tools/migrate-3x.py`, which carries your own edits to CLAUDE.md, the hook settings and KNOWLEDGEBASE.md forward and
+deletes nothing. (5) Complete the hook review (Codex: `/hooks`) and check `bash tools/hook-canary.sh` after real tool
+calls. If you wrote your own pre-tool hook handlers or a personal save policy, use the reviewed upgrade in
+[docs/upgrading-native-hooks.md](docs/upgrading-native-hooks.md) instead of step 3.
 
-**Extracting directly over an installation replaces shipped files, including customized instructions and hook settings.** Step 2's snapshot and setup's migration keep a copy of each; the reviewed upgrader instead preserves collisions for explicit choices. Your own notes belong in **`KNOWLEDGEBASE.local.md`**, which the toolkit never ships and the release build refuses to contain; the agent reads both knowledge files and writes only to the local one. Its `## My preferences` section holds your standing instructions. Existing session hooks and the OpenCode system transform reinject that section through the same bounded parser. Local notes, path configuration and permanent recovery stores remain separate from shipped defaults.
+**Extracting directly over an installation replaces shipped files, including customized instructions and hook
+settings.** Step 2's snapshot and setup's migration keep a copy of each; the reviewed upgrader instead preserves
+collisions for explicit choices. Your own notes belong in **`KNOWLEDGEBASE.local.md`**, which the toolkit never ships
+and the release build refuses to contain; the agent reads both knowledge files and writes only to the local one. Its
+`## My preferences` section holds your standing instructions. Existing session hooks and the OpenCode system transform
+reinject that section through the same bounded parser. Local notes, path configuration and permanent recovery stores
+remain separate from shipped defaults.
 
-Since v3.9 a SessionStart hook also copies `KNOWLEDGEBASE.md`, `KNOWLEDGEBASE.local.md`, `CLAUDE.md` and `AGENTS.md` into `.claude/backups/kb/` whenever they change, and says so loudly at the start of the next session if one of them vanished, emptied, or lost more than half its bytes — which is what extracting an update over your install looks like from the inside. Run it yourself any time with `bash tools/kb-guard.sh --verbose`. Note the honest limit: an update that replaces your 100 KB knowledgebase with a 140 KB shipped one shrinks nothing and raises no alarm. The stored copy is the protection; the alarm is a convenience on top of it.
+Since v3.9 a SessionStart hook also copies `KNOWLEDGEBASE.md`, `KNOWLEDGEBASE.local.md`, `CLAUDE.md` and `AGENTS.md`
+into `.claude/backups/kb/` whenever they change, and says so loudly at the start of the next session if one of them
+vanished, emptied, or lost more than half its bytes — which is what extracting an update over your install looks like
+from the inside. Run it yourself any time with `bash tools/kb-guard.sh --verbose`. Note the honest limit: an update
+that replaces your 100 KB knowledgebase with a 140 KB shipped one shrinks nothing and raises no alarm. The stored copy
+is the protection; the alarm is a convenience on top of it.
 
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: skyrim-mcm
-description: Generate SkyUI Mod Configuration Menus using AutoMod CLI.
+description: Generate SkyUI Mod Configuration Menus using AutoMod CLI. Use when a mod needs an in-game settings menu (toggles, sliders, pages), or to inspect or validate an existing MCM config.
 ---
 
 # MCM Menu Generation

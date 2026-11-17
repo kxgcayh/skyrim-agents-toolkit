@@ -4,7 +4,7 @@
 # This script is designed to be run FROM your Skyrim folder, after
 # extracting the toolkit zip into it. It configures everything in-place.
 #
-# Usage: bash setup.sh [--agent claude|codex|all|auto|generic|opencode] [--game <dir>] [--lock] [--save-lock|--no-save-lock] [--with-surfer]
+# Usage: bash setup.sh [--agent claude|codex|all|auto|generic|opencode] [--game <dir>] [--lock] [--save-lock|--no-save-lock] [--with-surfer] [--refresh-docs]
 #   --agent auto    (the default) every agent found on PATH; when none is found, all of them
 #   --agent claude  Claude Code only      --agent codex  Codex only (Windows only)
 #   --agent all     every named adapter (`both` is accepted as another name for it)
@@ -17,6 +17,8 @@
 #   --with-surfer   also clone the PRIVATE nexusmods-surfer repo into tools/nexusmods-surfer (needs access granted
 #                   by the maintainer; without it the clone fails, setup says so and carries on). Re-running it
 #                   moves an existing clean clone's main branch to the pinned commit.
+#   --refresh-docs  rebuild an already configured CLAUDE.md / AGENTS.md from the committed template and fill in
+#                   the current paths (git checkouts only). Your copy is kept under .claude/backups/docs/ first.
 # Setup never installs software. Every install command it prints is for you to run.
 
 set -e
@@ -24,7 +26,7 @@ set -e
 # --- Options: checked before anything is written ----------------------------------------------------------
 # An unknown option or --agent value is a usage error (exit 2) and nothing is touched.
 usage() {
-    echo "usage: bash setup.sh [--agent claude|codex|all|auto|generic|opencode] [--game <dir>] [--lock] [--save-lock|--no-save-lock] [--with-surfer]"
+    echo "usage: bash setup.sh [--agent claude|codex|all|auto|generic|opencode] [--game <dir>] [--lock] [--save-lock|--no-save-lock] [--with-surfer] [--refresh-docs]"
     echo "  --agent auto    the default: every agent found on PATH (claude, codex); all of them when none is found"
     echo "  --agent claude  configure Claude Code only"
     echo "  --agent codex   configure Codex only (Windows only)"
@@ -36,12 +38,14 @@ usage() {
     echo "  --save-lock     lock the saves against any delete or change (Windows; asked when neither flag is given)"
     echo "  --no-save-lock  leave save locking off without asking"
     echo "  --with-surfer   also clone the private nexusmods-surfer (Nexus page scraper); ask the maintainer for access"
+    echo "  --refresh-docs  rebuild a configured CLAUDE.md / AGENTS.md from the committed template (git checkouts; backed up first)"
 }
 AGENT_ARG="auto"
 GAME_ARG=""
 WANT_LOCK=""
 WANT_SAVE_LOCK=""
 WANT_SURFER=""
+WANT_REFRESH_DOCS=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --agent)
@@ -60,6 +64,7 @@ while [ $# -gt 0 ]; do
         --save-lock) WANT_SAVE_LOCK=yes; shift ;;
         --no-save-lock) WANT_SAVE_LOCK=no; shift ;;
         --with-surfer) WANT_SURFER=1; shift ;;
+        --refresh-docs) WANT_REFRESH_DOCS=1; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "setup.sh: unknown option '$1'. Nothing was changed." >&2; usage >&2; exit 2 ;;
     esac
@@ -1163,7 +1168,9 @@ fi
 # --- Enable the pre-commit check that refuses machine-local paths (.githooks/pre-commit) ---
 # Left alone when the folder is not a git checkout or core.hooksPath is already set to something else.
 if [ -f "$TOOLKIT_DIR/.githooks/pre-commit" ] && git -C "$TOOLKIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
-    GH_CUR=$(git -C "$TOOLKIT_DIR" config --get core.hooksPath 2>/dev/null)
+    # `|| true`: `git config --get` exits 1 when the key is unset, and under `set -e` that ended setup right here,
+    # silently, in every fresh clone.
+    GH_CUR=$(git -C "$TOOLKIT_DIR" config --get core.hooksPath 2>/dev/null || true)
     if [ -z "$GH_CUR" ]; then
         git -C "$TOOLKIT_DIR" config core.hooksPath .githooks && echo "" && echo "Enabled git pre-commit check for local paths (core.hooksPath=.githooks)."
     elif [ "$GH_CUR" != ".githooks" ]; then
@@ -1207,6 +1214,28 @@ if [ -z "$DOC_ON" ]; then
     continue
 fi
 echo "Configuring $DOC..."
+# --refresh-docs: a configured file is filled once and then never changes, so in a git checkout (where it is
+# skip-worktree) it keeps the instructions and the paths of the day it was filled. Put the committed template
+# back, after copying the installed file aside, and let the fill below run as on a first install.
+DOC_REFRESHED=""
+if [ -n "$WANT_REFRESH_DOCS" ] && [ -f "$TOOLKIT_DIR/$DOC" ] && ! grep -q "$DOC_PLACEHOLDERS" "$TOOLKIT_DIR/$DOC"; then
+    DOC_TEMPLATE="$(mktemp)"
+    if git -C "$TOOLKIT_DIR" show ":$DOC" > "$DOC_TEMPLATE" 2>/dev/null && grep -q "$DOC_PLACEHOLDERS" "$DOC_TEMPLATE"; then
+        DOC_BACKUP="$TOOLKIT_DIR/.claude/backups/docs/$(date +%Y%m%d_%H%M%S)"
+        if mkdir -p "$DOC_BACKUP" && cp -p "$TOOLKIT_DIR/$DOC" "$DOC_BACKUP/$DOC" && cmp -s "$TOOLKIT_DIR/$DOC" "$DOC_BACKUP/$DOC"; then
+            DOC_REFRESHED=$(wc -c < "$TOOLKIT_DIR/$DOC" | tr -d ' \r')
+            cat "$DOC_TEMPLATE" > "$TOOLKIT_DIR/$DOC"
+            echo "  --refresh-docs: your copy is kept at $DOC_BACKUP/$DOC"
+            echo "  A section you added to $DOC by hand is in that copy, not in the new file: add it again if you want it."
+        else
+            echo "  --refresh-docs: could not copy $DOC aside first -- left as it is."
+        fi
+    else
+        echo "  --refresh-docs: no template to rebuild $DOC from (not a git checkout, or the committed $DOC is already"
+        echo "  filled in) -- left as it is. Extract $DOC again from the toolkit zip, then re-run setup."
+    fi
+    rm -f "$DOC_TEMPLATE"
+fi
 if [ ! -f "$TOOLKIT_DIR/$DOC" ]; then
     echo "  MISSING: $DOC"
 elif grep -q "$DOC_PLACEHOLDERS" "$TOOLKIT_DIR/$DOC"; then
@@ -1225,17 +1254,10 @@ elif grep -q "$DOC_PLACEHOLDERS" "$TOOLKIT_DIR/$DOC"; then
 - **MO2 overwrite**: \`$MO2_OVERWRITE/\` — catches files written to Data/ during a session
 - **MO2 profile**: \`$MO2_PROFILE_DIR/\` — this profile's INIs, \`loadorder.txt\`, \`plugins.txt\`
 
-> **⚠ MO2 has no real \`Data/\` folder.** It builds a *virtual* one at launch by merging the stock
-> game folder, each enabled mod's folder, and \`overwrite/\` (highest priority). The \`Data/\` path
-> above is the **stock game only** — it does NOT contain the user's mods. To inspect an installed
-> mod's files, read \`$MO2_MODS/<mod-name>/\`, not \`Data/\`.
->
-> **This breaks load-order-aware tooling.** xelib/XEditLib resolves plugins from the game path, so
-> launched outside MO2 it sees only the plugins physically present in the stock \`Data/\` — it will
-> silently return a *wrong but plausible* answer for anything involving the override chain or the
-> full load order. For those, run the script through MO2 (add it to MO2's executables list) so the
-> virtual filesystem is mounted. Single-file reads (Spriggit on a specific \`.esp\` by path) work
-> fine outside MO2, because they never consult the load order.
+> **⚠ MO2 has no real \`Data/\` folder.** \`Data/\` above is the **stock game only**: an installed mod's files
+> are in \`$MO2_MODS/<mod-name>/\`. Load-order-aware tools (xelib/XEditLib) run outside MO2 see only the stock
+> plugins and return a *wrong but plausible* answer; run them through MO2. Single-file reads by path (Spriggit)
+> are fine. Details: \`kb/environment-and-guards.md\`, "Mod Manager Layout".
 MMEOF
     else
         cat > "$MM_BLOCK" <<'MMEOF'
@@ -1247,18 +1269,22 @@ MMEOF
     rm -f "$MM_BLOCK"
 
     echo "  Configured with your paths (Skyrim folder: $SKYRIM_FOLDER)."
+    if [ -n "$DOC_REFRESHED" ]; then
+        echo "  --refresh-docs: $DOC was $DOC_REFRESHED bytes, is now $(wc -c < "$TOOLKIT_DIR/$DOC" | tr -d ' \r') bytes."
+    fi
 else
     echo "  Already configured."
     if [ -n "$CONFIG_DIR" ] && ! grep -qF "$CONFIG_DIR" "$TOOLKIT_DIR/$DOC"; then
         echo "  !! $DOC still names older folders: the guard follows skyrim-paths.env ($CONFIG_DIR), but this file was"
-        echo "  !! filled in once. Tell your agent the current folder, or re-extract $DOC and re-run setup."
+        echo "  !! filled in once. In a git checkout: bash setup.sh --refresh-docs. Otherwise tell your agent the current"
+        echo "  !! folder, or re-extract $DOC and re-run setup."
     fi
 fi
 done
 
 # --- The instruction budget, measured on the files just written ---
 # Codex reads at most 32,768 bytes of AGENTS.md (project_doc_max_bytes) and silently drops the rest; the
-# toolkit holds core + addendum + a 2,560-byte install reserve under that (scripts/gen_agent_trees.py
+# toolkit holds core + addendum + a 2,048-byte install reserve under that (scripts/gen_agent_trees.py
 # INSTRUCTION_BUDGET). A very long install root or MO2 paths can still push the INSTALLED copy past it.
 INSTRUCTION_BUDGET=32768
 for BDOC in CLAUDE.md AGENTS.md; do

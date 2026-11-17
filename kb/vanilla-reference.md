@@ -2,6 +2,14 @@
 
 Part of the Skyrim modding knowledgebase; index: `KNOWLEDGEBASE.md`. Covers vanilla combat/crafting formulas, FormIDs and bug catalogue.
 
+**Contents** (search for a heading's text to jump to it):
+
+- Vanilla Game Mechanics & Reference (baseline that gameplay mods edit)
+  - Combat & Defense Formulas
+  - Crafting & Leveling Formulas
+  - Vanilla Record Reference (FormIDs & EditorIDs)
+  - Vanilla Bug Catalogue (mod-sorting relevant)
+
 ## Vanilla Game Mechanics & Reference (baseline that gameplay mods edit)
 
 Purpose: when **sorting a modlist** or judging whether two gameplay mods conflict, an agent needs

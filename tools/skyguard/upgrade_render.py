@@ -20,17 +20,10 @@ MO2 = """- **Mod manager**: **Mod Organizer 2** — instance `{instance}/`, prof
 - **MO2 overwrite**: `{overwrite}/` — catches files written to Data/ during a session
 - **MO2 profile**: `{profile_dir}/` — this profile's INIs, `loadorder.txt`, `plugins.txt`
 
-> **⚠ MO2 has no real `Data/` folder.** It builds a *virtual* one at launch by merging the stock
-> game folder, each enabled mod's folder, and `overwrite/` (highest priority). The `Data/` path
-> above is the **stock game only** — it does NOT contain the user's mods. To inspect an installed
-> mod's files, read `{mods}/<mod-name>/`, not `Data/`.
->
-> **This breaks load-order-aware tooling.** xelib/XEditLib resolves plugins from the game path, so
-> launched outside MO2 it sees only the plugins physically present in the stock `Data/` — it will
-> silently return a *wrong but plausible* answer for anything involving the override chain or the
-> full load order. For those, run the script through MO2 (add it to MO2's executables list) so the
-> virtual filesystem is mounted. Single-file reads (Spriggit on a specific `.esp` by path) work
-> fine outside MO2, because they never consult the load order."""
+> **⚠ MO2 has no real `Data/` folder.** `Data/` above is the **stock game only**: an installed mod's files
+> are in `{mods}/<mod-name>/`. Load-order-aware tools (xelib/XEditLib) run outside MO2 see only the stock
+> plugins and return a *wrong but plausible* answer; run them through MO2. Single-file reads by path (Spriggit)
+> are fine. Details: `kb/environment-and-guards.md`, "Mod Manager Layout"."""
 
 
 def _text(value):

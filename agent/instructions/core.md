@@ -64,6 +64,8 @@ any agent can read one directly. Read the skill BEFORE the work:
 | update or add a mod | skill `mod-update-check` |
 | publish a new version of your own mod | skill `mod-release-review` (handed over = shipped) |
 | work with archives, audio, MCM menus or saves | skills `skyrim-bsa`, `skyrim-audio`, `skyrim-mcm`, `skyrim-save` |
+| create a mod, summarize a plugin, or port a mod to VR | skills `create-mod`, `inspect-esp`, `port-to-vr` |
+| build an SKSE plugin or read a binary | skill `skyrim-skse`, and the toolchain skills beside it |
 | install or verify an optional tool, or set up the Nexus API key | `docs/installing-tools.md` |
 | use the Linux devcontainer | `docs/container-vs-windows.md` |
 | understand why the guards behave as they do | `docs/safety-philosophy.md` |
@@ -163,7 +165,7 @@ This prevents accidental ESP corruption. The guards block direct ESP writes, but
 
 ## Spriggit ESP Workflow (Preferred for Editing)
 
-Outside the installed House Carl gateway, prefer Spriggit for ESP edits. It serializes plugins to human-readable YAML — no FFI, no scripting layer, and the YAML diffs cleanly in git.
+Outside the installed House Carl gateway, prefer Spriggit for ESP edits.
 
 **Serialize → edit the YAML → the user reviews it → deserialize**, always through `bash tools/spriggit-cli.sh` (raw
 `spriggit` fails on nested paths). Spriggit **silently drops unknown YAML fields**: serialize with `-u`, round-trip
@@ -260,7 +262,6 @@ Coverage and gaps: `docs/guard-coverage.md`.
 - **Always review changes before applying** -- modded installs are delicate
 - Never modify ESP/ESM files directly -- use xelib programmatically or Spriggit
 - **Keep line endings:** a CRLF file stays CRLF; whole-file churn in `git diff --stat` means you broke it
-- Vortex manages load order -- direct edits to loadorder.txt/plugins.txt may be overwritten
 - **Never bare-copy a third-party mod into `Data/`**, SKSE DLLs (DevBench too) included: untracked
   files get clobbered or orphaned by a deploy or purge. Prefer the user's mod manager; a manual
   install goes through `tools/mod-install.py`: dry run first, read every destination, then `--apply`

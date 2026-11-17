@@ -54,9 +54,25 @@ Every change made through the edit tools (and Codex `apply_patch`) is logged wit
 ## Design Principles
 
 ### 1. No Silent Modifications
-Destructive changes are blocked outright. Everything else that is consequential but legitimate is **advised**: a note is injected into Claude's context and the call proceeds -- you are not prompted. Five rules in the toolkit ask you to decide: a git command that would throw away uncommitted changes in a protected folder, a `lock disable` that turns the vanilla-file lock off for good, an in-place restore (`snapshot restore --in-place` or `restore-from-backup.sh --restore`), which writes over live files, and a program the guard cannot name (a variable such as `$R`) given one of your saves -- it may write, move or delete the save, or nothing, and the guard cannot count that change to back it up first -- and such a program, or an `eval` of code a variable holds, naming another protected path (the install, `Data`, the settings or MO2 folders, a plugin or archive), since the guard cannot tell what it does there.
+Destructive changes are blocked outright. Everything else that is consequential but legitimate is **advised**: a note
+is injected into Claude's context and the call proceeds -- you are not prompted. Five rules in the toolkit ask you to
+decide: a git command that would throw away uncommitted changes in a protected folder, a `lock disable` that turns the
+vanilla-file lock off for good, an in-place restore (`snapshot restore --in-place` or
+`restore-from-backup.sh --restore`), which writes over live files, and a program the guard cannot name (a variable
+such as `$R`) given one of your saves -- it may write, move or delete the save, or nothing, and the guard cannot count
+that change to back it up first -- and such a program, or an `eval` of code a variable holds, naming another protected
+path (the install, `Data`, the settings or MO2 folders, a plugin or archive), since the guard cannot tell what it does
+there.
 
-Saves follow their own rule (user ruling 2026-10-13), because a save is the one thing a mod manager cannot give back. A command that changes one or two saves -- writes, copies onto, edits, moves, renames or deletes them, a DevBench save over an existing one, ReSaver `--apply` -- runs WITHOUT a prompt, but only after the deciding hook has copied both files of each pair (the `.ess` and its `.skse` co-save count as one save), read each copy back to its SHA-256 and recorded it; if that backup fails the command is refused. More than two saves, or a wildcard, is refused until you type the `SAVE_ACCESS_APPROVAL` line that `python tools/agent-harness.py check --preview` prints for that exact command (the refusal points there) -- read only from what you typed, never from anything the agent read. Those backups are never pruned. Reading, hashing, listing and copying saves out are free; deleting or moving the whole `Saves` folder stays refused.
+Saves follow their own rule (user ruling 2026-10-13), because a save is the one thing a mod manager cannot give back.
+A command that changes one or two saves -- writes, copies onto, edits, moves, renames or deletes them, a DevBench save
+over an existing one, ReSaver `--apply` -- runs WITHOUT a prompt, but only after the deciding hook has copied both
+files of each pair (the `.ess` and its `.skse` co-save count as one save), read each copy back to its SHA-256 and
+recorded it; if that backup fails the command is refused. More than two saves, or a wildcard, is refused until you
+type the `SAVE_ACCESS_APPROVAL` line that `python tools/agent-harness.py check --preview` prints for that exact
+command (the refusal points there) -- read only from what you typed, never from anything the agent read. Those backups
+are never pruned. Reading, hashing, listing and copying saves out are free; deleting or moving the whole `Saves`
+folder stays refused.
 
 New save transactions live in `.modding-agent-harness/backups/saves/`, independent of the coding agent.
 Version 1 approvals bind canonical full paths and session/operation; wildcards also bind the command hash
@@ -81,7 +97,11 @@ The "safety improvement loop" instruction in CLAUDE.md asks Claude to evaluate w
 
 ## Customizing Safety
 
-The guards can be customized, but their shipped files can be replaced during an update. Keep personal rules in separate local files. Before an update, run `tools/pre-update-snapshot.sh` as README.md's FAQ ("How do I update the toolkit?") says; extracting over the installation overwrites those files. If you added your own pre-tool handlers, use the reviewed upgrade in `docs/upgrading-native-hooks.md` instead, and keep the old handlers active until their replacement is qualified. To customise:
+The guards can be customized, but their shipped files can be replaced during an update. Keep personal rules in
+separate local files. Before an update, run `tools/pre-update-snapshot.sh` as README.md's FAQ ("How do I update the
+toolkit?") says; extracting over the installation overwrites those files. If you added your own pre-tool handlers, use
+the reviewed upgrade in `docs/upgrading-native-hooks.md` instead, and keep the old handlers active until their
+replacement is qualified. To customise:
 
 - **Whitelist paths** you want Claude to edit freely (e.g., a working directory for scripts)
 - **Add new patterns** to the bash guard for commands specific to your workflow
@@ -113,7 +133,12 @@ the install.
 
 ⚠ **If no root can be resolved, the guard DENIES.** A guard that evaluated nothing
 must not answer "fine" -- that conflation is what left every hook here inert for five
-weeks. ⚠ An unreadable or malformed root `skyrim-paths.env` DENIES every call (`GUARD INERT`) until it is repaired. A broken legacy file also denies when no valid root file exists; beside a valid root file it is reported at session start, and readable, well-formed legacy protection entries still join the union. An emptied file, or a missing key, does NOT cost you refusals: the self-derived root still resolves and valid legacy protection keys remain in the union. With neither file recording the folder, protection narrows to the install plus the generic config literal, and an MO2 folder stops being guarded with nothing reported.
+weeks. ⚠ An unreadable or malformed root `skyrim-paths.env` DENIES every call (`GUARD INERT`) until it is repaired. A
+broken legacy file also denies when no valid root file exists; beside a valid root file it is reported at session
+start, and readable, well-formed legacy protection entries still join the union. An emptied file, or a missing key,
+does NOT cost you refusals: the self-derived root still resolves and valid legacy protection keys remain in the union.
+With neither file recording the folder, protection narrows to the install plus the generic config literal, and an MO2
+folder stops being guarded with nothing reported.
 
 ⚠ **A relative path resolves against the working directory the agent reports** in the
 hook payload, so `rm Data/x.nif` run from the install is refused. Only when the payload

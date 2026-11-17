@@ -11,7 +11,10 @@ policy; `tools/housekeep.py` implements the parts a tool can.
 
 ### Certainty before removal
 
-Age, size, an idle timer, a filename and a completed-task marker trigger review; none proves that unique bytes are obsolete. Housekeep retires a payload only when it re-proves an identical retained copy or a verified lossless replacement, or the operator has explicitly declared those exact bytes obsolete with a reason and evidence. Unknown usefulness is kept indefinitely. Failed or stale proof leaves the source in place.
+Age, size, an idle timer, a filename and a completed-task marker trigger review; none proves that unique bytes are
+obsolete. Housekeep retires a payload only when it re-proves an identical retained copy or a verified lossless
+replacement, or the operator has explicitly declared those exact bytes obsolete with a reason and evidence. Unknown
+usefulness is kept indefinitely. Failed or stale proof leaves the source in place.
 
 This applies to ordinary cleanup and both archive tiers. Older plans do not bypass the apply-time checks. A backup vault is optional and disabled by default; archive retirement needs a separate exact-plan approval and a working recycle route.
 

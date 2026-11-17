@@ -2278,7 +2278,7 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
                  "tests/test_gen_agent_trees.py::test_budget_holds_room_for_the_codex_addendum",
                  id="budget-reserves-the-codex-addendum"),
     # Measure the repo file instead of the installed one.
-    pytest.param("scripts/gen_agent_trees.py", "INSTALL_EXPANSION_RESERVE = 2560", "INSTALL_EXPANSION_RESERVE = 0",
+    pytest.param("scripts/gen_agent_trees.py", "INSTALL_EXPANSION_RESERVE = 2048", "INSTALL_EXPANSION_RESERVE = 0",
                  "tests/test_gen_agent_trees.py::test_budget_holds_room_for_install_expansion",
                  id="budget-measures-the-installed-size"),
     # Unwire the budget from --check: every test of budget_problems() stays green, CI stops enforcing it.
@@ -6335,8 +6335,8 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
      _T + "test_adapter_payload.py::test_every_file_adapting_md_names_or_cites_is_checked",
      "p7final-payload-drops-a-worked-example"),
     # M3: the prose under the prompt.
-    ("README.md", "It does not install Python, Git, Node or any other system software",
-     "It will install dependencies: Python, Git, Node or any other system software",
+    ("README.md", "It does not install\nPython, Git, Node or any other system software",
+     "It will install dependencies:\nPython, Git, Node or any other system software",
      _T + "test_setup_prompt.py::test_the_prose_after_each_embedded_prompt_does_not_contradict_it",
      "p7final-readme-promises-installs"),
     # M4: no promised lock, no clashing layer numbers.
@@ -7734,7 +7734,7 @@ _T6D_CLAUSES = [
     ('t6d-nexus-non-main-file-counts', 'scripts/thirdparty-audit.py', '    main = [str(x.get("version")) for x in files if x.get("category_name") == "MAIN" and x.get("version")]', '    main = [str(x.get("version")) for x in files if x.get("version")]', 'tests/test_thirdparty_audit.py::test_the_newest_main_nexus_file_is_the_upstream_version'),
     ('t6d-dockerfile-base-image-loses-its-digest', '.devcontainer/Dockerfile', '3.0.6-3.11-bookworm@sha256:aea59f6834231486ee510ed90fc89659762e8ac246bb5e5fc49809ab736a0b94', '3.0.6-3.11-bookworm', 'tests/test_thirdparty_audit.py::test_the_shipped_tree_has_no_unpinned_delivery_path'),
     ('t6d-dockerfile-node-loses-its-checksum', '.devcontainer/Dockerfile', '    && echo "$sum  /tmp/node.tar.gz" | sha256sum -c - \\\n', '', 'tests/test_thirdparty_audit.py::test_the_shipped_tree_has_no_unpinned_delivery_path'),
-    ('t6d-pyffi-loses-its-lock', 'docs/installing-tools.md', 'with the Python you will run it from, from the toolkit root: `python -m pip install --only-binary=:all: --require-hashes -r tools/requirements-tools.lock`', 'with the Python you will run it from, from the toolkit root: `python -m pip install pyffi setuptools`', 'tests/test_thirdparty_audit.py::test_the_shipped_tree_has_no_unpinned_delivery_path'),
+    ('t6d-pyffi-loses-its-lock', 'docs/installing-tools.md', 'with the Python you will run it from, from the toolkit root:\n    `python -m pip install --only-binary=:all: --require-hashes -r tools/requirements-tools.lock`', 'with the Python you will run it from, from the toolkit root:\n    `python -m pip install pyffi setuptools`', 'tests/test_thirdparty_audit.py::test_the_shipped_tree_has_no_unpinned_delivery_path'),
     ('t6d-skill-lz4-loses-its-lock', 'agent/skills/skyrim-save/SKILL.md', '`python -m pip install --only-binary=:all: --require-hashes -r tools/requirements-tools.lock`', '`pip install lz4`', 'tests/test_thirdparty_audit.py::test_the_shipped_tree_has_no_unpinned_delivery_path'),
     ('t6d-pip-lock-without-hashes-passes', 'scripts/thirdparty-audit.py', '        if not (re.search(r"--require-hashes\\b", args) and re.search(r"-r\\s+\\S+\\.lock\\b", args)):', '        if not re.search(r"-r\\s+\\S+\\.lock\\b", args):', 'tests/test_thirdparty_audit.py::test_a_pip_install_must_be_hash_locked'),
     ('t6d-pip-hashes-without-lock-passes', 'scripts/thirdparty-audit.py', '        if not (re.search(r"--require-hashes\\b", args) and re.search(r"-r\\s+\\S+\\.lock\\b", args)):', '        if not re.search(r"--require-hashes\\b", args):', 'tests/test_thirdparty_audit.py::test_a_pip_install_must_be_hash_locked'),

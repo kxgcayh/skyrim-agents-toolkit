@@ -28,7 +28,7 @@ them from its *Where the rest lives* table.
 
 **Budget.** Codex silently truncates `AGENTS.md` past 32,768 bytes, so `--check` also fails when the
 worst-case INSTALLED size of header + `core.md` + any addendum exceeds that. "Installed" adds a
-2,560-byte reserve for what `setup.sh` expands (paths, the MO2 block; sized against the real `setup.sh`
+2,048-byte reserve for what `setup.sh` expands (paths, the MO2 block; sized against the real `setup.sh`
 by `tests/test_instruction_budget.py`); `instructions/codex.md` is counted at its real size. `python scripts/gen_agent_trees.py --budget` prints every row and its headroom. Over budget?
 Move bulk out of `core.md` into a skill (a recipe, read before the work) or `docs/` (background), and
 leave a one-line rule plus a pointer behind. Never raise the constants to make it pass.

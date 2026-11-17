@@ -11,17 +11,53 @@ capability limits: [House Carl integration](housecarl.md). Start with `python to
 Install them into the `tools/` folder in your game directory; the setup prompt walks through this. See the [xeditlib](https://github.com/kxgcayh/xeditlib) repo for XEditLib setup. NifSkope and Blender (used for NIF render-verification and mesh repair) are large external GUI apps installed separately, not bundled.
 
 - **xeditlib** — Node.js wrapper around XEditLib.dll / libXEditLib.dylib for programmatic ESP/ESM read/write.
-  - Acquire, **pinned and integrity-checked**: run `npm ci --ignore-scripts --no-audit --no-fund` **from the toolkit root** to install `koffi 2.15.1` from `package-lock.json`, then run `python3 tools/xeditlib/fetch.py`. This downloads xeditlib v1.1.0 = commit `96326630099662f14578d273d40b7d9cf7220277` from `https://github.com/kxgcayh/xeditlib`, verifies its pinned per-file SHA-256 manifest in memory, and installs the 16 package files atomically into `tools/xeditlib/lib/` with metadata in `fetched.json`. No GitHub account or SSH key is needed. `--ignore-scripts` is safe because koffi ships prebuilt binaries. MEASURED 2026-10-06: in a copy of the toolkit root, with SSH disabled and an empty npm cache, `npm ci` installed both, both load, and a following plain install at the root kept them. It bundles `libXEditLib.dylib` (SHA-256 `373547cd0f18173607b01e65ab287096985a0938422bcdf1a7609b6ea8b4f36a`), a native macOS arm64 build (Free Pascal 3.2.2, macOS 11+, links system zlib) from `https://github.com/kxgcayh/xedit-lib` branch `macos-arm64` commit `df2f8773c67a11b49b9d83fd0fd80067832ced6d`. They are optional because on Linux (the devcontainer, CI) npm skips it; Intel Macs / x64 node under Rosetta (dylib is arm64 only) and Linux (no .so) are not supported. Scripts resolve xelib via `tools/xelib/load.js`, which checks `XEDITLIB_JS`, `tools/xeditlib/lib/xelib.js`, and `require('xeditlib')`, and resolves koffi by upward lookup to the root `node_modules/koffi`. The bundled `XEditLib.dll`, `libXEditLib.dylib` and `*.Hardcoded.dat` load relative to the package folder, so the scripts are cwd-independent once installed. Known differences from the Windows DLL are in the xeditlib README.
-  - **Platform paths and registry**: On Windows, XEditLib loads in `gmSSE` mode (game mode 4) even on VR, so it reads the game path from the **SSE** registry key. If `HKLM\SOFTWARE\WOW6432Node\Bethesda Softworks\Skyrim Special Edition` is missing (common on a VR-only install), ESP loads fail. Create it from an **admin** terminal: `reg add "HKLM\SOFTWARE\WOW6432Node\Bethesda Softworks\Skyrim Special Edition" /v "Installed Path" /t REG_SZ /d "<GAME_DIR>\" /f`. On macOS, no registry or CrossOver is required; the game path is supplied by `GAME_ROOT` or `skyrim-paths.env`. Not yet tested: a full modded load order; MO2 has no virtual Data folder on macOS, so the plugins must be in the Data folder skyrim-winner reads (GAME_ROOT) and listed in the plugins.txt it reads (PLUGINS_TXT or skyrim-paths.env).
-  - Verify: run `python3 tools/xeditlib/fetch.py --check` (exits 0, verifies 16 package files against pinned manifest), and `bash tools/skyrim-winner.sh chain <formid>` exits 0 and prints a WINNER line. MEASURED 2026-11-11 on macOS arm64: `npm ci --ignore-scripts` installs koffi 2.15.1; `python3 tools/xeditlib/fetch.py` fetched and verified 16 package files into `tools/xeditlib/lib/` (commit 9632663); `fetch.py --check` exited 0; `tools/skyrim-winner.sh chain 0000000A` resolved WINNER: Update.esm with no CrossOver.
+  - Acquire, **pinned and integrity-checked**: run `npm ci --ignore-scripts --no-audit --no-fund` **from the toolkit
+    root** to install `koffi 2.15.1` from `package-lock.json`, then run `python3 tools/xeditlib/fetch.py`. This
+    downloads xeditlib v1.1.0 = commit `96326630099662f14578d273d40b7d9cf7220277` from
+    `https://github.com/kxgcayh/xeditlib`, verifies its pinned per-file SHA-256 manifest in memory, and installs the
+    16 package files atomically into `tools/xeditlib/lib/` with metadata in `fetched.json`. No GitHub account or SSH
+    key is needed. `--ignore-scripts` is safe because koffi ships prebuilt binaries. MEASURED 2026-10-06: in a copy of
+    the toolkit root, with SSH disabled and an empty npm cache, `npm ci` installed both, both load, and a following
+    plain install at the root kept them. It bundles `libXEditLib.dylib` (SHA-256
+    `373547cd0f18173607b01e65ab287096985a0938422bcdf1a7609b6ea8b4f36a`), a native macOS arm64 build (Free Pascal
+    3.2.2, macOS 11+, links system zlib) from `https://github.com/kxgcayh/xedit-lib` branch `macos-arm64` commit
+    `df2f8773c67a11b49b9d83fd0fd80067832ced6d`. They are optional because on Linux (the devcontainer, CI) npm skips
+    it; Intel Macs / x64 node under Rosetta (dylib is arm64 only) and Linux (no .so) are not supported. Scripts
+    resolve xelib via `tools/xelib/load.js`, which checks `XEDITLIB_JS`, `tools/xeditlib/lib/xelib.js`, and
+    `require('xeditlib')`, and resolves koffi by upward lookup to the root `node_modules/koffi`. The bundled
+    `XEditLib.dll`, `libXEditLib.dylib` and `*.Hardcoded.dat` load relative to the package folder, so the scripts are
+    cwd-independent once installed. Known differences from the Windows DLL are in the xeditlib README.
+  - **Platform paths and registry**: On Windows, XEditLib loads in `gmSSE` mode (game mode 4) even on VR, so it reads
+    the game path from the **SSE** registry key. If
+    `HKLM\SOFTWARE\WOW6432Node\Bethesda Softworks\Skyrim Special Edition` is missing (common on a VR-only install),
+    ESP loads fail. Create it from an **admin** terminal:
+    `reg add "HKLM\SOFTWARE\WOW6432Node\Bethesda Softworks\Skyrim Special Edition" /v "Installed Path" /t REG_SZ /d "<GAME_DIR>\" /f`.
+    On macOS, no registry or CrossOver is required; the game path is supplied by `GAME_ROOT` or `skyrim-paths.env`.
+    Not yet tested: a full modded load order; MO2 has no virtual Data folder on macOS, so the plugins must be in the
+    Data folder skyrim-winner reads (GAME_ROOT) and listed in the plugins.txt it reads (PLUGINS_TXT or
+    skyrim-paths.env).
+  - Verify: run `python3 tools/xeditlib/fetch.py --check` (exits 0, verifies 16 package files against pinned
+    manifest), and `bash tools/skyrim-winner.sh chain <formid>` exits 0 and prints a WINNER line. MEASURED 2026-11-11
+    on macOS arm64: `npm ci --ignore-scripts` installs koffi 2.15.1; `python3 tools/xeditlib/fetch.py` fetched and
+    verified 16 package files into `tools/xeditlib/lib/` (commit 9632663); `fetch.py --check` exited 0;
+    `tools/skyrim-winner.sh chain 0000000A` resolved WINNER: Update.esm with no CrossOver.
 - **Champollion** — decompiles Papyrus `.pex` → `.psc`. Built from source from the fork <https://github.com/kxgcayh/Champollion> (Orvid/Champollion v1.3.2 plus a Windows/macOS/Linux build; the installed command is lowercase `champollion`), pinned to commit `23e947a5d16fa9f4ad4b3fdf2b0dc37caefc6bbd`.
   - Needs Git, CMake 3.15+, a C++20 compiler and vcpkg with `VCPKG_ROOT` set (the fork's README, *Requirements*). These are system software: the user installs them.
-  - Acquire: `git clone --branch main https://github.com/kxgcayh/Champollion.git`, then `git -C Champollion checkout 23e947a5d16fa9f4ad4b3fdf2b0dc37caefc6bbd`, then from that folder `cmake -B build -DCMAKE_BUILD_TYPE=Release`, `cmake --build build --config Release`, `cmake --install build --config Release --prefix ~/.local` (PowerShell: `--prefix "$HOME\.local"`). This puts `champollion` in `~/.local/bin`, which must be on `PATH`. vcpkg builds Boost and fmt on the first build.
+  - Acquire: `git clone --branch main https://github.com/kxgcayh/Champollion.git`, then
+    `git -C Champollion checkout 23e947a5d16fa9f4ad4b3fdf2b0dc37caefc6bbd`, then from that folder
+    `cmake -B build -DCMAKE_BUILD_TYPE=Release`, `cmake --build build --config Release`,
+    `cmake --install build --config Release --prefix ~/.local` (PowerShell: `--prefix "$HOME\.local"`). This puts
+    `champollion` in `~/.local/bin`, which must be on `PATH`. vcpkg builds Boost and fmt on the first build.
   - Verify: `champollion --version` prints `Champollion PEX decompiler v1.3.2`. MEASURED 2026-11-04 on macOS (native arm64 build, no CrossOver).
   - Known upstream bug: a directory argument without `-r` or `-t` fails every file ("N files failed to decompile"); `Champollion/main.cpp:379` passes the directory instead of `entry->path()`. Pass files, or add `-r` or `-t`.
 - **Caprica** — compiles Papyrus `.psc` → `.pex`. Built from source from the fork <https://github.com/kxgcayh/Caprica> (Orvid/Caprica master, banner v0.3.0, plus a Windows/macOS/Linux build; the installed command is lowercase `caprica`), pinned to commit `d8f70641a38697e1c0d89a404d40c0bcdb75afa7`.
   - Needs Git, CMake 3.15+, a C++23 compiler (Linux: Clang 17+ with libstdc++ 13+; GCC cannot build it) and vcpkg with `VCPKG_ROOT` set (the fork's README, *Build and install from source*). These are system software: the user installs them.
-  - Acquire: `git clone --branch main https://github.com/kxgcayh/Caprica.git`, then `git -C Caprica checkout d8f70641a38697e1c0d89a404d40c0bcdb75afa7`, then from that folder `cmake -B build -DCMAKE_BUILD_TYPE=Release` (Linux: add `-DCMAKE_CXX_COMPILER=clang++`), `cmake --build build --config Release`, `cmake --install build --config Release --prefix ~/.local` (PowerShell: `--prefix "$HOME\.local"`). This puts `caprica` in `~/.local/bin`, which must be on `PATH`. vcpkg builds Boost, fmt and pugixml on the first build.
+  - Acquire: `git clone --branch main https://github.com/kxgcayh/Caprica.git`, then
+    `git -C Caprica checkout d8f70641a38697e1c0d89a404d40c0bcdb75afa7`, then from that folder
+    `cmake -B build -DCMAKE_BUILD_TYPE=Release` (Linux: add `-DCMAKE_CXX_COMPILER=clang++`),
+    `cmake --build build --config Release`, `cmake --install build --config Release --prefix ~/.local` (PowerShell:
+    `--prefix "$HOME\.local"`). This puts `caprica` in `~/.local/bin`, which must be on `PATH`. vcpkg builds Boost,
+    fmt and pugixml on the first build.
   - Verify: `caprica --help` prints `Caprica Papyrus Compiler v0.3.0` (there is no `--version`). MEASURED 2026-11-04 on macOS (native arm64): a one-function script compiled to a valid `.pex` (magic `fa57c0de`, version 3.2, exit 0), no CrossOver.
 - **Spriggit** — ESP ↔ YAML/JSON serialization.
   - Acquire, **pinned to 0.41.0** (the version every serialize/deserialize command here was tested against; needs the **.NET 10 SDK**, the toolkit's single .NET requirement: the optional House Carl gateway runs on the runtime that SDK includes): `dotnet tool restore` from the toolkit root (installs exactly the version in `.config/dotnet-tools.json`, also 0.41.0, as a local tool you run as `dotnet tool run spriggit`) or `dotnet tool install --global Spriggit.CLI --version 0.41.0`. Either works with everything here: `tools/spriggit-cli.sh`, the ESP guard `tools/esp-verify-wrapper.sh` and `tools/toolchain-check.sh` use a global `spriggit` when one is on PATH and fall back to the local tool otherwise. **Never install it unpinned**: you get whatever is newest, not what was tested. 0.41.0 ships only a `net10.0` tool, so on an SDK-9 machine it starts, prints a version, and cannot serialize. `bash tools/toolchain-check.sh` reports DEGRADED when the installed version differs from the pin (older or newer) or its target SDK is missing.
@@ -39,16 +75,46 @@ Install them into the `tools/` folder in your game directory; the setup prompt w
     3. builds the **Cli project only** (the WPF `Setup` project targets `net8.0-windows` — never build it headless). The built artifact is `src/SpookysAutomod.Cli/bin/Release/net10.0/spookys-automod.dll`, and `toolkit-built-from.txt` beside it records the commit it was built from. `bash tools/automod-cli.sh --built` (and `tools/toolchain-check.sh`) compares that with the pin, and reads DEGRADED for a build made with local changes or a DLL replaced after its last `--rebuild`.
   - Upgrading from a toolkit that built AutoMod for net8.0: the wrapper refuses the old build and tells you to run `--rebuild`; no clean is needed. Move a placed `bsarch.exe` from `bin/Release/net8.0/tools/bsarch/` to `bin/Release/net10.0/tools/bsarch/` (`archive create`/`extract` need it).
   - Run via the wrapper: `bash tools/automod-cli.sh <module> <command> --json`. Never `dotnet build` it yourself: that skips the commit check and the retarget.
-  - `archive` module on **macOS and Linux**: `create`, `extract` and everything built on them run BSArch, a Windows program. Build the native stand-in once with `python3 tools/bsarch-native/build.py` (needs git, cmake, a C++20 compiler and a static lz4: `brew install lz4`; pinned commits, never shipped; `tools/bsarch-native/README.md`). The wrapper then copies it to the path AutoMod starts BSArch from, after `--rebuild` and before each run, and never replaces a `bsarch.exe` it did not install. `bash tools/automod-cli.sh archive status --json` shows the path in use. On Windows use the real `bsarch.exe` from *Pinned downloads* below.
-  - `nif` module: only `nif info` works from the clone alone. `list-textures`, `list-strings`, `shader-info`, `verify` and the write commands run `nif-tool.exe`, which is not in git: it ships in the release zip `spookys-automod-toolkit-v1.11.2.zip` (SHA-256 `2e7848961785eedda3702851d477d878cf01e98a61710ca50fe8b0aafcb28bef`) as `tools/nif-tool/nif-tool.exe` (SHA-256 `880e8c86506f34818dd8d88c557989e3610a871dc605ee6939cb0244a00a9906`). Extract it to `tools/automod/tools/nif-tool/nif-tool.exe`. It is a Windows binary; on macOS it runs through CrossOver (shim in `docs/macos-crossover.md` section 1).
+  - `archive` module on **macOS and Linux**: `create`, `extract` and everything built on them run BSArch, a Windows
+    program. Build the native stand-in once with `python3 tools/bsarch-native/build.py` (needs git, cmake, a C++20
+    compiler and a static lz4: `brew install lz4`; pinned commits, never shipped; `tools/bsarch-native/README.md`).
+    The wrapper then copies it to the path AutoMod starts BSArch from, after `--rebuild` and before each run, and
+    never replaces a `bsarch.exe` it did not install. `bash tools/automod-cli.sh archive status --json` shows the path
+    in use. On Windows use the real `bsarch.exe` from *Pinned downloads* below.
+  - `nif` module: only `nif info` works from the clone alone. `list-textures`, `list-strings`, `shader-info`, `verify`
+    and the write commands run `nif-tool.exe`, which is not in git: it ships in the release zip
+    `spookys-automod-toolkit-v1.11.2.zip` (SHA-256 `2e7848961785eedda3702851d477d878cf01e98a61710ca50fe8b0aafcb28bef`)
+    as `tools/nif-tool/nif-tool.exe` (SHA-256 `880e8c86506f34818dd8d88c557989e3610a871dc605ee6939cb0244a00a9906`).
+    Extract it to `tools/automod/tools/nif-tool/nif-tool.exe`. It is a Windows binary; on macOS it runs through
+    CrossOver (shim in `docs/macos-crossover.md` section 1).
   - Verify: `bash tools/automod-cli.sh esp --help --json`.
 - **PyFFI** — LE-format NiTriShape geometry edits.
-  - **Works on any modern Python (verified through 3.14) as long as `setuptools` is installed in that same environment** — no dedicated Python 3.10 needed. PyFFI 2.2.3's real (and only) Python-version blocker is a single unconditional `from distutils.cmd import Command` in `pyffi/utils/__init__.py` (used only by an unused, `# pragma: no cover` doc-building helper class) — `distutils` was removed from the stdlib in Python 3.12 (PEP 632). Installing setuptools beside it fixes it: setuptools ships its own vendored `distutils` plus a compatibility shim that transparently satisfies that import, which is the officially-sanctioned PEP 632 migration path, not a fragile workaround. Confirmed end-to-end on Python 3.14.6: imported cleanly, read a real 735-block Skyrim skeleton NIF spanning ~15 block types (NiNode, several bhk\* physics types, controllers, etc.), modified it, wrote it back out, and re-read the result — all clean. The upstream [niftools/pyffi](https://github.com/niftools/pyffi) repo itself has had no real commits since **January 2020** (only a stray dependabot branch since), so this is the practical path forward rather than expecting an upstream fix there.
-  - Acquire, **pinned and hash-locked** (PyFFI 2.2.3 + setuptools 84.0.0, plus lz4 4.4.5 for `scripts/read-save.py`), with the Python you will run it from, from the toolkit root: `python -m pip install --only-binary=:all: --require-hashes -r tools/requirements-tools.lock`. pip refuses any file whose hash is not in the lock. MEASURED 2026-10-05: installs into fresh venvs on Python 3.10.10 and 3.12.10, and on both PyFFI reads a real NIF and lz4 decompresses a real save.
+  - **Works on any modern Python (verified through 3.14) as long as `setuptools` is installed in that same
+    environment** — no dedicated Python 3.10 needed. PyFFI 2.2.3's real (and only) Python-version blocker is a single
+    unconditional `from distutils.cmd import Command` in `pyffi/utils/__init__.py` (used only by an unused,
+    `# pragma: no cover` doc-building helper class) — `distutils` was removed from the stdlib in Python 3.12 (PEP
+    632). Installing setuptools beside it fixes it: setuptools ships its own vendored `distutils` plus a compatibility
+    shim that transparently satisfies that import, which is the officially-sanctioned PEP 632 migration path, not a
+    fragile workaround. Confirmed end-to-end on Python 3.14.6: imported cleanly, read a real 735-block Skyrim skeleton
+    NIF spanning ~15 block types (NiNode, several bhk\* physics types, controllers, etc.), modified it, wrote it back
+    out, and re-read the result — all clean. The upstream [niftools/pyffi](https://github.com/niftools/pyffi) repo
+    itself has had no real commits since **January 2020** (only a stray dependabot branch since), so this is the
+    practical path forward rather than expecting an upstream fix there.
+  - Acquire, **pinned and hash-locked** (PyFFI 2.2.3 + setuptools 84.0.0, plus lz4 4.4.5 for `scripts/read-save.py`),
+    with the Python you will run it from, from the toolkit root:
+    `python -m pip install --only-binary=:all: --require-hashes -r tools/requirements-tools.lock`. pip refuses any
+    file whose hash is not in the lock. MEASURED 2026-10-05: installs into fresh venvs on Python 3.10.10 and 3.12.10,
+    and on both PyFFI reads a real NIF and lz4 decompresses a real save.
   - The `time.clock = time.perf_counter` monkey-patch (recipe: the `skyrim-nif` skill) is still required (`time.clock` was removed in Python 3.8 — the only OTHER Python-version issue, also the only one ever reported upstream, still open/unfixed as [GitHub issue #80](https://github.com/niftools/pyffi/issues/80)).
   - Verify with that same interpreter: `python -c "import pyffi; print(pyffi.__version__)"`.
 - **PyNifly** — SSE BSTriShape read/write + animation/controller authoring + the independent parse gate.
-  - Acquire: download `io_scene_nifly.zip` of release **V27.2.0** (see [Pinned downloads](#pinned-downloads)), check its SHA-256, and extract it into `tools/pynifly/` so the prebuilt DLL lands at `tools/pynifly/io_scene_nifly/NiflyDLL.dll` (the version this was verified with: 27.2.0; the zip also contains `io_scene_nifly/pyn/NiflyDLL.dll`, and that copy is never loaded). One PyNifly version for the library and the Blender add-on: 29.1.0 failed re-validation (2026-10-06) because its Blender add-on strips effect shaders on a round trip when the texture is not beside the NIF. No build step. (A `git clone` of the repo does NOT contain the compiled DLL — it only ships in the release zip.)
+  - Acquire: download `io_scene_nifly.zip` of release **V27.2.0** (see [Pinned downloads](#pinned-downloads)), check
+    its SHA-256, and extract it into `tools/pynifly/` so the prebuilt DLL lands at
+    `tools/pynifly/io_scene_nifly/NiflyDLL.dll` (the version this was verified with: 27.2.0; the zip also contains
+    `io_scene_nifly/pyn/NiflyDLL.dll`, and that copy is never loaded). One PyNifly version for the library and the
+    Blender add-on: 29.1.0 failed re-validation (2026-10-06) because its Blender add-on strips effect shaders on a
+    round trip when the texture is not beside the NIF. No build step. (A `git clone` of the repo does NOT contain the
+    compiled DLL — it only ships in the release zip.)
   - Verify: `python -c "import sys; sys.path.insert(0,'tools/pynifly/io_scene_nifly'); from pyn import pynifly"` (it loads the DLL on import (27.2.0 and later; `NifFile.Load` is a no-op)).
 - **Blender (headless)** — NIF mesh repair + render-to-PNG verification.
   - Acquire: Blender **4.2.9 LTS** (`blender-4.2.9-windows-x64.zip`, see [Pinned downloads](#pinned-downloads)) — check its SHA-256, then install the PyNifly Blender add-on: the **same** 27.2.0 `io_scene_nifly.zip` as PyNifly above.
@@ -72,7 +138,10 @@ Install them into the `tools/` folder in your game directory; the setup prompt w
 - **nexusmods-surfer** — reads nexusmods.com pages (description, requirements, files, changelogs, permissions, posts, bug reports) as JSON, through a headed Playwright browser that passes the Cloudflare check that makes WebFetch/WebSearch return 403. Complements `tools/nexus.sh`: the API has no comments, bug reports or permissions.
   - **Private repository** (`git@github.com:kxgcayh/nexusmods-surfer.git`): access is granted per person. Contact the toolkit maintainer (GitHub: kxgcayh) to be added, and have an SSH key on your GitHub account.
   - Acquire, pinned to commit `343790fbea34b2bca89f1a32c6ea080c07a12dfa`: `bash setup.sh --with-surfer` (clones into `tools/nexusmods-surfer/`, gitignored, and leaves local branch `main` at the pin, tracking `origin/main`; a clone that fails says why and setup exits 1).
-  - Update to a newer pin: re-run `bash setup.sh --with-surfer`. It fetches and moves `main` to the pin only when that loses nothing; it refuses (exit 1, nothing moved) on uncommitted changes to tracked files, on commits on local `main` that are not on `origin/main`, and on a detached HEAD holding commits no pushed branch has. Your other branches, `node_modules/` and `.auth/` are kept. Run `npm ci` afterwards if `package-lock.json` changed.
+  - Update to a newer pin: re-run `bash setup.sh --with-surfer`. It fetches and moves `main` to the pin only when that
+    loses nothing; it refuses (exit 1, nothing moved) on uncommitted changes to tracked files, on commits on local
+    `main` that are not on `origin/main`, and on a detached HEAD holding commits no pushed branch has. Your other
+    branches, `node_modules/` and `.auth/` are kept. Run `npm ci` afterwards if `package-lock.json` changed.
   - Then, from `tools/nexusmods-surfer/`: `npm ci`, then `npm run auth` (interactive: pass the Cloudflare check in the browser window it opens, then close it; the session is saved to `.auth/<browser>.json`). Needs the toolkit's Node 24 and Brave (default) or a Playwright browser (`npx playwright install`).
   - Use, from `tools/nexusmods-surfer/` with `BROWSER=brave`: `npm run desc|files|logs|perms|posts|bugs|reqs -- <mod URL>`, each printing JSON. Headed only: it opens a browser window for a few seconds (headless gets an instant Cloudflare 403). Without a display (the devcontainer, CI), prefix the command with `xvfb-run`.
   - Verify: `BROWSER=brave npm run perms -- https://www.nexusmods.com/skyrimspecialedition/mods/196870` prints JSON.
@@ -101,7 +170,11 @@ How each hash was obtained (MEASURED 2026-10-05): NifSkope was downloaded and ha
 and the unpacked `NifSkope.exe` is byte-identical to the copy this toolkit
 was tested with; both PyNifly rows equal the SHA-256 GitHub publishes for that release asset (27.2.0 fetched and hashed
 2026-10-06; one file serves both rows); Blender's row is the hash blender.org publishes in `blender-4.2.9.sha256`, and the
-tested Blender reports `4.2.9 LTS`. 7-Zip (MEASURED 2026-10-13): 7-zip.org's download page links both files from the ip7z/7zip GitHub release `26.00` and publishes no hash; both were downloaded and hashed and equal the SHA-256 GitHub publishes for those release assets, and the `7z.exe` and `7z.dll` inside the x64 installer are byte-identical to the 7-Zip 26.00 that `archive-triage` was tested with (on Windows; the Linux `7zz` was hashed, not run). `python scripts/thirdparty-audit.py` re-checks each published hash.
+tested Blender reports `4.2.9 LTS`. 7-Zip (MEASURED 2026-10-13): 7-zip.org's download page links both files from the
+ip7z/7zip GitHub release `26.00` and publishes no hash; both were downloaded and hashed and equal the SHA-256 GitHub
+publishes for those release assets, and the `7z.exe` and `7z.dll` inside the x64 installer are byte-identical to the
+7-Zip 26.00 that `archive-triage` was tested with (on Windows; the Linux `7zz` was hashed, not run).
+`python scripts/thirdparty-audit.py` re-checks each published hash.
 
 **Nexus gives no direct download link and no published hash**, so the two Nexus rows cannot be checked before
 you unpack: get exactly the named file (the mod's *Files* tab; BSArch 1.0 is under *Old files*), unpack it, and
@@ -158,7 +231,14 @@ The xelib loader hazard (fix 3) is a usage rule; it lives in the `xelib` skill.
 
 ## Nexus API key
 
-Nexus also offers a free REST+GraphQL API ([api-docs.nexusmods.com](https://api-docs.nexusmods.com/)) for mod **version, update dates, changelogs, file info, and dependencies** — useful for update detection and migration/triage. Supply your own free **Personal API Key** (nexusmods.com → Site preferences → API Access) and send it raw as the `apikey` request header. Skyrim SE/VR domain = `skyrimspecialedition`; endpoints take `game_domain_name` + `mod_id`. A personal key is for personal/local use only — never commit or log it, and a shared tool must have each user supply their own. In this toolkit the key is resolved **file-first, then env**: `tools/.nexus_api_key` (one line) if present, else `$NEXUS_API_KEY`. The key file is gitignored — never echo, log, or commit it. `tools/nexus.sh` wraps this (e.g. `bash tools/nexus.sh mod <id>`).
+Nexus also offers a free REST+GraphQL API ([api-docs.nexusmods.com](https://api-docs.nexusmods.com/)) for mod
+**version, update dates, changelogs, file info, and dependencies** — useful for update detection and migration/triage.
+Supply your own free **Personal API Key** (nexusmods.com → Site preferences → API Access) and send it raw as the
+`apikey` request header. Skyrim SE/VR domain = `skyrimspecialedition`; endpoints take `game_domain_name` + `mod_id`. A
+personal key is for personal/local use only — never commit or log it, and a shared tool must have each user supply
+their own. In this toolkit the key is resolved **file-first, then env**: `tools/.nexus_api_key` (one line) if present,
+else `$NEXUS_API_KEY`. The key file is gitignored — never echo, log, or commit it. `tools/nexus.sh` wraps this (e.g.
+`bash tools/nexus.sh mod <id>`).
 
 The mod pages themselves are not readable by a plain fetch: `www.nexusmods.com` and `forums.nexusmods.com` answer
 an agent's web-fetch tool and `curl` with HTTP 403 (MEASURED 2026-10-25). The API does not serve comments, posts or
