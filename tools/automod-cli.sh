@@ -1,5 +1,6 @@
 #!/bin/bash
-# Wrapper for SpookyPirate's AutoMod CLI
+# Wrapper for Spooky's AutoMod CLI, from the toolkit's fork (kxgcayh/spookys-automod-toolkit):
+# upstream SpookyPirate v1.11.2 plus a native nif-tool and native Papyrus tools on macOS/Linux.
 # Usage: bash tools/automod-cli.sh <module> <command> [args] --json
 #        bash tools/automod-cli.sh --rebuild   build (or rebuild) it -- see below
 #        bash tools/automod-cli.sh --built     which commit the DLL was built from, vs the pin
@@ -7,10 +8,16 @@
 # Invokes the pre-built Release DLL directly (no per-call recompile) to avoid the
 # MSB1025 / SDK-mismatch failures that `dotnet run` triggered.
 #
-# PINNED. The toolkit was tested with AutoMod v1.11.2 = commit e1c34ea; that is the only
+# PINNED. The toolkit was tested with AutoMod v1.11.2-native.1 = commit 70da6dd; that is the only
 # version `--rebuild` builds. A clone at another commit is moved to the pin when it is clean
 # (only the wrapper's own one-line patch is undone first); a clone with local changes is
-# never touched -- `--rebuild` stops and says what to do.
+# never touched -- `--rebuild` stops and says what to do. A clone of upstream SpookyPirate
+# (what older toolkits cloned) is fine: the pinned tag is fetched from the fork's URL.
+#
+# NATIVE NIF-TOOL (macOS/Linux). AutoMod's nif commands start tools/nif-tool/nif-tool[.exe]; the
+# Windows nif-tool.exe is not in git. `--rebuild` builds the fork's native/nif-tool with cargo
+# (Rust) when cargo is installed and copies it to tools/automod/tools/nif-tool/nif-tool, which
+# the fork's NifToolWrapper prefers off Windows. Without cargo it says so and builds the rest.
 #
 # .NET 10 ONLY. The .NET 10 SDK is the toolkit's single .NET requirement. Upstream targets
 # net8.0 and ships no global.json, so `--rebuild` then:
@@ -33,8 +40,9 @@ OLD_DLL="$CLI_PROJ/bin/Release/net8.0/spookys-automod.dll"
 PROPS="$AUTOMOD/Directory.Build.props"
 TFM_OLD="<TargetFramework>net8.0</TargetFramework>"
 TFM_NEW="<TargetFramework>net10.0</TargetFramework>"
-PIN_TAG="v1.11.2"
-PIN_COMMIT="e1c34ea34cae4b9a1a547ea6a90c8a91412d689e"
+PIN_TAG="v1.11.2-native.1"
+PIN_COMMIT="70da6dd8ca26c15ff3d6d43eefcf65a856af6b52"
+PIN_URL="https://github.com/kxgcayh/spookys-automod-toolkit"
 # Test seam: tests/test_automod_cli.py names its own fixture commit (it cannot fabricate this SHA). Honoured
 # ONLY together with TOOLKIT_TEST_MODE=1, which the tests set and real users never do: an override someone
 # merely has in their environment would otherwise make --built and toolchain-check call a wrong commit
@@ -46,9 +54,11 @@ if [ -n "${AUTOMOD_TEST_PIN_COMMIT:-}" ]; then
         echo "note: AUTOMOD_TEST_PIN_COMMIT is a test-only setting and was ignored (pin: $PIN_TAG)" >&2
     fi
 fi
-CLONE_HINT="git clone --branch $PIN_TAG https://github.com/SpookyPirate/spookys-automod-toolkit tools/automod"
+CLONE_HINT="git clone --branch $PIN_TAG https://github.com/kxgcayh/spookys-automod-toolkit tools/automod"
 # Test seam: tests/test_automod_cli.py points this at a fake `dotnet` (the harness shadows the real name).
 DOTNET="${AUTOMOD_DOTNET:-dotnet}"
+# Test seam: a fake `cargo` for the native nif-tool build.
+CARGO="${AUTOMOD_CARGO:-cargo}"
 
 g() { git -C "$AUTOMOD" "$@"; }
 
@@ -65,6 +75,27 @@ install_native_bsarch() {
     mkdir -p "$BSARCH_DIR" || return 0
     cp "$NATIVE_BSARCH" "$BSARCH_DIR/bsarch.exe" && chmod +x "$BSARCH_DIR/bsarch.exe" || return 0
     echo "installed by tools/bsarch-native (python tools/bsarch-native/build.py); the real BSArch is a Windows program" > "$BSARCH_DIR/bsarch-native.txt"
+}
+
+# The fork's native nif-tool (Rust). Built by --rebuild only; a no-op on Windows, without the crate, or without cargo
+# (then a note). It goes next to nif-tool.exe under a different name, so a Windows binary or Wine shim there is left alone.
+NIFTOOL_CRATE="$AUTOMOD/native/nif-tool"
+NIFTOOL_DIR="$AUTOMOD/tools/nif-tool"
+build_native_niftool() {
+    [ -f "$NIFTOOL_CRATE/Cargo.toml" ] || return 0
+    case "$(uname -s 2>/dev/null)" in Darwin|Linux) ;; *) return 0 ;; esac
+    if ! command -v "$CARGO" >/dev/null 2>&1; then
+        echo "note: Rust (cargo) is not installed, so the native nif-tool was not built; AutoMod's nif commands other than" >&2
+        echo "      'nif info' need it. Install Rust (https://rustup.rs) and run: bash tools/automod-cli.sh --rebuild" >&2
+        return 0
+    fi
+    echo "Building the native nif-tool (cargo, release)..."
+    if ! "$CARGO" build --release --locked --manifest-path "$NIFTOOL_CRATE/Cargo.toml"; then
+        echo "note: the native nif-tool build failed; the rest of AutoMod is built. The first build needs internet (crates.io)." >&2
+        return 0
+    fi
+    mkdir -p "$NIFTOOL_DIR" && cp "$NIFTOOL_CRATE/target/release/nif-tool" "$NIFTOOL_DIR/nif-tool" && chmod +x "$NIFTOOL_DIR/nif-tool" \
+        && echo "Installed the native nif-tool at tools/automod/tools/nif-tool/nif-tool."
 }
 
 # True when Directory.Build.props differs from HEAD's ONLY by our net8.0 -> net10.0 line.
@@ -108,8 +139,10 @@ to_pinned_commit() {
         return 1
     fi
     if ! g cat-file -e "$PIN_COMMIT^{commit}" 2>/dev/null; then
-        echo "Fetching $PIN_TAG..."
-        g fetch -q --tags origin
+        # From the fork's URL, not `origin`: a clone of upstream SpookyPirate does not have the fork's commits,
+        # and the user's remotes are left as they are.
+        echo "Fetching $PIN_TAG from $PIN_URL..."
+        g fetch -q "$PIN_URL" "+refs/tags/$PIN_TAG:refs/tags/$PIN_TAG"
     fi
     g cat-file -e "$PIN_COMMIT^{commit}" 2>/dev/null || {
         echo "Commit $PIN_COMMIT ($PIN_TAG) is not in tools/automod and could not be fetched (internet?)." >&2
@@ -163,6 +196,7 @@ if [ "$1" == "--rebuild" ]; then
     # The record: the commit built, plus "dirty" when tracked files differed from it (re-review N3).
     { printf '%s' "$(g rev-parse HEAD)"; [ -n "$(local_changes)" ] && printf ' dirty'; echo; } > "$MARKER" || exit 1
     install_native_bsarch
+    build_native_niftool
     exit 0
 fi
 
@@ -207,6 +241,11 @@ case "$1:$2" in
         case "$(uname -s 2>/dev/null)" in
             Darwin|Linux)
                 [ -e "$BSARCH_DIR/bsarch.exe" ] || echo "note: BSArch is a Windows program and cannot run here. Build the native stand-in once: python3 tools/bsarch-native/build.py (tools/bsarch-native/README.md)" >&2 ;;
+        esac ;;
+    nif:list-textures|nif:replace-textures|nif:list-strings|nif:rename-strings|nif:shader-info|nif:fix-eyes|nif:verify|nif:restore)
+        case "$(uname -s 2>/dev/null)" in
+            Darwin|Linux)
+                [ -e "$NIFTOOL_DIR/nif-tool" ] || [ -e "$NIFTOOL_DIR/nif-tool.exe" ] || echo "note: no nif-tool here. Install Rust (cargo) and run: bash tools/automod-cli.sh --rebuild (it builds the native nif-tool)" >&2 ;;
         esac ;;
 esac
 "$DOTNET" "$DLL" "$@"

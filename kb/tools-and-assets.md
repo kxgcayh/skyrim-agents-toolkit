@@ -415,6 +415,12 @@ Homebrew LLVM `clang++` first on `PATH` fails against the macOS SDK headers.
 Similarly, `audio wav-to-xwm` needs `xWMAEncode.exe`, which is not bundled. It is often simpler to call
 `xWMAEncode` directly than to go through AutoMod.
 
+**AutoMod fork (MEASURED 2026-11-17).** The toolkit now pins `kxgcayh/spookys-automod-toolkit` v1.11.2-native.1 (=
+`70da6dd`): upstream v1.11.2 plus a native Rust nif-tool (`native/nif-tool`, built by `--rebuild` with cargo on
+macOS/Linux) and macOS/Linux Papyrus (Caprica, Champollion, russo-2025's native build; russo's arguments fixed:
+`compile -i <src> -o <dir> -h <dir>`, which upstream never passed). `audio wav-to-xwm` stays Windows-only: ffmpeg's
+WMAv2 encoder output does not decode as xWMA. Details: `docs/installing-tools.md`, AutoMod CLI.
+
 **AutoMod on .NET 10 (v4, MEASURED 2026-10-05, v1.11.2 = e1c34ea, SDK 10.0.401 with no other SDK or
 runtime installed).** Upstream targets net8.0; `bash tools/automod-cli.sh --rebuild` pins SDK 10 in
 `tools/automod/global.json` and retargets `Directory.Build.props` to net10.0 (one line, a local

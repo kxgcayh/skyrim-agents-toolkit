@@ -639,14 +639,17 @@ REGISTRY = [
     {"name": "Python", "pins": [("text", ".python-version")], "upstream": ("eol", "python", "minor"),
      "refs": [{"pattern": r"devcontainers/python:[\d.]+-(?P<v>\d+\.\d+)-", "compare": "minor"}]},
     {"name": "AutoMod", "pins": [("regex", "tools/automod-cli.sh", r"PIN_COMMIT=\"(?P<v>[0-9a-f]{40})\"")],
-     "tag_pins": [("regex", "tools/automod-cli.sh", r"AutoMod (?P<v>v\d+\.\d+\.\d+) = commit")],
+     "tag_pins": [("regex", "tools/automod-cli.sh", r"AutoMod (?P<v>v\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.\d+)*)?) = commit")],
+     # Releases come from upstream (a new SpookyPirate release is worth knowing about); the pinned tag and its commit live
+     # on the toolkit's fork, which adds the native nif-tool and macOS/Linux Papyrus support. A pin that differs from
+     # upstream's latest only by its "-native.N" suffix reads NEWER (reported), not DRIFT.
      "upstream": ("github", "SpookyPirate/spookys-automod-toolkit"),
-     "refs": [{"pattern": r"(?:--branch|at tag) (?P<v>v\d+\.\d+\.\d+)", "line": r"(?i)automod", "against": "tag"},
+     "refs": [{"pattern": r"(?:--branch|at tag) `?(?P<v>v\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.\d+)*)?)", "line": r"(?i)automod", "against": "tag"},
               {"pattern": r"commit `?(?P<v>[0-9a-f]{7,40})\b", "line": r"(?i)automod", "compare": "prefix"},
               {"pattern": r"git clone\b(?P<tail>[^\n`\"]*spookys-automod-toolkit[^\n`\"]*)",
                "version": r"--branch (?P<v>[^\s`\"']+)", "unpinned": "AutoMod clone without --branch", "against": "tag"}],
-     "checks": [("tag_commit", {"repo": "SpookyPirate/spookys-automod-toolkit"}),
-                ("repo_paths", {"repo": "SpookyPirate/spookys-automod-toolkit", "files": ["tools/automod-cli.sh"],
+     "checks": [("tag_commit", {"repo": "kxgcayh/spookys-automod-toolkit"}),
+                ("repo_paths", {"repo": "kxgcayh/spookys-automod-toolkit", "files": ["tools/automod-cli.sh"],
                                 "pattern": r"(?P<p>src/SpookysAutomod\.[A-Za-z]+(?:/[A-Za-z.]+\.csproj)?|Directory\.Build\.props)"})]},
     {"name": "PyNifly", "pins": [("regex", "docs/installing-tools.md", r"verified with:? (?P<v>\d+\.\d+\.\d+)"),
                                  ("regex", "agent/skills/skyrim-nif/SKILL.md", r"Verified on \*\*PyNifly (?P<v>\d+\.\d+\.\d+)")],
@@ -1446,7 +1449,7 @@ EXACT_NPM = re.compile(r"(?:@[\w.-]+/)?[\w.-]+@\d+\.\d+\.\d+(?:-[\w.]+)?")
 COMMIT_NPM = re.compile(r"(?:github:)?[\w.-]+/[\w.-]+#[0-9a-f]{40}")
 EXACT_PY = re.compile(r"[\w.\-\[\]]+==\d+(?:\.\d+)+")
 # A clone is pinned when it names a tag AND something checks the commit after cloning: repo -> (file, proof regex).
-VERIFIED_CLONES = {"SpookyPirate/spookys-automod-toolkit": ("tools/automod-cli.sh", r'PIN_COMMIT="[0-9a-f]{40}"'),
+VERIFIED_CLONES = {"kxgcayh/spookys-automod-toolkit": ("tools/automod-cli.sh", r'PIN_COMMIT="[0-9a-f]{40}"'),
                    "kxgcayh/Champollion": (PINNED_DOWNLOADS, r"git -C Champollion checkout [0-9a-f]{40}"),
                    "kxgcayh/Caprica": (PINNED_DOWNLOADS, r"git -C Caprica checkout [0-9a-f]{40}")}
 DOWNLOAD_HOSTS = (r"github\.com/[\w.-]+/[\w.-]+/releases|blender\.org|nodejs\.org|python\.org|git-scm\.com|"

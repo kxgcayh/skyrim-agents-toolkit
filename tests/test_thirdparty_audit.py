@@ -432,12 +432,12 @@ def test_a_major_version_reference_is_held_to_the_runtime_pin(tmp_path):
 # ------------------------------------------------------------------ AutoMod / actions / packages
 
 AUTOMOD = {
-    "tools/automod-cli.sh": ('# PINNED. The toolkit was tested with AutoMod v1.11.2 = commit e1c34ea; that is it.\n'
+    "tools/automod-cli.sh": ('# PINNED. The toolkit was tested with AutoMod v1.11.2-native.1 = commit e1c34ea; that is it.\n'
                              'PIN_COMMIT="e1c34ea34cae4b9a1a547ea6a90c8a91412d689e"\n'
                              'CLI_PROJ="$AUTOMOD/src/SpookysAutomod.Cli"\n'
                              'PROPS="$AUTOMOD/Directory.Build.props"\n'),
-    "docs/installing-tools.md": ("- AutoMod: `git clone --branch v1.11.2 https://github.com/SpookyPirate/spookys-automod-toolkit "
-                                 "tools/automod` (v1.11.2 = commit `e1c34ea34cae4b9a1a547ea6a90c8a91412d689e`).\n"),
+    "docs/installing-tools.md": ("- AutoMod: `git clone --branch v1.11.2-native.1 https://github.com/kxgcayh/spookys-automod-toolkit "
+                                 "tools/automod` (v1.11.2-native.1 = commit `e1c34ea34cae4b9a1a547ea6a90c8a91412d689e`).\n"),
 }
 
 
@@ -448,14 +448,14 @@ def test_automod_pinned_tag_commit_and_paths_are_ok(tmp_path):
 
 
 def test_a_moved_tag_is_drift(tmp_path):
-    url = "https://api.github.com/repos/SpookyPirate/spookys-automod-toolkit/git/ref/tags/v1.11.2"
+    url = "https://api.github.com/repos/kxgcayh/spookys-automod-toolkit/git/ref/tags/v1.11.2-native.1"
     cache = make_cache(tmp_path, drop={url}, extra=[(url, 200, b'{"object":{"type":"commit","sha":"' + b"b" * 40 + b'"}}')])
     rows, code = audit(make_repo(tmp_path, AUTOMOD), cache, ["AutoMod"])
     assert code == 1 and any(r.check == "tag -> commit" and "tag moved" in r.detail for r in by(rows, ta.DRIFT))
 
 
 def test_a_path_missing_at_the_pinned_commit_is_drift(tmp_path):
-    url = ("https://api.github.com/repos/SpookyPirate/spookys-automod-toolkit/contents/Directory.Build.props"
+    url = ("https://api.github.com/repos/kxgcayh/spookys-automod-toolkit/contents/Directory.Build.props"
            "?ref=e1c34ea34cae4b9a1a547ea6a90c8a91412d689e")
     cache = make_cache(tmp_path, drop={url}, extra=[(url, 404, b'{"message":"Not Found"}')])
     rows, code = audit(make_repo(tmp_path, AUTOMOD), cache, ["AutoMod"])
@@ -519,7 +519,7 @@ def test_a_newer_devkit_release_is_reported_not_failed(tmp_path):
 
 def test_an_unpinned_automod_clone_is_drift(tmp_path):
     files = dict(AUTOMOD)
-    files["README.md"] = "git clone https://github.com/SpookyPirate/spookys-automod-toolkit tools/automod\n"
+    files["README.md"] = "git clone https://github.com/kxgcayh/spookys-automod-toolkit tools/automod\n"
     rows, code = audit(make_repo(tmp_path, files), make_cache(tmp_path), ["AutoMod"])
     assert code == 1 and any("AutoMod clone without --branch" in r.detail for r in by(rows, ta.DRIFT))
 
@@ -713,7 +713,7 @@ def test_a_dotnet_tool_install_must_name_a_version(tmp_path, line, red):
     assert (("README.md", "dotnet-tool") in rules(tmp_path, {"README.md": line + "\n"})) is red
 
 
-AUTOMOD_URL = "https://github.com/SpookyPirate/spookys-automod-toolkit"
+AUTOMOD_URL = "https://github.com/kxgcayh/spookys-automod-toolkit"
 
 
 @pytest.mark.parametrize("line,proof,red", [

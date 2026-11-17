@@ -6762,7 +6762,7 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
      "", _EV + "test_a_manifest_installed_spriggit_drives_the_guard", "t6b-r1-espverify-absolute-plugin-path"),
     ("tools/esp-verify-wrapper.sh", 'PKGVER="${ESP_VERIFY_PKGVER:-${PIN:-0.41.0}}"', 'PKGVER="${ESP_VERIFY_PKGVER:-0.40.0}"',
      _EV + "test_the_package_version_defaults_to_the_pin", "t6b-r1-espverify-pkgver-is-the-pin"),
-    ("SETUP_PROMPT.txt", "at tag v1.11.2 (commit e1c34ea", "(commit e1c34ea",
+    ("SETUP_PROMPT.txt", "at tag v1.11.2-native.1 (commit 70da6dd", "(commit 70da6dd",
      "tests/test_automod_docs_pinned.py::test_no_user_facing_copy_clones_automod_unpinned_or_builds_it_bare",
      "t6b-r1-setup-prompt-pinned-clone"),
 ]]

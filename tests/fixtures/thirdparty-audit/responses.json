@@ -20,10 +20,10 @@
    "zip": ["spriggit.cli.nuspec", "tools/net10.0/any/Spriggit.CLI.dll", "tools/net10.0/any/DotnetToolSettings.xml"]},
 
   {"url": "https://api.github.com/repos/SpookyPirate/spookys-automod-toolkit/releases/latest", "status": 200, "json": {"tag_name": "v1.11.2"}},
-  {"url": "https://api.github.com/repos/SpookyPirate/spookys-automod-toolkit/git/ref/tags/v1.11.2", "status": 200,
+  {"url": "https://api.github.com/repos/kxgcayh/spookys-automod-toolkit/git/ref/tags/v1.11.2-native.1", "status": 200,
    "json": {"object": {"type": "commit", "sha": "e1c34ea34cae4b9a1a547ea6a90c8a91412d689e"}}},
-  {"url": "https://api.github.com/repos/SpookyPirate/spookys-automod-toolkit/contents/Directory.Build.props?ref=e1c34ea34cae4b9a1a547ea6a90c8a91412d689e", "status": 200, "json": {"type": "file"}},
-  {"url": "https://api.github.com/repos/SpookyPirate/spookys-automod-toolkit/contents/src/SpookysAutomod.Cli?ref=e1c34ea34cae4b9a1a547ea6a90c8a91412d689e", "status": 200, "json": [{"type": "file"}]},
+  {"url": "https://api.github.com/repos/kxgcayh/spookys-automod-toolkit/contents/Directory.Build.props?ref=e1c34ea34cae4b9a1a547ea6a90c8a91412d689e", "status": 200, "json": {"type": "file"}},
+  {"url": "https://api.github.com/repos/kxgcayh/spookys-automod-toolkit/contents/src/SpookysAutomod.Cli?ref=e1c34ea34cae4b9a1a547ea6a90c8a91412d689e", "status": 200, "json": [{"type": "file"}]},
 
   {"url": "https://api.github.com/repos/actions/checkout/git/ref/tags/v7.0.1", "status": 200,
    "json": {"object": {"type": "tag", "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}},

@@ -1,6 +1,6 @@
 """tools/automod-cli.sh -- AutoMod runs on the .NET 10 SDK, built from exactly the commit the toolkit tested.
 
-Upstream AutoMod (v1.11.2) targets net8.0 in Directory.Build.props and ships no global.json. v4 does not
+Upstream AutoMod (v1.11.2, and the toolkit's fork v1.11.2-native.1) targets net8.0 in Directory.Build.props and ships no global.json. v4 does not
 ask users for a second SDK, so `--rebuild` pins SDK 10 in tools/automod/global.json, retargets the clone
 to net10.0 (a recorded local patch), and builds the Cli project only (Setup is a WPF net8.0-windows app).
 MEASURED 2026-10-05 (KNOWLEDGEBASE.md, "AutoMod on .NET 10"): a net8.0 build on a 10-only machine does not
@@ -262,7 +262,7 @@ def test_local_changes_stop_the_move_even_when_git_could_carry_them(tmp_path):
 
 
 # --- fix round 2 (re-review N1-N4) -----------------------------------------------------------------
-SHIPPED_PIN = "e1c34ea34cae4b9a1a547ea6a90c8a91412d689e"
+SHIPPED_PIN = "70da6dd8ca26c15ff3d6d43eefcf65a856af6b52"  # v1.11.2-native.1 on kxgcayh/spookys-automod-toolkit
 
 
 def _built_dll(tools: Path, marker):
@@ -460,3 +460,91 @@ def test_no_hint_once_a_bsarch_is_in_place_ours_or_the_users(tmp_path):
     users.parent.mkdir(parents=True)
     users.write_bytes(b"the real BSArch 1.0")
     assert HINT not in _run(other, tools2, pin2, "archive", "create", "d").stderr
+
+
+# --- native nif-tool (the fork's native/nif-tool, built by --rebuild with cargo) --------------------
+
+NIFTOOL_HINT = "it builds the native nif-tool"
+
+
+def _crate(tools: Path) -> Path:
+    crate = tools / "automod" / "native" / "nif-tool"
+    crate.mkdir(parents=True)
+    (crate / "Cargo.toml").write_text("[package]\nname = \"nif-tool\"\n", encoding="utf-8", newline="\n")
+    return crate
+
+
+def _fake_cargo(tmp_path: Path) -> Path:
+    """Records argv; on `build`, writes target/release/nif-tool next to the --manifest-path it was given."""
+    cargo = tmp_path / "cargo"
+    log = tmp_path / "cargo-argv.txt"
+    cargo.write_text(
+        '#!/bin/bash\nprintf "%s\\n" "$*" >> "{}"\n'
+        'while [ $# -gt 0 ]; do [ "$1" = --manifest-path ] && m="$2"; shift; done\n'
+        'd="$(dirname "$m")/target/release"; mkdir -p "$d"; printf native-nif > "$d/nif-tool"\n'.format(log.as_posix()),
+        encoding="utf-8", newline="\n")
+    cargo.chmod(0o755)
+    return cargo
+
+
+def _run_cargo(tmp_path, tools, pin, cargo, *args):
+    env_cargo = os.environ.get("AUTOMOD_CARGO")
+    os.environ["AUTOMOD_CARGO"] = str(cargo)
+    try:
+        return _run(tmp_path, tools, pin, *args)
+    finally:
+        if env_cargo is None:
+            os.environ.pop("AUTOMOD_CARGO", None)
+        else:
+            os.environ["AUTOMOD_CARGO"] = env_cargo
+
+
+@posix_only
+def test_a_rebuild_builds_the_native_niftool_and_installs_it_where_automod_looks(tmp_path):
+    tools, pin, _ = _layout(tmp_path)
+    crate = _crate(tools)
+    p = _run_cargo(tmp_path, tools, pin, _fake_cargo(tmp_path), "--rebuild")
+    assert p.returncode == 0, p.stdout + p.stderr
+    installed = tools / "automod" / "tools" / "nif-tool" / "nif-tool"
+    assert installed.read_bytes() == b"native-nif" and os.access(installed, os.X_OK)
+    argv = (tmp_path / "cargo-argv.txt").read_text(encoding="utf-8")
+    assert "build --release --locked --manifest-path" in argv and str(crate / "Cargo.toml") in argv, argv
+
+
+@posix_only
+def test_without_cargo_the_rebuild_still_succeeds_and_says_why_nif_tool_is_missing(tmp_path):
+    tools, pin, _ = _layout(tmp_path)
+    _crate(tools)
+    p = _run_cargo(tmp_path, tools, pin, tmp_path / "no-such-cargo", "--rebuild")
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "cargo" in p.stderr and "rustup" in p.stderr, p.stderr
+    assert not (tools / "automod" / "tools" / "nif-tool").exists()
+
+
+@posix_only
+def test_without_the_crate_cargo_is_never_called(tmp_path):
+    tools, pin, _ = _layout(tmp_path)
+    assert _run_cargo(tmp_path, tools, pin, _fake_cargo(tmp_path), "--rebuild").returncode == 0
+    assert not (tmp_path / "cargo-argv.txt").exists()
+
+
+@posix_only
+def test_a_nif_tool_command_without_any_nif_tool_says_how_to_get_one(tmp_path):
+    tools, pin = _with_dll(tmp_path)
+    p = _run(tmp_path, tools, pin, "nif", "list-textures", "x.nif", "--json")
+    assert p.returncode == 0 and NIFTOOL_HINT in p.stderr and NIFTOOL_HINT not in p.stdout, p.stderr
+    assert NIFTOOL_HINT not in _run(tmp_path, tools, pin, "nif", "info", "x.nif").stderr
+    assert NIFTOOL_HINT not in _run(tmp_path, tools, pin, "esp", "info", "x.esp").stderr
+
+
+@posix_only
+def test_no_nif_tool_hint_once_a_native_or_windows_nif_tool_is_in_place(tmp_path):
+    for name in ("nif-tool", "nif-tool.exe"):
+        base = tmp_path / name
+        base.mkdir()
+        tools, pin = _with_dll(base)
+        d = tools / "automod" / "tools" / "nif-tool"
+        d.mkdir(parents=True)
+        (d / name).write_bytes(b"x")
+        assert NIFTOOL_HINT not in _run(base, tools, pin, "nif", "verify", "x.nif").stderr, name
+

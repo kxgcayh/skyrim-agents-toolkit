@@ -41,15 +41,15 @@ Install them into the `tools/` folder in your game directory; the setup prompt w
     on macOS arm64: `npm ci --ignore-scripts` installs koffi 2.15.1; `python3 tools/xeditlib/fetch.py` fetched and
     verified 16 package files into `tools/xeditlib/lib/` (commit 9632663); `fetch.py --check` exited 0;
     `tools/skyrim-winner.sh chain 0000000A` resolved WINNER: Update.esm with no CrossOver.
-- **Champollion** — decompiles Papyrus `.pex` → `.psc`. Built from source from the fork <https://github.com/kxgcayh/Champollion> (Orvid/Champollion v1.3.2 plus a Windows/macOS/Linux build; the installed command is lowercase `champollion`), pinned to commit `23e947a5d16fa9f4ad4b3fdf2b0dc37caefc6bbd`.
+- **Champollion** — decompiles Papyrus `.pex` → `.psc`. Built from source from the fork <https://github.com/kxgcayh/Champollion> (Orvid/Champollion v1.3.2 plus a Windows/macOS/Linux build; the installed command is lowercase `champollion`), pinned to commit `c527ee708097707d188b8256b3fcaa83f99b50f0`.
   - Needs Git, CMake 3.15+, a C++20 compiler and vcpkg with `VCPKG_ROOT` set (the fork's README, *Requirements*). These are system software: the user installs them.
   - Acquire: `git clone --branch main https://github.com/kxgcayh/Champollion.git`, then
-    `git -C Champollion checkout 23e947a5d16fa9f4ad4b3fdf2b0dc37caefc6bbd`, then from that folder
+    `git -C Champollion checkout c527ee708097707d188b8256b3fcaa83f99b50f0`, then from that folder
     `cmake -B build -DCMAKE_BUILD_TYPE=Release`, `cmake --build build --config Release`,
     `cmake --install build --config Release --prefix ~/.local` (PowerShell: `--prefix "$HOME\.local"`). This puts
     `champollion` in `~/.local/bin`, which must be on `PATH`. vcpkg builds Boost and fmt on the first build.
   - Verify: `champollion --version` prints `Champollion PEX decompiler v1.3.2`. MEASURED 2026-11-04 on macOS (native arm64 build, no CrossOver).
-  - Known upstream bug: a directory argument without `-r` or `-t` fails every file ("N files failed to decompile"); `Champollion/main.cpp:379` passes the directory instead of `entry->path()`. Pass files, or add `-r` or `-t`.
+  - A folder argument decompiles every `.pex` in it, with or without `-r`/`-t`: the fork's `c527ee7` fixes upstream's `main.cpp` loop, which passed the folder instead of each file ("N files failed to decompile", exit 0). MEASURED 2026-11-17: 14,026 vanilla scripts, output byte-identical to `-r`.
 - **Caprica** — compiles Papyrus `.psc` → `.pex`. Built from source from the fork <https://github.com/kxgcayh/Caprica> (Orvid/Caprica master, banner v0.3.0, plus a Windows/macOS/Linux build; the installed command is lowercase `caprica`), pinned to commit `d8f70641a38697e1c0d89a404d40c0bcdb75afa7`.
   - Needs Git, CMake 3.15+, a C++23 compiler (Linux: Clang 17+ with libstdc++ 13+; GCC cannot build it) and vcpkg with `VCPKG_ROOT` set (the fork's README, *Build and install from source*). These are system software: the user installs them.
   - Acquire: `git clone --branch main https://github.com/kxgcayh/Caprica.git`, then
@@ -67,9 +67,9 @@ Install them into the `tools/` folder in your game directory; the setup prompt w
   - Verify: `spriggit --help`.
   - **macOS and Linux: the pinned fork.** The stock CLI cannot serialize on macOS (`docs/macos-crossover.md`). Run `python3 tools/spriggit-fork/fetch.py`. It fetches `kxgcayh/Spriggit` commit `90e6fc550e2f04b6a424c70ce57d9ad713da3255` with git, refuses to build unless `HEAD` equals that pin, and publishes a self-contained CLI into `tools/spriggit-fork/bin/` (needs Git and the .NET 10 SDK; never shipped). `tools/spriggit-cli.sh` uses it ahead of any `spriggit` on PATH. Verify with `python3 tools/spriggit-fork/fetch.py --check`, which checks the pin and the binary's SHA-256 without network access. Its `--version` prints the fork's version, so still pass `--PackageVersion 0.41.0`. MEASURED 2026-11-11 on macOS arm64: build OK, `--check` exit 0, fixture round trip through the wrapper byte-identical.
 - **AutoMod CLI** — NIF / BSA / audio / MCM / ESP one-liners.
-  - Acquire, **pinned to the tested tag**: `git clone --branch v1.11.2 https://github.com/SpookyPirate/spookys-automod-toolkit tools/automod` (v1.11.2 = commit `e1c34ea34cae4b9a1a547ea6a90c8a91412d689e`).
+  - Acquire, **pinned to the tested tag**: `git clone --branch v1.11.2-native.1 https://github.com/kxgcayh/spookys-automod-toolkit tools/automod` (v1.11.2-native.1 = commit `70da6dd8ca26c15ff3d6d43eefcf65a856af6b52`). This is the toolkit's fork of [SpookyPirate's AutoMod](https://github.com/SpookyPirate/spookys-automod-toolkit) v1.11.2: it adds a native nif-tool (`native/nif-tool`, Rust) and runs `papyrus` with native Caprica, Champollion or russo-2025 builds on macOS and Linux. A clone of upstream that an older toolkit told you to make is fine: `--rebuild` fetches the pinned tag from the fork's URL and leaves your remotes alone.
   - Build: `bash tools/automod-cli.sh --rebuild`. Needs only the **.NET 10 SDK** (the single .NET requirement of the core tools) and, the first time, internet for the NuGet restore. The wrapper does four things, so you don't have to:
-    0. puts the clone on the tested commit `e1c34ea`: a clean clone at any other commit (e.g. one an older toolkit told you to clone unpinned) is checked out to it, fetching the tag if needed; a clone with **your own changes is never touched** -- the wrapper stops and tells you to commit or stash them first. The same goes for a detached commit of your own that no branch or tag holds (it tells you how to give it a branch). Its own one-line patch (step 2) is undone before moving, so it never blocks the move;
+    0. puts the clone on the tested commit `70da6dd`: a clean clone at any other commit (e.g. one an older toolkit told you to clone unpinned) is checked out to it, fetching the tag if needed; a clone with **your own changes is never touched** -- the wrapper stops and tells you to commit or stash them first. The same goes for a detached commit of your own that no branch or tag holds (it tells you how to give it a branch). Its own one-line patch (step 2) is undone before moving, so it never blocks the move;
     1. writes `tools/automod/global.json` selecting SDK 10 (`{ "sdk": { "version": "10.0.100", "rollForward": "latestFeature" } }`), replacing the `8.0.100` pin older toolkits told you to create;
     2. retargets the clone from net8.0 to net10.0 — a one-line **local patch** of upstream's `Directory.Build.props` (`git -C tools/automod diff` shows it). Retargeting, not roll-forward: a net8.0 build does not start on a machine with only .NET 10 unless `DOTNET_ROLL_FORWARD=Major` is set on every launch;
     3. builds the **Cli project only** (the WPF `Setup` project targets `net8.0-windows` — never build it headless). The built artifact is `src/SpookysAutomod.Cli/bin/Release/net10.0/spookys-automod.dll`, and `toolkit-built-from.txt` beside it records the commit it was built from. `bash tools/automod-cli.sh --built` (and `tools/toolchain-check.sh`) compares that with the pin, and reads DEGRADED for a build made with local changes or a DLL replaced after its last `--rebuild`.
@@ -81,12 +81,25 @@ Install them into the `tools/` folder in your game directory; the setup prompt w
     The wrapper then copies it to the path AutoMod starts BSArch from, after `--rebuild` and before each run, and
     never replaces a `bsarch.exe` it did not install. `bash tools/automod-cli.sh archive status --json` shows the path
     in use. On Windows use the real `bsarch.exe` from *Pinned downloads* below.
-  - `nif` module: only `nif info` works from the clone alone. `list-textures`, `list-strings`, `shader-info`, `verify`
-    and the write commands run `nif-tool.exe`, which is not in git: it ships in the release zip
-    `spookys-automod-toolkit-v1.11.2.zip` (SHA-256 `2e7848961785eedda3702851d477d878cf01e98a61710ca50fe8b0aafcb28bef`)
-    as `tools/nif-tool/nif-tool.exe` (SHA-256 `880e8c86506f34818dd8d88c557989e3610a871dc605ee6939cb0244a00a9906`).
-    Extract it to `tools/automod/tools/nif-tool/nif-tool.exe`. It is a Windows binary; on macOS it runs through
-    CrossOver (shim in `docs/macos-crossover.md` section 1).
+  - `nif` module: `nif info` is AutoMod's own code. `list-textures`, `replace-textures`, `list-strings`,
+    `rename-strings`, `shader-info`, `fix-eyes`, `verify` and `restore` start nif-tool.
+    - **macOS and Linux**: `--rebuild` builds the fork's native nif-tool with Rust (`cargo`; install from
+      https://rustup.rs) and installs it as `tools/automod/tools/nif-tool/nif-tool`, which AutoMod prefers there. No Rust:
+      `--rebuild` says so and builds the rest, and those commands print a note. Same flags and output as the
+      Windows nif-tool (MEASURED 2026-11-17: byte-identical on 22,047 vanilla and 2,839 mod NIFs); one deliberate
+      difference: a string table holding invalid UTF-8 (6 vanilla meshes) passes `verify` and keeps its bytes on a
+      write, where the Windows build fails it and writes U+FFFD over them. No Wine.
+    - **Windows**: `nif-tool.exe` is not in git: it ships in upstream's release zip
+      `spookys-automod-toolkit-v1.11.2.zip` (SHA-256 `2e7848961785eedda3702851d477d878cf01e98a61710ca50fe8b0aafcb28bef`)
+      as `tools/nif-tool/nif-tool.exe` (SHA-256 `880e8c86506f34818dd8d88c557989e3610a871dc605ee6939cb0244a00a9906`).
+      Extract it to `tools/automod/tools/nif-tool/nif-tool.exe`.
+  - `papyrus` module on **macOS and Linux**: `compile` uses `caprica` (tools folder, then PATH; the pinned fork under
+    *Pinned downloads*), else russo-2025's native build (`papyrus download` fetches `papyrus-compiler-macos.tar.gz` /
+    `-ubuntu.tar.gz`); `decompile` uses `champollion` on PATH. Caprica needs `TESV_Papyrus_Flags.flg` (Creation Kit):
+    AutoMod finds it in `tools/automod/skyrim-script-headers/` or in a `--headers` folder. `papyrus setup-headers`
+    cannot auto-detect the game off Windows: pass `--skyrim-path`.
+  - `audio wav-to-xwm` is Windows-only (Microsoft's `xWMAEncode.exe`); ffmpeg's WMAv2 encoder does not produce
+    playable xWMA (MEASURED 2026-11-17).
   - Verify: `bash tools/automod-cli.sh esp --help --json`.
 - **PyFFI** — LE-format NiTriShape geometry edits.
   - **Works on any modern Python (verified through 3.14) as long as `setuptools` is installed in that same
