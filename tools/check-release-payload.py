@@ -84,6 +84,20 @@ CORE_REQUIRED = (
     # Bundled diagnostics README lists as "no install beyond Python 3", and the path discovery they import.
     "tools/skyrim_paths.py",
     "tools/skse-load-status.py",
+    "tools/plugin-check.py",          # v4.1.0: load-order check for the agent
+    "tools/postmortem.py",            # v4.1.0: last-session report (crash, Papyrus, SKSE)
+    "tools/crash-triage.py",          # postmortem.py imports both triage tools when it starts
+    "tools/papyrus-triage.py",
+    "tools/save_vault.py",            # v4.1.0: the save vault, the only way back for a changed save
+    "tools/skyguard/vault_watch.py",
+    "tools/loot_advisor.py",          # v4.1.0: LOOT's read-only advice, through libloot
+    "tools/libloot/libloot_loader.py",
+    "tools/libloot/build.py",
+    "tools/libloot/build-requirements.lock",
+    "tools/libloot/PROVENANCE.json",
+    "tools/libloot/NOTICE.md",
+    "tools/libloot/COPYING",          # libloot's GPL-3.0 text, beside its binaries
+    "tools/missing-textures.py",      # v4.1.0: textures meshes name that nothing provides (House Carl)
     "tools/archive-triage.py",
     "tools/mirror-launch-logs.py",
     "tools/housekeep.py",
@@ -111,6 +125,7 @@ CORE_REQUIRED = (
     # the Apache-2.0 LICENSE and NOTICE (with the modification notice) and the CLI build's third-party notices ship
     # with every copy of the patch set (tools/resaver-plus/NOTICE.md).
     "tools/resaver_native.py",
+    "tools/resaver_stock.py",       # v4.1.0: its stock tier; the adapter imports it on every call
     "tools/resaver-plus.py",
     "tools/resaver-plus/build.py",
     "tools/resaver-plus/SOURCE-SHA256",
@@ -121,14 +136,13 @@ CORE_REQUIRED = (
     "tools/modding-harness.lock.json",
     "tools/agent-harness.py",
     "tools/skyguard/portable.py",
-    "tools/skyguard/local_policy.py",
     "tools/skyguard/save_profile.py",
-    "tools/skyguard/ordered_upgrade.py",
     "tools/skyguard/adapters/opencode.py",
     ".opencode/plugins/skyguard.js",
     ".opencode/hooks/skyguard_adapter.py",
     ".opencode/SKYRIM-OPENCODE.md",
     "tools/housecarl.py",
+    "tools/housecarl-preserve.js",
     "tools/housecarl-verify.js",
     "tools/housecarl-requirements.lock",
     "tools/housecarl-requirements.txt",
@@ -174,6 +188,7 @@ ABSENT_PATHS = (
     "tools/resaver-plus/build",
     "tools/resaver-plus/work",
     "tools/resaver-plus/backend",
+    "tools/resaver-plus/stock-exe",   # the user's own path to their stock ReSaver build
     "tools/resaver-plus/contributions",
     "tools/resaver-port",
     "tools/resaver-port-contributions.py",
@@ -197,6 +212,7 @@ RESAVER_PLUS_ADDITIONS = 16
 ADAPTER_REQUIRED = (
     "ADAPTING.md",
     "docs/upgrading-native-hooks.md",
+    "docs/save-vault.md",
     "tools/modding_harness/patches.py",
     "tools/adapting/adapter_template.py",
     "tools/adapting/capability-report.template.json",
@@ -256,6 +272,31 @@ def check_shape(root: Path):
                     if p.is_file() and not p.name.endswith(".example")})
     yield "no dotenv-style file (.env, *.env, .env.*) anywhere", ("PRESENT: " + ", ".join(found)) if found else None
     yield from check_resaver_plus(root)
+    yield from check_libloot(root)
+
+
+LIBLOOT = "tools/libloot"
+
+
+def check_libloot(root: Path):
+    """The shipped libloot wheels and the GPL source pack they were built from: at least one of each, each listed in
+    its folder's SHA256SUMS and matching it (the licence requires the source to ship with the binaries)."""
+    import hashlib
+    for sub, pattern in (("wheels", "*.whl"), ("source", "*.tar.gz")):
+        folder = root / LIBLOOT / sub
+        listed = {}
+        sums = folder / "SHA256SUMS"
+        if sums.is_file():
+            for line in sums.read_text(encoding="utf-8").splitlines():
+                parts = line.split()
+                if len(parts) == 2:
+                    listed[parts[1].lstrip("*")] = parts[0].lower()
+        files = sorted(folder.glob(pattern)) if folder.is_dir() else []
+        bad = [f.name for f in files if listed.get(f.name) != hashlib.sha256(f.read_bytes()).hexdigest()]
+        missing = sorted(set(listed) - {f.name for f in files})
+        problem = ("none shipped" if not files else "not matching SHA256SUMS: " + ", ".join(bad) if bad
+                   else "listed but absent: " + ", ".join(missing) if missing else None)
+        yield "{}/{} ({}) shipped and matching SHA256SUMS".format(LIBLOOT, sub, pattern), problem
 
 
 def check_resaver_plus(root: Path):

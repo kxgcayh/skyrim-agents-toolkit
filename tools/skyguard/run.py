@@ -25,7 +25,7 @@ _T0 = time.monotonic()        # the engine's time budget counts from (about) her
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from skyguard import backup, codes, engine, health, paths, recovery, saves, session, snapshot  # noqa: E402
+from skyguard import backup, codes, engine, health, paths, recovery, session, snapshot  # noqa: E402
 from skyguard.adapters import claude, codex  # noqa: E402
 from skyguard.audit import Audit  # noqa: E402
 from skyguard.verdict import Verdict  # noqa: E402
@@ -168,6 +168,49 @@ def _disk_note(project) -> str:
     return note + "\n" if note else ""
 
 
+def _vault_note(project) -> str:
+    """The save vault's watcher, in one line (two when the INI vault differs), and the watcher started DETACHED when
+    it is not running: an upgraded install gets its vault at the next session start, with no setup run. Only for the
+    installed toolkit's own save_vault.py and never under the test harness (the sweep's markers and its switch, with
+    no opt-in, plus SKYGUARD_SAVE_VAULT=off): a test must never start a watcher on the real vault. A second watcher
+    exits by itself (watch.lock). Never raises: the vault must not cost the session its banner."""
+    tool = Path(__file__).resolve().parents[1] / "save_vault.py"
+    try:
+        own = (Path(project).resolve() / "tools" / "save_vault.py") == tool
+    except OSError:
+        own = False
+    env = os.environ
+    if not (own and tool.is_file()) or env.get("SKYGUARD_SAVE_VAULT", "").strip().lower() == "off":
+        return ""
+    in_test = bool(env.get("PYTEST_CURRENT_TEST") or env.get("HARNESS_FIXTURE_ROOT"))   # no opt-in: never in a test
+    if in_test and not env.get("SAVE_VAULT_DIR"):
+        return ""                              # a test reads no heartbeat but one it placed itself
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("skyguard_save_vault", tool)
+        vault = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(vault)
+        alive, line = vault.watcher_status(vault.default_root())
+        ini_alive, ini_line = vault.watcher_status(vault.config_root())
+    except Exception as e:  # noqa: BLE001
+        return "save vault: its state could not be read ({}); check: python tools/save_vault.py status\n".format(
+            e.__class__.__name__)
+    lines = [line]
+    if ini_alive != alive:
+        lines.append(ini_line.replace("save vault:", "INI vault:", 1))
+    stopped = "NOT RUNNING" in line            # an INI vault that is down alone is retried by the running watcher
+    sweep_off = env.get("SKYGUARD_HOUSEKEEP_SWEEP", "").strip().lower() == "off"
+    if stopped and not in_test and not sweep_off:
+        try:
+            from skyguard import vault_watch
+            vault_watch.start(project)
+            lines.append("save vault: started the watcher now; confirm with python tools/save_vault.py status. "
+                         "Until it runs, a changed save has no kept earlier version.")
+        except Exception:  # noqa: BLE001
+            lines.append("save vault: the watcher could not be started; run python tools/save_vault.py watch")
+    return "\n".join(lines) + "\n"
+
+
 def _recovery_deadline() -> float:
     """Task 15: a recovery snapshot or a save backup ends this far before the engine budget's watchdog."""
     return _T0 + _engine_budget() - SNAPSHOT_MARGIN
@@ -175,7 +218,7 @@ def _recovery_deadline() -> float:
 
 def _recovery(a, p, audit, roots) -> None:
     """Task 15: the load order and INIs, before the command (snapshot role). Never raises and never changes a verdict.
-    A save the command changes is backed up by the deciding hook instead (_saves)."""
+    Saves are not this hook's: tools/save_vault.py keeps every version of them."""
     try:
         recovery.run(a.project, p["command"], p["empty"], audit, roots, cwd=p.get("cwd", ""),
                      shell=p.get("shell", ""), agent="claude", session_id=p.get("session_id", ""),
@@ -185,9 +228,10 @@ def _recovery(a, p, audit, roots) -> None:
 
 
 def _saves(a, p, audit, v, what):
-    """The save policy (portable.check): every save the call changes is backed up and verified HERE, in the deciding
-    PreToolUse hook, before its decision is returned -- so the tool cannot run first. A backup that fails, or that
-    raises, denies."""
+    """The shared dispatcher's ordering for a deciding hook (portable.check): shadow mode, telemetry and the receipt.
+    The name is historical: since 4.1 it backs up no save (tools/save_vault.py keeps every version instead). If the
+    dispatcher raises, the rules' own verdict `v` stands: a refusal stays a refusal, and nothing is loosened because
+    main() then skips the shadow pass."""
     try:
         from skyguard import portable
         kind = {"protect-bash": "shell", "protect-files": "write", "protect-mcp": "mcp"}[a.role]
@@ -204,11 +248,10 @@ def _saves(a, p, audit, v, what):
         return portable.legacy_pre_tool(req, a.project, roots, audit, a.telemetry,
                                          deadline=_recovery_deadline(), precomputed=v, side_effects=False,
                                          metadata=p.get("receipt_identity", {}))
-    except Exception as e:  # noqa: BLE001 -- fail closed: no verified backup, no save change
-        reason = saves.rules.message("S-SAVE-BACKUP-FAILED", file="the saves", op="the guard raised " +
-                                     e.__class__.__name__)
-        audit.rule(a.role, "S-SAVE-BACKUP-FAILED", "deny", reason)
-        return Verdict("deny", reason, code="shell.S-SAVE-BACKUP-FAILED")
+    except Exception as e:  # noqa: BLE001 -- the rules have already decided; the dispatcher adds no refusal of its own
+        audit.log(a.role, "FAILED", "the shared dispatcher raised {} -- the rules' verdict stands".format(
+            e.__class__.__name__))
+        return v
 
 
 def _receipt_identity(raw):
@@ -229,6 +272,7 @@ def _codex(a, raw: str) -> int:
     if a.role == "session-start":
         _session_line(a, req.session_id, source=req.source, transcript=req.transcript_path)
         out, status, code = session.run_status(a.project, req.source, a.bash, audit, root=a.root_win or a.root)
+        out = _vault_note(a.project) + out
         _session_snapshot(a.project, req.source, audit)
         out = session.with_charter(_disk_note(a.project) + out, a.project, req.session_id)
         _telemetry(a, Verdict("allow", "", "", status, code))
@@ -368,7 +412,7 @@ def main(argv=None) -> int:
         env = _declared_env(a)
         roots = paths.roots(a.root, a.root_win, env if env is not None else {})
         v = engine.evaluate_mcp(p["tool_name"], p["mcp_input"], audit, roots=roots)
-        v = _saves(a, p, audit, v, p["tool_name"])          # an existing save DevBench overwrites is kept first
+        v = _saves(a, p, audit, v, p["tool_name"])
     elif a.role == "backup-before-edit":
         kept = backup.run(a.project, p["tool_name"], p["file_path"], p["empty"], audit, "claude", p.get("session_id", ""))
         v = Verdict()
@@ -376,7 +420,7 @@ def main(argv=None) -> int:
             v = Verdict("allow", "", "NO BACKUP of {} could be taken before this edit (see .claude/backups/AUDIT_LOG.txt). "
                         "Tell the user if the file matters.".format(p["file_path"]))
     elif a.role == "save-sentinel":
-        # PostToolUse, after the call: report saves changed with no backup first (saves.py KNOWN LIMITS). Never a
+        # PostToolUse, after the call: report the saves that changed or went (save_sentinel.py). Never a
         # decision; an unreadable paths file costs only the declared config dirs, never the look itself.
         from skyguard import save_sentinel
         env = _declared_env(a)
@@ -393,6 +437,7 @@ def main(argv=None) -> int:
     else:
         out, status, code = session.run_status(a.project, "" if p["empty"] else p["source"], a.bash, audit,
                                               root=a.root_win or a.root)
+        out = _vault_note(a.project) + out
         _session_snapshot(a.project, "" if p["empty"] else p["source"], audit)
         out = session.with_charter(_disk_note(a.project) + out, a.project, p["session_id"])
         _telemetry(a, Verdict(status=status, code=code))

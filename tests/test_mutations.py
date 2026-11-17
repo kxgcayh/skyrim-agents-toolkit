@@ -232,10 +232,6 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
                  'if not st.rejected and (st.lifts or _engaged(root)):',
                  "tests/test_skyguard_session_start.py::test_compact_does_not_clear_or_report_lifts",
                  id="review-session-compact-state-read-only"),
-    pytest.param("tools/skyguard/mcp_rules.py", "    if not is_devbench(name):\n        return Verdict()",
-                 '    if len(parts) < 3 or parts[0] != "mcp" or not parts[1].startswith("devbench"):\n        return Verdict()',
-                 "tests/test_recovery_snapshots.py::test_each_judged_devbench_alias_keeps_the_save_and_cosave_before_the_call[my__devbench]",
-                 id="review-recovery-devbench-alias"),
     pytest.param("tools/skyguard/self_rules.py",
                  "grep(deletes.INTERP_DESTROYER, code)", "grep(deletes.DESTROYER, code)",
                  "tests/test_skyguard_self_rules.py::test_recycle_examples_outside_the_install_do_not_become_state_targets[double]",
@@ -298,6 +294,181 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
         "               ; do",
         "tests/test_setup_paths.py::test_portable_mo2_instance_is_detected",
         id="portable-sibling-probe",
+    ),
+    pytest.param(
+        "setup.sh",
+        ' "$GAME_DIR"/../ModOrganizer.ini \\',
+        " \\",
+        "tests/test_setup_paths.py::test_wabbajack_instance_one_folder_above_the_game_is_detected",
+        id="wabbajack-parent-probe",
+    ),
+    pytest.param(
+        "setup.sh",
+        '            PROFILE_SAVES+=("$pd")',
+        "            :",
+        "tests/test_setup_paths.py::test_every_profile_with_local_saves_is_declared",
+        id="profile-saves-detected",
+    ),
+    pytest.param(
+        "tools/plugin-check.py",
+        "            elif j > i:",
+        "            elif False:",
+        "tests/test_plugin_check.py::test_each_finding_kind",
+        id="plugin-check-master-order",
+    ),
+    pytest.param(
+        "tools/plugin-check.py",
+        "    for folder in folders:\n        hit = folder / name",
+        "    for folder in []:\n        hit = folder / name",
+        "tests/test_plugin_check.py::test_a_plugin_in_an_enabled_mo2_folder_is_on_disk",
+        id="plugin-check-mo2-folders",
+    ),
+    pytest.param(
+        "tools/postmortem.py",
+        "                 'this_session': bool(opened and when >= opened)}",
+        "                 'this_session': True}",
+        "tests/test_postmortem.py::test_a_dump_from_before_the_session_is_marked_older",
+        id="postmortem-this-session",
+    ),
+    pytest.param(
+        "tools/missing-textures.py",
+        "        incomplete = incomplete or bool(data.get('read_incomplete') or data.get('bsa_failures'))",
+        "        incomplete = False",
+        "tests/test_missing_textures.py::test_an_incomplete_archive_read_is_could_not_check",
+        id="missing-textures-incomplete",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        '            detached_forward = name == "housecarl_forward" and any(',
+        '            detached_forward = False and any(',
+        "tests/test_housecarl.py::test_a_forward_into_an_active_plugin_writes_through_a_private_folder",
+        id="housecarl-detached-forward",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        '    if written["flags"] != required["flags"] or not {m.casefold() for m in required["masters"]} <= {',
+        '    if False and not {m.casefold() for m in required["masters"]} <= {',
+        "tests/test_housecarl.py::test_an_edit_that_changes_the_header_is_never_published",
+        id="housecarl-header-retention",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        "            retained_header = retain_header(config, candidate, snap, original)",
+        "            retained_header = None",
+        "tests/test_housecarl.py::test_a_dropped_master_is_restored_before_publication",
+        id="housecarl-header-restore",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        '    if written["flags"] != required["flags"]:\n        raise Refusal("The edited plugin changed',
+        '    if False:\n        raise Refusal("The edited plugin changed',
+        "tests/test_housecarl.py::test_restore_refuses_a_flag_change_before_running_xedit",
+        id="housecarl-restore-flags-first",
+    ),
+    pytest.param(
+        "tools/housecarl-verify.js",
+        "    delete result['Child Group'];",
+        "",
+        "tests/test_housecarl.py::test_verifier_controls_on_synthetic_plugins",
+        id="housecarl-verify-root-child-group",
+    ),
+    pytest.param(
+        "tools/housecarl-verify.js",
+        "          walk(pos + 24, next, [...route, {type, label}], depth + 1);",
+        "          walk(pos + 24, next, route, depth + 1);",
+        "tests/test_housecarl.py::test_verifier_controls_on_synthetic_plugins",
+        id="housecarl-verify-record-route",
+    ),
+    pytest.param(
+        "tools/housecarl-verify.js",
+        "    return value.toLowerCase();",
+        "    return value;",
+        "tests/test_housecarl.py::test_verifier_controls_on_synthetic_plugins",
+        id="housecarl-verify-reference-case",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        '    if got["version"] != want["version"]:',
+        '    if False:',
+        "tests/test_housecarl.py::test_an_edit_that_loses_header_version_or_onam_is_never_published",
+        id="housecarl-header-version-kept",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        '    lost = (want["onam"] & record_keys(candidate)) - got["onam"]',
+        '    lost = set()',
+        "tests/test_housecarl.py::test_an_edit_that_loses_header_version_or_onam_is_never_published",
+        id="housecarl-onam-kept",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        '    lost = (want["onam"] & record_keys(candidate)) - got["onam"]',
+        '    lost = want["onam"] - got["onam"]',
+        "tests/test_housecarl.py::test_an_onam_entry_may_go_with_its_removed_record",
+        id="housecarl-onam-goes-with-record",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        '    if not missing and now == was:',
+        '    if not missing:',
+        "tests/test_housecarl.py::test_a_version_only_drift_triggers_the_restore",
+        id="housecarl-version-drift-restores",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        '                changed.append(name + " (missing or unreadable)")',
+        '                pass',
+        "tests/test_housecarl.py::test_a_master_that_vanishes_during_the_step_is_reported_as_changed",
+        id="housecarl-vanished-master-reported",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        "                    changed.append(name)\n",
+        "                    pass\n",
+        "tests/test_housecarl.py::test_a_failed_link_removal_still_compares_every_master_first",
+        id="housecarl-masters-compared-before-leftover",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        "    except subprocess.TimeoutExpired as exc:",
+        "    except ZeroDivisionError as exc:",
+        "tests/test_housecarl.py::test_an_xedit_timeout_is_a_refusal",
+        id="housecarl-timeout-refusal",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        "                owned = [i for i, line in enumerate(lines) if line.strip() == old_plugin]",
+        "                owned = [i for i, line in enumerate(lines) if old_plugin in line]",
+        "tests/test_housecarl.py::test_a_private_folder_without_ownership_metadata_publishes_nothing",
+        id="housecarl-meta-exact-line",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        '                if "generated=true" not in (line.strip() for line in lines) or len(owned) != 1:',
+        '                if "generated=true" not in meta_text or len(owned) != 1:',
+        "tests/test_housecarl.py::test_a_private_folder_without_ownership_metadata_publishes_nothing",
+        id="housecarl-meta-generated-exact-line",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        "    if was is not None and now is not None and now > was:",
+        "    if False:",
+        "tests/test_housecarl.py::test_a_version_only_drift_triggers_the_restore",
+        id="housecarl-raised-version-refused",
+    ),
+    pytest.param(
+        "tools/housecarl_integration/gateway.py",
+        '            raise Refusal("Record with an out-of-range master index in " + str(path))',
+        '            pass',
+        "tests/test_housecarl.py::test_record_keys_refuses_an_out_of_range_master_index",
+        id="housecarl-record-index-range",
+    ),
+    pytest.param(
+        "tools/skyguard/paths.py",
+        'CONFIG_KEYS = ("SKYRIM_CONFIG_DIR", "SKYRIM_DOCUMENTS_DIR", "SKYRIM_PROFILE_SAVES")',
+        'CONFIG_KEYS = ("SKYRIM_CONFIG_DIR", "SKYRIM_DOCUMENTS_DIR")',
+        "tests/test_setup_paths.py::test_every_profile_with_local_saves_is_declared",
+        id="profile-saves-protected",
     ),
     pytest.param(
         "setup.sh",
@@ -1424,6 +1595,8 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
            "test_off_refuses_a_backup_that_does_not_verify_and_keeps_the_state"),
           ("se-not-refused", '    if not (game / "SkyrimVR.exe").is_file():', "    if False:",
            "test_se_and_ae_are_refused"),
+          ("stop-trusts-one-missed-listing", " and still_alive(o, port)]", " and False]",
+           "test_stop_after_a_missed_game_listing_still_quits_it_before_any_helper"),
           ("state-recorded-after-change", "    save_state(state)                              # recorded BEFORE the first change",
            "    pass                              # recorded BEFORE the first change",
            "test_backups_are_taken_and_recorded_before_the_first_change"),
@@ -3161,35 +3334,6 @@ _SR = "tools/skyguard/shell_rules.py"
 # its own shellparse-* mutation). One mutation per clause of the parser rule; each names the ROW that must go red.
 # (id suffix, find, replace, row in test_resaver_rows)
 _SR_CLAUSES = [
-    ("program", "    if e.program in RESAVER_PROGRAMS:", "    if False:", "t04-apply"),
-    ("java", 'return e.program == "java" and any(', 'return False and any(', "t04-java"),
-    ("apply-same-cmd", "    if RESAVER_APPLY not in words:", "    if False:", "t04-apply-elsewhere"),
-    ("whole-word-op", 'return next((a for a in words if a in RESAVER_OPS), "")',
-     'return next((o for a in words for o in RESAVER_OPS if o in a), "")', "t04-op-in-filename"),
-    ("op-set-global", '("set-global", "set-var", "clean",', '("set-var", "clean",', "t04-set-global"),
-    ("op-set-var", '("set-global", "set-var", "clean",', '("set-global", "clean",', "t04-set-var"),
-    ("op-clean", '("set-global", "set-var", "clean",', '("set-global", "set-var",', "t04-clean"),
-    ("op-reset-havok", '"reset-havok", "cleanse-formlists",', '"cleanse-formlists",', "t04-apply"),
-    ("op-cleanse-formlists", '"reset-havok", "cleanse-formlists",', '"reset-havok",', "t04-apply-env"),
-    ("op-list", '"cleanse-formlists", "remove-created")', '"cleanse-formlists")', "t04-apply-chain"),
-    # (Merge 2026-10-05: rt-fix-a's parser resolves the t04-find-exec / t06-resaver-variable-* shapes itself, so these
-    # clauses are pinned by the shapes that still reach them; a full test name is used as-is below.)
-    ("save-from-segment", 'or (lambda m: m.group(0) if m else "")(RESAVER_TEXT_SAVE.search(e.segment))', 'or ""',
-     "test_resaver_save_named_by_the_find_segment"),
-    ("opaque-is-unresolved", "    if not parsed.ok or opaque:", "    if not parsed.ok:",
-     "test_resaver_text_rule_on_an_opaque_program[opaque-apply]"),
-    ("parse-fail-falls-back", "    if not parsed.ok or opaque:", "    if opaque:", "t06-resaver-parse-fail"),
-    ("fallback-needs-apply", 'if "resaver" not in low or RESAVER_APPLY not in low:', 'if "resaver" not in low:',
-     "test_resaver_text_rule_on_an_opaque_program[opaque-dry]"),
-    ("fallback-op-lookbehind", "re.compile(r\"(?<![^\\s\\\"'])(\" + \"|\".join(RESAVER_OPS)",
-     "re.compile(r\"(\" + \"|\".join(RESAVER_OPS)", "test_resaver_text_rule_on_an_opaque_program[opaque-op-suffix]"),
-    ("fallback-op-lookahead", "+ r\")(?![^\\s\\\"'])\", re.ASCII", "+ r\")\", re.ASCII",
-     "test_resaver_text_rule_on_an_opaque_program[opaque-op-in-filename]"),
-    # Task 7: decide() parses once (with the dialect) and hands the parse to the ReSaver rule.
-    # (Anchor follows Task 17, which made decide() accept the caller's parse; the fallback parse keeps the dialect.)
-    ("dialect", "    parsed = shellparse.parse(command, shell) if parsed is None else parsed\n    dels",
-     "    parsed = shellparse.parse(command) if parsed is None else parsed\n    dels",
-     "t04-heredoc-py"),
 ]
 MUTATIONS += [
     pytest.param(_SR, find, rep, "tests/test_skyguard_shell.py::"
@@ -3201,7 +3345,7 @@ MUTATIONS += [
     # R7 now lives in the parser: a heredoc body fed to a shell is commands. Treat every body as data and the
     # ReSaver run inside `bash <<'EOF'` must stop asking (the Task 5 entry names the parser test; this one the rule).
     pytest.param("tools/skyguard/shellparse.py", "if self.bodies and program in ALL_SHELLS and self.recurse:",
-                 "if False:", "tests/test_skyguard_shell.py::test_resaver_rows[t04-bash-heredoc]",
+                 "if False:", "tests/test_shellparse.py::test_t04_rows_come_out_as_executed_commands[t04-bash-heredoc]",
                  id="rule-S-RESAVER-APPLY-heredoc-consumer"),
 ]
 # Task 4 fix rounds 2-3: a hook that answers after its timeout is dropped, so each cause of superlinear matching is
@@ -4191,8 +4335,8 @@ def _t11curl(case):
 _T11_CLAUSES = [
     # (id, file, find, replace, test that must go red)
     # S-DEVBENCH-CRASH: one mutation per route, then per clause
-    ("rule-S-DEVBENCH-CRASH-mcp", _MC, "    hit = judge(parts[-1], args, roots, None, env, found=found)",
-     "    hit = None", _t11row("t11-mcp-smp-reset")),
+    ("rule-S-DEVBENCH-CRASH-mcp", _MC, "    hit = judge(parts[-1], args, roots, None, env)\n",
+     "    hit = None\n", _t11row("t11-mcp-smp-reset")),
     ("rule-S-DEVBENCH-CRASH-curl", _MC, "            calls = _web_call(e, command)", "            calls = []",
      _t11row("t11-curl-smp-reset")),
     ("rule-S-DEVBENCH-CRASH-cli", _MC, "            calls = _cli_call(e, command)", "            calls = []",
@@ -4210,8 +4354,6 @@ _T11_CLAUSES = [
      _T11 + "test_a_command_added_to_the_data_list_is_denied_with_no_code_change"),
     # rt-fix-b: a deny-listed line anywhere in a DevBench call denies (the papyrus-tool ruling moved to SENDS); the
     # console tool's own clause now only decides which strings are console SAVE lines.
-    ("rule-S-DEVBENCH-CRASH-console-tool", _MC, '    if tool == "console":', "    if True:",
-     "tests/test_skyguard_rtb.py::test_rtb_row[rtb-mcp-papyrus-save-line]"),
     ("rule-S-DEVBENCH-CRASH-string-command", _MC, "    elif isinstance(obj, (list, tuple)):", "    elif False:",
      "tests/test_skyguard_rtb.py::test_rtb_row[rtb-mcp-command-list]"),
     ("rule-S-DEVBENCH-CRASH-dict-input", _MC, "    for s in _strings(args):",
@@ -4248,8 +4390,6 @@ _T11_CLAUSES = [
      _t11curl("d")),
     ("rule-S-DEVBENCH-CRASH-curl-subst", _MC, "        e = deletes.substituted(e)", "        e = e",
      _T11 + "test_a_url_held_in_a_same_command_variable_is_resolved"),
-    ("rule-S-DEVBENCH-CRASH-curl-damaged-json", _MC, '    for key in ("action", "command", "name"):', "    for key in ():",
-     _T11 + "test_a_damaged_json_body_is_still_read_for_the_action_and_name"),
     ("rule-S-DEVBENCH-CRASH-curl-bad-escape", _MC, "            except ValueError:\n                out[key]", "            except KeyError:\n                out[key]",
      _T11 + "test_a_damaged_body_with_a_bad_escape_does_not_crash"),
     ("rule-S-DEVBENCH-CRASH-curl-object-body", _MC, "        return d if isinstance(d, dict) else None", "        return d",
@@ -4284,49 +4424,11 @@ _T11_CLAUSES = [
      _T11 + "test_a_command_that_names_neither_is_not_scanned"),
     ("rule-S-DEVBENCH-CRASH-wired", _SHR, '    if dev and dev[0] == "S-DEVBENCH-CRASH":', "    if False:",
      _t11row("t11-curl-smp-reset")),
-    ("rule-S-DEVBENCH-CRASH-outranks-ask", _MC, '            if hit[0] == "S-DEVBENCH-CRASH":\n                return hit',
-     '            if False:\n                return hit', _T11 + "test_a_deny_outranks_an_ask_in_one_command"),
-    # S-DEVBENCH-SAVE
-    ("rule-S-DEVBENCH-SAVE-name-slash", _MC, "_BAD_NAME = re.compile(r'[/" + BS * 2, "_BAD_NAME = re.compile(r'[" + BS * 2,
-     _t11row("t11-mcp-save-path-name")),
-    ("rule-S-DEVBENCH-SAVE-name-backslash", _MC, "_BAD_NAME = re.compile(r'[/" + BS * 2 + ":", "_BAD_NAME = re.compile(r'[/:",
-     _T11 + "test_an_unusable_save_name_is_refused[backslash]"),
-    ("rule-S-DEVBENCH-SAVE-name-colon", _MC, "_BAD_NAME = re.compile(r'[/" + BS * 2 + ":*?", "_BAD_NAME = re.compile(r'[/" + BS * 2 + "*?",
-     _T11 + "test_an_unusable_save_name_is_refused[colon]"),
-    ("rule-S-DEVBENCH-SAVE-name-wildcards", _MC, ":*?" + '"<>|', ':"<>|', _T11 + "test_an_unusable_save_name_is_refused[star]"),
-    ("rule-S-DEVBENCH-SAVE-name-brackets", _MC, '"<>|' + BS + "x00", BS + "x00", _T11 + "test_an_unusable_save_name_is_refused[angle]"),
-    ("rule-S-DEVBENCH-SAVE-name-control", _MC, BS + "x00-" + BS + "x1f]", "]", _T11 + "test_an_unusable_save_name_is_refused[control]"),
-    # rt-fix-b: `.` and `..` are now emptied by the trailing-dot strip (Windows drops trailing dots), so their own
-    # clause was dead and is gone; the strip is what the [dot] / [dotdot] cases now guard.
-    ("rule-S-DEVBENCH-SAVE-name-dotdot", _MC, '    n = name.strip().rstrip(" .")', '    n = name.strip().rstrip(" ")',
-     _T11 + "test_an_unusable_save_name_is_refused[dotdot]"),
-    ("rule-S-DEVBENCH-SAVE-name-dot", _MC, '    n = name.strip().rstrip(" .")', '    n = name.strip()',
-     _T11 + "test_an_unusable_save_name_is_refused[dot]"),
-    ("rule-S-DEVBENCH-SAVE-name-string", _MC, "    if not isinstance(name, str):\n        return None\n    n = name.strip()",
-     "    n = str(name).strip()", _T11 + "test_an_unusable_save_name_is_refused[number]"),
-    ("rule-S-DEVBENCH-SAVE-name-strip", _MC, "    n = name.strip()", "    n = name", _T11 + "test_a_save_name_is_read_trimmed"),
-    ("rule-S-DEVBENCH-SAVE-ess-suffix", _MC, '    if n.lower().endswith(".ess"):\n        n = n[:-4]', "    if False:\n        n = n[:-4]",
-     _t11row("t11-mcp-save-existing-case")),
-    ("rule-S-DEVBENCH-SAVE-case-insensitive", _MC, "frozenset(n.casefold() for n in os.listdir(folder))",
-     "frozenset(os.listdir(folder))", _t11row("t11-mcp-save-existing-case")),
-    ("rule-S-DEVBENCH-SAVE-game-action", _MC, '        if isinstance(action, str) and action.strip().lower() == "save":',
-     "        if False:", _t11row("t11-mcp-save-existing")),
-    ("rule-S-DEVBENCH-SAVE-action-case", _MC, 'action.strip().lower() == "save"', 'action.strip() == "save"',
-     _T11 + "test_the_save_action_is_read_leniently[args0]"),
-    ("rule-S-DEVBENCH-SAVE-action-strip", _MC, 'action.strip().lower() == "save"', 'action.lower() == "save"',
-     _T11 + "test_the_save_action_is_read_leniently[args1]"),
-    ("rule-S-DEVBENCH-SAVE-action-string", _MC, '        if isinstance(action, str) and action.strip()', "        if action.strip()",
-     _T11 + "test_other_game_actions_never_ask[7]"),
-    ("rule-S-DEVBENCH-SAVE-console", _MC, "        for name in _console_save_names(line):",
-     "        for name in ():", _t11row("t11-mcp-console-save-existing")),
-    ("rule-S-DEVBENCH-SAVE-console-case", _MC, '        if words and words[0].lower() in SAVE_COMMANDS:',
-     '        if words and words[0] in SAVE_COMMANDS:', _T11 + "test_the_console_save_word_is_case_insensitive"),
-    ("rule-S-DEVBENCH-SAVE-console-whole-word", _MC, '        if words and words[0].lower() in SAVE_COMMANDS:',
-     '        if words and words[0].lower().startswith(SAVE_COMMANDS):', _T11 + "test_the_console_save_word_is_case_insensitive"),
-    ("rule-S-DEVBENCH-SAVE-wired", _SHR, "    mcp_rules.scan_shell(command, parsed, roots, env, found=dev)",
-     "    pass", _t11row("t11-cli-tool-save-existing")),
-    ("rule-S-DEVBENCH-SAVE-roots", "tools/skyguard/run.py", 'v = engine.evaluate_mcp(p["tool_name"], p["mcp_input"], audit, roots=roots)',
-     'v = engine.evaluate_mcp(p["tool_name"], p["mcp_input"], audit)', "tests/test_guard_corpus.py::test_intended_rows_reproduce"),
+    ("rule-S-DEVBENCH-CRASH-outranks-ask", _MC, '            if hit is not None:             # judge()',
+     '            if False:             # judge()', _T11 + "test_a_deny_outranks_an_ask_in_one_command"),
+    # (4.1: rule-S-DEVBENCH-SAVE-roots went with the DevBench save rule. The MCP judge reads no root since then
+    # (mcp_rules.judge docstring), so dropping roots= from run.py's evaluate_mcp call changed no decision: an equivalent
+    # mutant, CI 43158003086. The unused roots plumbing is a release-review simplification item.)
     # S-INERT-NOINPUT
     ("rule-S-INERT-NOINPUT-empty", _MC, '    if name == "" or name == "unknown":', '    if name == "unknown":',
      _T11 + "test_an_empty_payload_is_refused_not_allowed"),
@@ -4402,24 +4504,11 @@ _T11_R1 = [
     ("rule-S-DEVBENCH-CRASH-unreadable-term-pipe", _MC, ";,&|<>]", ";,&<>]", _t11u("pipe")),
     ("rule-S-DEVBENCH-CRASH-unreadable-term-redirect", _MC, ";,&|<>]", ";,&|]", _t11u("redirect")),
     ("rule-S-DEVBENCH-CRASH-unreadable-case", _MC, '|$)""", re.IGNORECASE)', '|$)""")', _t11u("case")),
-    # the saves-folder fallback chain
-    ("rule-S-DEVBENCH-SAVE-exists", _MC, '    if exists is False:\n        return ("", {})', '    if True:\n        return ("", {})',
-     _t11row("t11-mcp-save-existing")),
     # (rule-S-DEVBENCH-SAVE-asks-every-save retired by the save policy, said so: a NEW name reported as a hit is counted
     # again by saves.count, which finds no file and backs nothing up -- the verdict cannot change, an equivalent mutant.)
-    ("rule-S-DEVBENCH-SAVE-unresolvable-asks", _MC,
-     '    if exists is None:\n        return ("S-DEVBENCH-SAVE", {"op": f"Cannot tell if save {clean} exists."})',
-     '    if exists is None:\n        return ("", {})', _t11row("t11-mcp-save-unresolvable")),
-    ("rule-S-DEVBENCH-SAVE-overwrite-text", _MC, 'f"Overwrites save {clean}."', 'f"Cannot tell if save {clean} exists."',
-     _t11row("t11-mcp-save-existing")),
-    ("rule-S-DEVBENCH-SAVE-unusable-name", _MC,
-     '    if clean is None:\n        return ("S-DEVBENCH-SAVE", {"op": "Cannot tell which save this overwrites."})',
-     '    if clean is None:\n        return ("", {})', _t11row("t11-mcp-save-no-name")),
-    ("rule-S-DEVBENCH-SAVE-case-insensitive-name", _MC, '(name + ".ess").casefold() in', '(name + ".ess") in',
-     _t11row("t11-mcp-save-existing")),
-    ("rule-S-DEVBENCH-SAVE-saves-folder", _MC, '[os.path.join(d, "Saves") for d', "[d for d", _t11row("t11-mcp-save-existing")),
+    ("rule-S-DEVBENCH-SAVE-saves-folder", _MC, '[os.path.join(d, "Saves") for d', "[d for d", _T11 + "test_the_first_existing_saves_folder_wins"),
     ("rule-S-DEVBENCH-SAVE-config-dirs", _MC, '    cands = [os.path.join(d, "Saves") for d in roots.physical_config_dirs or roots.config_dirs]', "    cands = []",
-     _t11row("t11-mcp-save-existing")),
+     _T11 + "test_the_first_existing_saves_folder_wins"),
     ("rule-S-DEVBENCH-SAVE-first-wins", _MC, "    return next((c for c in cands if os.path.isdir(c)), None)",
      "    return next((c for c in reversed(cands) if os.path.isdir(c)), None)", _T11 + "test_the_first_existing_saves_folder_wins"),
     ("rule-S-DEVBENCH-SAVE-skips-missing", _MC, "    return next((c for c in cands if os.path.isdir(c)), None)",
@@ -4427,7 +4516,7 @@ _T11_R1 = [
     ("rule-S-DEVBENCH-SAVE-config-outranks-documents", _MC, "    for docs in _documents(env):\n        cands += [",
      "    for docs in _documents(env):\n        cands = [", _T11 + "test_a_declared_config_dir_outranks_documents"),
     ("rule-S-DEVBENCH-SAVE-documents-fallback", _MC, "    for docs in _documents(env):", "    for docs in []:",
-     _t11row("t11-mcp-save-docs-existing")),
+     _T11 + "test_documents_is_the_fallback_when_no_config_dir_has_saves"),
     ("rule-S-DEVBENCH-SAVE-game-folders", _MC, "for g in paths.GAME_FOLDERS]", 'for g in ("Skyrim VR",)]',
      _T11 + "test_every_game_folder_name_is_searched[Skyrim Special Edition]"),
     ("rule-S-DEVBENCH-SAVE-game-folder-base", _MC, "for g in paths.GAME_FOLDERS]", 'for g in ("Skyrim VR", "Skyrim Special Edition")]',
@@ -4446,18 +4535,6 @@ _T11_R1 = [
      _T11 + "test_a_redirected_documents_is_found[OneDriveCommercial]"),
     ("rule-S-DEVBENCH-SAVE-empty-documents", _MC, "        if base:  ", "        if True:  ",
      _T11 + "test_an_empty_documents_variable_is_not_read_relative_to_the_cwd"),
-    ("rule-S-DEVBENCH-SAVE-no-folder", _MC, "    if folder is None:\n        return None\n    if folder not in memo:",
-     "    if folder is None:\n        return False\n    if folder not in memo:", _t11row("t11-mcp-save-unresolvable")),
-    ("rule-S-DEVBENCH-SAVE-listing-error", _MC, "        except OSError:\n            memo[folder] = None",
-     "        except KeyError:\n            memo[folder] = None", _T11 + "test_an_unreadable_saves_folder_is_unknown_not_a_crash"),
-    ("rule-S-DEVBENCH-SAVE-listing-unknown", _MC, "    if memo[folder] is None:\n        return None",
-     "    if memo[folder] is None:\n        return False", _T11 + "test_an_unreadable_saves_folder_is_unknown_not_a_crash"),
-    ("rule-S-DEVBENCH-SAVE-listing-memo", _MC, "    if folder not in memo:\n        try:", "    if True:\n        try:",
-     _T11 + "test_a_scan_lists_each_saves_folder_once"),
-    ("rule-S-DEVBENCH-SAVE-env-wired", _MC, "hit = judge(parts[-1], args, roots, None, env, found=found)",
-     "hit = judge(parts[-1], args, roots, None, None, found=found)", _t11row("t11-mcp-save-docs-existing")),
-    ("rule-S-DEVBENCH-SAVE-env-wired-shell", _MC, "hit = judge(tool, args, roots, memo, env, found=found)",
-     "hit = judge(tool, args, roots, memo, None, found=found)", _t11row("t11-curl-save-docs-existing")),
 ]
 MUTATIONS += [pytest.param(f, find, rep, test, id=i) for i, f, find, rep, test in _T11_R1]
 
@@ -6048,43 +6125,16 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
      _RCT + "test_a_failed_manifest_append_is_retried_by_the_next_call", "l2-rec-index-after-append"),
     (_RC, "    if last == base:\n        n = 2", "    if False:\n        n = 2",
      _RCT + "test_two_snapshots_in_one_second_get_different_ids", "l2-rec-unique-id"),
-    # ---- the save a command changes (the save policy, user ruling 2026-10-13: saves.py finds it, recovery.backup_saves
-    # keeps it). No twin, said so: the old rate limit, unchanged-skip and size bound are GONE by policy (every change is
-    # backed up), and save_name / shell_save_names went with them (judge() reports every save it sees, `found`).
-    ("tools/skyguard/shell_rules.py", "    resaver = resaver_write_calls(command, shell, parsed)", "    resaver = None",
-     _RCT + "test_resaver_apply_snapshots_the_named_save_and_its_cosave_only", "l2-rec-resaver"),
     # The pair: the backup takes both files whichever one was named (recovery.pair_members), and the count calls a
     # save that has no co-save an existing save.
     ("tools/skyguard/recovery.py", "    for p in (ess, skse):", "    for p in (ess,):",
      'tests/test_legacy_save_store.py::test_legacy_writer_retains_both_pair_members', "l2-rec-cosave"),
     ("tools/skyguard/recovery.py", "    for p in (ess, skse):", "    for p in (skse,):",
      'tests/test_legacy_save_store.py::test_legacy_writer_retains_both_pair_members', "l2-rec-cosave-names-its-save"),
-    ("tools/skyguard/saves.py", "        le, ls = _listed(ess), _listed(skse)", "        le, ls = None, _listed(skse)",
-     "tests/test_save_policy.py::test_a_missing_cosave_is_recorded_as_missing_not_an_error", "save-count-a-save-alone-exists"),
-    ("tools/skyguard/saves.py", "            if j:\n                cands.append(j)", "            if False:\n                cands.append(j)",
-     _RCT + "test_resaver_by_a_path_relative_to_the_cwd", "l2-rec-resaver-cwd"),
-    ("tools/skyguard/saves.py", "            if folder:\n                cands.append(", "            if False:\n                cands.append(",
-     _RCT + "test_resaver_by_bare_name_finds_it_in_the_saves_folder", "l2-rec-resaver-saves-folder"),
-    ("tools/skyguard/mcp_rules.py", "    return saves.judge(saves.devbench_change(found, roots, env), Verdict(), audit, HOOK)",
-     "    return Verdict()", _RCT + "test_devbench_game_save_over_an_existing_save_snapshots_it", "l2-rec-devbench-mcp"),
-    ("tools/skyguard/saves.py", "    if dev_found:\n        c = merge([c, devbench_change(", "    if False:\n        c = merge([c, devbench_change(",
-     _RCT + "test_devbench_console_save_through_curl_snapshots_it", "l2-rec-devbench-shell"),
-    ("tools/skyguard/saves.py", "            if n.casefold() == name.casefold():", "            if n == name:",
-     _RCT + "test_the_save_snapshot_reads_a_call_exactly_as_the_rule_does[game-case]", "l2-rec-save-name-case"),
-    ("tools/skyguard/mcp_rules.py", "    if found is not None and hit[0]:\n        found.append(", "    if False:\n        found.append(",
-     _RCT + "test_the_save_snapshot_reads_a_call_exactly_as_the_rule_does[game]", "l2-rec-save-found"),
-    ("tools/skyguard/mcp_rules.py", "            hit = judge(stool, sargs, roots, memo, env, depth + 1, found)",
-     "            hit = judge(stool, sargs, roots, memo, env, depth + 1)",
-     "tests/test_save_policy.py::test_a_devbench_scenario_saving_three_existing_saves_needs_approval", "l2-rec-save-found-steps"),
-    ("tools/skyguard/saves.py", "            unknown.append((rid, tuple(sorted(fields.items()))))", "            pass",
-     _RCT + "test_a_save_that_cannot_be_identified_is_logged", "l2-rec-devbench-unknown-refused"),
     # ---- the time box: never past the hook's budget, and never silent (a copy cut short DENIES)
     (_RC, "        want, copied, digest = backup._copy_hashed(src, part, fsync=True, deadline=deadline)",
      "        want, copied, digest = backup._copy_hashed(src, part, fsync=True)",
      'tests/test_legacy_save_store.py::test_legacy_writer_copy_deadline_cleans_partial_candidate', "l2-rec-save-deadline"),
-    ("tools/modding_harness/dispatch.py", '"surface": action.surface}, deadline, plan.known_writer_active)',
-     '"surface": action.surface}, None, plan.known_writer_active)',
-     _RCT + "test_a_save_copy_that_runs_out_of_time_is_partial_never_silent", "l2-rec-save-caller-deadline"),
     ("tools/skyguard/backup.py", "                if deadline is not None and _clock() >= deadline:", "                if False:",
      'tests/test_legacy_save_store.py::test_legacy_writer_copy_deadline_cleans_partial_candidate', "l2-rec-copy-deadline"),
     (_RC, "    except backup.CopyTimeout:\n        backup._discard(part)\n        raise SaveBackupFailed(",
@@ -6105,21 +6155,6 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
     # ---- the hooks: the copy is made by the PreToolUse hook, before the command
     ("tools/skyguard/run.py", "        _recovery(a, p, audit, None if env is None else paths.roots(a.root, a.root_win, env))",
      "        pass", _RCT + "test_the_snapshot_hook_takes_the_load_order_but_never_the_save", "l2-rec-claude-wired"),
-    ("tools/skyguard/run.py", '        v = _saves(a, p, audit, v, p["tool_name"])          # an existing save',
-     '        pass          # an existing save',
-     _RCT + "test_the_mcp_hook_copies_the_save_before_devbench_overwrites_it", "l2-rec-claude-mcp-wired"),
-    ("tools/skyguard/run.py", '                v = _saves(a, p, audit, v, p["command"])', "                pass",
-     _RCT + "test_the_save_is_copied_by_the_hook_before_the_command_can_change_it[claude-protect-bash]",
-     "l2-rec-claude-bash-wired"),
-    ("tools/skyguard/run.py", '        v = _saves(a, p, audit, v, "{} {}".format(p["tool_name"], p["file_path"]))', "        pass",
-     "tests/test_save_policy.py::test_claude_protect_files_backs_up_before_it_answers", "l2-rec-claude-files-wired"),
-    ("tools/skyguard/portable.py", 'preserve=not preview)',
-     'preserve=False)',
-     _RCT + "test_the_save_is_copied_by_the_hook_before_the_command_can_change_it[codex-pre-tool]",
-     "l2-rec-codex-enforce-wired"),
-    ("tools/skyguard/engine.py", "            recovery.run(project, req.command, False, audit,",
-     "            (lambda *a, **k: None)(project, req.command, False, audit,",
-     _RCT + "test_the_save_is_copied_by_the_hook_before_the_command_can_change_it[codex-pre-tool]", "l2-rec-codex-wired"),
 ]]
 
 
@@ -6163,18 +6198,6 @@ MUTATIONS.append(pytest.param(_SN, "        if k >= SWEEP_MAX or _sweep_clock() 
 
 # Plan 6 Task 15 fix round 1 (task-15-review.md): one twin per finding clause.
 MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
-    # I1 (the save follows the rule, not the read-only first word): no twin since the save policy -- the save is found
-    # by the rules' own parse (saves.shell_change), and recovery.run takes no save, so no first-word skip is left to put
-    # back. test_a_read_only_looking_prefix_does_not_hide_the_save still pins the behaviour.
-    # I2: the save ReSaver WRITES (its out), not the input
-    ("tools/skyguard/shell_rules.py", "calls.append((_resaver_op(e), ws[1:] or ws, e))",
-     "calls.append((_resaver_op(e), ws[:1], e))",
-     _RCT + "test_resaver_keeps_the_save_it_writes_not_the_one_it_reads", "l2-rec-fr1-i2-out"),
-    ("tools/skyguard/saves.py", '        pairs.append(Pair(le or ess, ls or skse, stem, tuple(d["ops"]), bool(le or ls)))',
-     '        pairs.append(Pair(le or ess, ls or skse, stem, tuple(d["ops"]), True))',
-     _RCT + "test_resaver_writing_a_new_out_keeps_nothing_and_says_so", "l2-rec-fr1-i2-new-out-logged"),
-    ("tools/skyguard/saves.py", '        if WILD.search(os.path.splitdrive(word)[1]):\n            unknown.append(', "        if False:\n            unknown.append(",
-     _RCT + "test_resaver_given_a_pattern_says_it_cannot_keep_one_save", "l2-rec-fr1-m10-pattern"),
 ]]
 
 _SCF = _SCT + "test_in_place_refuses_"
@@ -6364,10 +6387,6 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
      _T17 + "test_a_devbench_smp_reset_is_denied_on_codex[mcp__devbench-vr__console]", "t17-codex-devbench-not-routed"),
     # The save policy: the Codex MCP route returns the judge's verdict, and pre_tool backs the save up before allowing.
     # Dropping that verdict's save plan lets the overwrite run with no backup.
-    ("tools/skyguard/engine.py", _T17_JUDGE,
-     _T17_JUDGE.replace("        return evaluate_mcp(", "        v = evaluate_mcp(") + "\n        return v._replace(saves=None)",
-     _T17 + "test_a_devbench_save_over_an_existing_save_is_backed_up_then_allowed_on_codex",
-     "t17-codex-devbench-save-backed-up"),
     # Unreadable arguments are judged as no arguments (an allow) instead of the INERT refusal.
     ("tools/skyguard/engine.py", '            return _failed(INERT_TRANSLATE.format("unreadable MCP arguments"), "codex.TRANSLATE")',
      "            args = {}",
@@ -6470,17 +6489,10 @@ _RTB_CLAUSES = [
     ("rule-S-WRITE-PLUGIN-node-writefile", _WR, "(?:writeFile|appendFile|", "(?:appendFile|", _rtb("node-writefile")),
     # --- S-SAVE-BACKUP (the save policy, 2026-10-13; was S-WRITE-SAVE's ask): a write, copy or move onto a save in
     # the settings folder is a save change, backed up first. Each route that finds one, and the wiring that judges it.
-    ("rule-S-SAVE-BACKUP-wired", _SHR, "    return saves.judge(change, v, audit, HOOK)", "    return v", _rtb("save-redirect")),
     ("rule-S-SAVE-BACKUP-write", _WR, "            if is_save(a, roots):", "            if False:", _rtb("save-redirect")),
-    ("rule-S-SAVE-BACKUP-copy-onto", _WR, "            if is_save(a_dst, roots):", "            if False:", _rtb("save-cp")),
-    ("rule-S-SAVE-BACKUP-copy-into-folder", _WR, "                if save_dests:",
-     "                if False:",
-     "tests/test_save_policy.py::test_a_copy_into_the_saves_folder_that_takes_a_saves_name_is_a_change"),
-    ("rule-S-SAVE-BACKUP-interpreter-literal", _WR, '        elif is_save(a, roots):\n            saves.append((targets.physical(word, actual_base, "cmd", env, literal=True) or "", "write"))',
-     '        elif False:\n            saves.append((a, "write"))', _rtb("save-python")),   # fix-limits 9 moved it
-    ("rule-S-SAVE-BACKUP-cosave", _WR, 'SAVE_EXTS = (".ess", ".skse")', 'SAVE_EXTS = (".ess",)', _rtb("save-cosave")),
+    ("rule-S-SAVE-BACKUP-cosave", _WR, 'SAVE_EXTS = (".ess", ".skse")', 'SAVE_EXTS = (".ess",)', "tests/test_save_policy.py::test_sed_on_a_save_is_no_crlf_refusal[cosave]"),
     ("rule-S-SAVE-BACKUP-settings-folder-only", _WR, '.endswith(SAVE_EXTS) and targets.zone(abs_path, roots) == "config"',
-     ".endswith(SAVE_EXTS)", "tests/test_save_policy.py::test_an_existing_save_outside_the_settings_folder_is_free"),
+     ".endswith(SAVE_EXTS)", "tests/test_save_policy.py::test_sed_on_a_save_copy_inside_the_install_is_still_refused"),
     # --- S-MOVE-ROOT: moving the install or its folders away
     # Merge (2026-10-05): a root moved OUT of its zone now reaches S-MOVE-ROOT through the delete branch too, so this
     # clause is pinned by a move that stays in its zone (no delete hit): Saves renamed beside itself.
@@ -6544,7 +6556,7 @@ _RTB_CLAUSES = [
     ("rule-S-SAVE-BACKUP-edit-cosave", _WR, 'SAVE_EXTS = (".ess", ".skse")', 'SAVE_EXTS = (".ess",)', _rtb("write-cosave")),
     ("rule-S-SAVE-BACKUP-edit-settings-folder-only", _WRR, "        if is_save(a, roots):",
      "        if a is not None and a.lower().endswith(('.ess', '.skse')):",
-     "tests/test_save_policy.py::test_an_existing_save_outside_the_settings_folder_is_free"),
+     "tests/test_save_policy.py::test_a_write_to_a_save_copy_inside_the_install_keeps_its_install_note"),
     # --- Claude Write with a non-string file_path is no path (W-INERT-NOPATH)
     ("rule-W-INERT-NOPATH-non-string-file-path", "tools/skyguard/adapters/claude.py",
      '        return _sub(fp) if isinstance(fp, str) else ""', "        return _sub(fp)", _rtb("write-path-list")),
@@ -6557,19 +6569,9 @@ _RTB_CLAUSES = [
      '    for s in ([args.get("command")] if isinstance(args, dict) and isinstance(args.get("command"), str) else []):',
      _rtb("mcp-unknown-key")),
     ("rule-S-DEVBENCH-CRASH-nested-object", _MC, "    elif isinstance(obj, dict):", "    elif False:", _rtb("mcp-nested")),
-    ("rule-S-DEVBENCH-SAVE-papyrus-console-functions", _MC, "        if fn in _CONSOLE_FUNCTIONS:", "        if False:",
-     _rtb("mcp-papyrus-executecommand-save")),
-    ("rule-S-DEVBENCH-SAVE-papyrus-savegame", _MC, '        elif fn == "savegame":', "        elif False:",
-     _rtb("mcp-papyrus-savegame")),
-    ("rule-S-DEVBENCH-SAVE-console-savegame", _MC, 'SAVE_COMMANDS = ("save", "savegame")', 'SAVE_COMMANDS = ("save",)',
-     _rtb("mcp-console-savegame")),
-    ("rule-S-DEVBENCH-SAVE-scenario-steps", _MC, "        for stool, sargs in _steps(args):", "        for stool, sargs in ():",
-     _rtb("mcp-scenario-step-save")),
-    ("rule-S-DEVBENCH-SAVE-scenario-console-step", _MC, '        if isinstance(step.get("console"), str):', "        if False:",
-     _rtb("mcp-scenario-console-save")),
-    ("rule-S-DEVBENCH-SAVE-trailing-dot", _MC, '    n = name.strip().rstrip(" .")', "    n = name.strip()",
-     _rtb("mcp-save-trailing-dot")),
-    ("rule-S-DEVBENCH-SAVE-short-name", _MC, ' or re.search(r"~[0-9]", n):', ":", _rtb("mcp-save-short-name")),
+    # (4.1: the scenario-step and JSON-RPC unpacking twins went with the DevBench save rule. The crash refusal reads
+    # every string of a call whatever its shape, so those mutants changed no decision: equivalent, not survivors.
+    # The unpacking itself is now redundant; simplifying it is a release-review item.)
     ("rule-S-DEVBENCH-CRASH-server-separators", _MC, 're.sub(r"[-_.' + BS + 's]", "", server.lower())', "server.lower()",
      _T11 + "test_any_devbench_server_name_is_judged[dev-bench]"),
     ("rule-S-DEVBENCH-CRASH-server-case", _MC, '"", server.lower())', '"", server)',
@@ -6579,8 +6581,6 @@ _RTB_CLAUSES = [
      _rtb("curl-query-string")),
     ("rule-S-DEVBENCH-CRASH-mcp-endpoint", _MC, "        if _MCP_ENDPOINT.search(u):", "        if False:",
      _rtb("curl-mcp-jsonrpc")),
-    ("rule-S-DEVBENCH-SAVE-mcp-jsonrpc-params", _MC, "        if rpc and isinstance(args, dict):", "        if False:",
-     _rtb("curl-mcp-jsonrpc-save")),
     ("rule-S-DEVBENCH-CRASH-mcp-prefilter", _MC, '_SHELL_WORDS = ("api/tool", "devbench", "/mcp")',
      '_SHELL_WORDS = ("api/tool", "devbench")', _rtb("curl-mcp-body")),
     ("rule-S-DEVBENCH-CRASH-wget-program", _MC, '_WEB_PROGRAMS = frozenset(("curl", "wget", ', '_WEB_PROGRAMS = frozenset(("curl", ',
@@ -6980,14 +6980,14 @@ _P5F_CLAUSES = [
     ("p5f-expands-misses-backtick", _DL, ' or "`" in word or bool(', " or bool(", _MDEL + "test_expands[`pwd`/x-True]"),
     ("p5f-copy-item-pipe-source-dropped", "tools/skyguard/writes.py",
      '        return [(dst[0] if dst else ".", src)] if src or e.stdin_from == "pipe" else []',
-     '        return [(dst[0] if dst else ".", src)] if src else []', _p5f("pipe-copy-onto-save")),
+     '        return [(dst[0] if dst else ".", src)] if src else []', "tests/test_review_v4_opus_guards.py::test_a_piped_copy_onto_a_plugin_is_seen"),
     # D2: the documented ask count drifts from the registry again (core.md, README, safety-philosophy).
-    ("p5f-core-md-ask-count-stale", "agent/instructions/core.md", "### ASKS THE USER -- five rules",
-     "### ASKS THE USER -- four rules", _DOCS + "[core]"),
-    ("p5f-readme-ask-count-stale", "README.md", "Only five rules ask *you*", "Only four rules ask *you*",
+    ("p5f-core-md-ask-count-stale", "agent/instructions/core.md", "### ASKS THE USER -- four rules",
+     "### ASKS THE USER -- five rules", _DOCS + "[core]"),
+    ("p5f-readme-ask-count-stale", "README.md", "Only four rules ask *you*", "Only five rules ask *you*",
      _DOCS + "[readme]"),
-    ("p5f-philosophy-ask-count-stale", "docs/safety-philosophy.md", "Five rules in the toolkit ask you",
-     "Four rules in the toolkit ask you", _DOCS + "[philosophy]"),
+    ("p5f-philosophy-ask-count-stale", "docs/safety-philosophy.md", "Four rules in the toolkit ask you",
+     "Five rules in the toolkit ask you", _DOCS + "[philosophy]"),
     # Privacy: a fixture carries the home of whoever runs the gate again (built at collection time, so this file
     # never names anyone).
     ("p5f-fixture-carries-home", "tests/fixtures/routes-harness/cases9.py", '"file_path":"<HOME>/.codex/config.toml"',
@@ -8174,15 +8174,6 @@ _FB = [
     (_SC, "        return os.path.isfile(str(target)) and not os.path.islink(str(target)) and backup._sha256(target) == sha",
      "        return os.path.isfile(str(target))",
      _SCT + "test_in_place_restore_still_replaces_a_changed_file_beside_an_unchanged_one", "p6fb-m1-only-identical-skipped"),
-    # B-M2: an unreadable paths file never silently skips the save a command rewrites (now: never lets it run unkept)
-    ("tools/skyguard/saves.py", '        n = paths.physical_abs(word, msys=(shell != "powershell"))',
-     '        n = paths.norm_abs(word, msys=(shell != "powershell")) if roots is not None else None',
-     _RCT + "test_an_absolute_save_is_kept_even_when_the_paths_file_is_unreadable", "p6fb-m2-absolute-save-needs-no-roots"),
-    ("tools/skyguard/saves.py", "        if hit is None and roots is None and not n:", "        if False:",
-     _RCT + "test_a_bare_save_name_with_an_unreadable_paths_file_is_logged_not_kept", "p6fb-m2-bare-name-not-new"),
-    ("tools/skyguard/mcp_rules.py", '        return ("S-DEVBENCH-SAVE", {"op": f"Cannot tell if save {clean} exists."})',
-     '        return ("", {})',
-     _RCT + "test_a_devbench_save_with_an_unreadable_paths_file_is_logged", "p6fb-m2-devbench-unknown-refused"),
     # B-M4: a full config restore skips (and names) a no-longer-configured folder; by name it still refuses
     (_SC, "        moved = [k for k, why in odd if not wanted and _no_longer_configured(live[k], why)]", "        moved = []",
      _SCT + "test_a_full_in_place_config_restore_skips_a_no_longer_configured_folder_and_restores_the_rest",
@@ -8681,7 +8672,6 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
     (_P8R1_SR, "            a = resolve_own(lambda x: targets.resolve_operand(e, x, cwd, env), w)",
      "            a = targets.resolve_operand(e, w, cwd, env)",
      _P8R1 + "test_a_stream_of_a_guard_file_is_the_guard_file[hook-data]", "p8r1-stream-shell-wired"),
-    ('tools/skyguard/portable.py', '                    (local_policy.restriction(project, deadline, lambda: save_plan[0]), *local_restrictions))', '                    tuple(local_restrictions))', 'tests/test_local_policy.py::test_registered_policy_denies_before_any_permanent_save_backup', 'registered-local-policy-before-preservation'),
 ]]
 
 # ---- Plan 8 T8 fix round 2 (lane p8-paths): re-review N1, N2, N4. One twin per clause. ---------------------------
@@ -9004,7 +8994,7 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
     ("tools/skyguard/paths.py", "    if p.startswith(\"/\") and POSIX_HOST:\n", "    if False:\n",
      _PHP + "test_a_powershell_absolute_posix_path_resolves_on_a_posix_host", "linux-ci-posix-norm-abs"),
     ("tools/skyguard/targets.py", "    if paths.POSIX_HOST and (not cwd or cwd.startswith(\"/\")):\n",
-     "    if False:\n", _PHP + "test_a_powershell_save_overwrite_is_seen_on_a_posix_host", "linux-ci-posix-drive-root"),
+     "    if False:\n", _PHP + "test_a_powershell_install_write_is_placed_on_a_posix_host", "linux-ci-posix-drive-root"),
     ("tools/skyguard/targets.py", "    if paths.POSIX_HOST and (not cwd or cwd.startswith(\"/\")):\n",
      "    if paths.POSIX_HOST and cwd.startswith(\"/\"):\n",
      _PHP + "test_a_powershell_absolute_posix_path_resolves_on_a_posix_host", "linux-ci-posix-drive-root-no-cwd"),
@@ -9130,7 +9120,7 @@ MUTATIONS[:] = [pytest.param(*p.values[:3], _FAST_ECHO, marks=p.marks, id=p.id) 
 # they are.
 _FAST_IR = "tests/test_guard_corpus.py::test_intended_rows_reproduce_in_process"
 _RETARGET_IR = ("corpus-intended-text-exact", "rule-S-DEL-UNKNOWN-DIR-whole-folder", "rule-S-SHELL-UNREAD-denies",
-                "rule-S-SHELL-UNREAD-pipe-into-shell", "rule-W-INSTALL-wired", "rule-S-DEVBENCH-SAVE-roots",
+                "rule-S-SHELL-UNREAD-pipe-into-shell", "rule-W-INSTALL-wired",
                 "merge-engine-drops-cwd", "merge-engine-write-drops-roots")
 assert sorted(p.id for p in MUTATIONS if p.values[3] == "tests/test_guard_corpus.py::test_intended_rows_reproduce") \
     == sorted(_RETARGET_IR)
@@ -9485,106 +9475,11 @@ MUTATIONS.append(pytest.param(_TGT, '("ini", SKYRIM_INI, "S-WRITE-INI"), ', "",
 # No twin, said so: the fsync on a save copy (nothing short of a power loss can show it), the read-back after the final
 # os.replace (needs the disk to change the bytes between two reads), and the `rest.decision in ("deny", "ask")` half of
 # judge's early return (_with_note returns a deny/ask unchanged: equivalent).
-_SV = "tools/skyguard/saves.py"
 _AP = "tools/modding_harness/approval.py"
 _SPT = "tests/test_save_policy.py::"
 _SAT = "tests/test_save_approvals.py::"
 MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
-    # ---- counting: a pair is ONE save, only existing saves count, more than LIMIT (or a wildcard) needs approval
-    (_SV, "LIMIT = 2 ", "LIMIT = 3 ", _SPT + "test_two_saves_are_allowed_and_three_need_approval", "rule-S-SAVE-APPROVAL-limit"),
-    (_SV, "    return bool(c.patterns) or len(_existing(c)) > LIMIT", "    return len(_existing(c)) > LIMIT",
-     _SPT + "test_a_wildcard_needs_approval_even_when_it_matches_one_save", "rule-S-SAVE-APPROVAL-wildcard"),
-    (_SV, "    return bool(c.patterns) or len(_existing(c)) > LIMIT", "    return bool(c.patterns) or len(c.pairs) > LIMIT",
-     _SPT + "test_a_new_save_does_not_count_toward_the_limit", "rule-S-SAVE-APPROVAL-existing-only"),
-    (_SV, "    return os.path.normcase(os.path.normpath(folder or \".\")), stem.casefold()",
-     "    return os.path.normcase(os.path.normpath(folder or \".\")), stem",
-     _SPT + "test_one_save_spelled_in_two_cases_is_still_one_save", "rule-S-SAVE-BACKUP-pair-any-case"),
-    (_SV, "        if low.endswith(ext):\n            return folder, name[:-len(ext)]", "        if False:\n            return folder, name",
-     _SPT + "test_a_save_and_its_cosave_are_one_save", "rule-S-SAVE-BACKUP-pair"),
-    (_SV, "    if change.unknown:\n        return refuse(*change.unknown[0])", "    if False:\n        return refuse(*change.unknown[0])",
-     _SPT + "test_resaver_apply_on_a_save_it_cannot_place_is_refused[pattern]", "rule-S-RESAVER-APPLY-unplaced-refused"),
-    (_SV, '        if not t.literal and WILD.search(os.path.splitdrive(folder)[1]):\n            unknown.append(name)', "        if False:\n            unknown.append(name)",
-     _SPT + "test_a_wildcard_in_a_folder_name_cannot_be_listed", "rule-S-SAVE-UNKNOWN-folder"),
-    (_SV, "        except OSError:\n            unknown.append(name)\n            continue", "        except OSError:\n            continue",
-     _SPT + "test_a_wildcard_in_a_folder_that_cannot_be_read_cannot_be_listed", "rule-S-SAVE-UNKNOWN-unlistable"),
-    (_SV, "    if c.unknown:\n        return refuse(", "    if False:\n        return refuse(",
-     _SPT + "test_a_wildcard_in_a_folder_name_cannot_be_listed", "rule-S-SAVE-UNKNOWN-refused"),
-    (_SV, "    if not ex or rest.decision in (\"deny\", \"ask\"):\n        return rest._replace(saves=plan)",
-     "    if not ex or rest.decision in (\"deny\", \"ask\"):\n        return rest",
-     _SPT + "test_a_save_change_beside_another_rules_deny_still_carries_its_plan", "rule-S-SAVE-BACKUP-plan-rides-a-deny"),
-    ('tools/modding_harness/approval.py', '        grant.update(count=logical_count, command_sha256=hashlib.sha256(command.encode("utf-8")).hexdigest())',
-     '        grant.update(count=logical_count)',
-     _SPT + "test_a_wildcard_needs_approval_even_when_it_matches_one_save", "rule-S-SAVE-APPROVAL-pattern-line"),
-    # ---- the hook (L2 MEDIUM-2: the LIVE shared dispatcher every hook reaches through portable.check, not the retired
-    # saves.enforce): the backup is taken, verified, BEFORE the allow; a failure denies; bulk needs the typed approval
-    ("tools/modding_harness/dispatch.py", "            transaction = target.backup(list(groups.values()), {",
-     '            transaction = {"id": "none"} or target.backup(list(groups.values()), {',
-     _SPT + "test_enforce_backs_up_both_files_verified_before_it_allows", "rule-S-SAVE-BACKUP-taken"),
-    ("tools/modding_harness/dispatch.py",
-     '            return Outcome(Result("deny", "failed", "failed", reason="preservation/policy failed: " + str(exc)))',
-     '            return Outcome(Result("allow", "evaluated"))',
-     _SPT + "test_a_backup_that_would_fill_the_drive_denies", "rule-S-SAVE-BACKUP-FAILED-denies"),
-    ("tools/modding_harness/dispatch.py", "            if approval.needs_approval(len(groups), plan.wildcard):",
-     "            if False:",
-     _SPT + "test_with_no_approval_the_bulk_change_stays_refused_and_nothing_is_copied", "rule-S-SAVE-APPROVAL-enforced"),
-    ("tools/modding_harness/dispatch.py", "            if not groups:\n                return Outcome(result)\n",
-     "            if not groups or approval.needs_approval(len(groups), plan.wildcard):\n                return Outcome(result)\n",
-     _SPT + "test_a_typed_approval_lifts_the_bulk_refusal_and_everything_is_backed_up", "rule-S-SAVE-APPROVAL-still-backed-up"),
-    ("tools/modding_harness/approval.py", "self.count == count", "True",
-     _SPT + "test_a_pattern_approval_needs_the_exact_pattern_and_count", "rule-S-SAVE-APPROVAL-pattern-grant"),
-    ("tools/modding_harness/approval.py", " and self.operation == operation", "",
-     "tests/test_save_approval_scope.py::test_canonical_grant_rejects_another_operation[move]",
-     "rule-S-SAVE-APPROVAL-per-op"),
-    (_SV, "    rest = fold([v.saves.rest if v.saves is not None else v for v in vs])\n    return judge(merge([p.change for p in plans]), rest)",
-     "    rest = fold([v.saves.rest if v.saves is not None else v for v in vs])\n    return judge(plans[0].change, rest)",
-     _SPT + "test_one_patch_that_changes_three_saves_is_judged_as_three", "rule-S-SAVE-APPROVAL-patch-together"),
-    ("tools/skyguard/engine.py", "    together = saves.combine(vs, combine)\n", "    together = None\n",
-     _SPT + "test_one_patch_that_changes_three_saves_is_judged_as_three", "save-engine-combine-wired"),
-    ("tools/skyguard/engine.py", "        if is_save(a, roots):\n            return None                           # the save policy",
-     "        if False:\n            return None                           # the save policy",
-     _SPT + "test_a_patch_delete_of_one_save_is_backed_up_then_allowed_on_codex", "save-engine-patch-delete-is-a-save"),
-    ("tools/skyguard/engine.py", 'op=SAVE_OP.get(op, "write"),\n', 'op="write",\n',
-     _SPT + "test_a_patch_delete_or_move_is_judged_as_that_op", "save-engine-patch-op"),
-    ("tools/skyguard/engine.py", "NEVER_SHADOW = NEVER_SHADOW | saves.NEVER_SHADOW", "NEVER_SHADOW = NEVER_SHADOW | frozenset()",
-     _SPT + "test_guards_off_does_not_lift_a_bulk_save_change", "save-never-shadowed"),
-    ("tools/skyguard/run.py", '        audit.rule(a.role, "S-SAVE-BACKUP-FAILED", "deny", reason)\n        return Verdict("deny", reason, code=',
-     '        audit.rule(a.role, "S-SAVE-BACKUP-FAILED", "deny", reason)\n        return v or Verdict("deny", reason, code=',
-     _SPT + "test_a_dispatcher_that_raises_inside_the_hook_denies", "rule-S-SAVE-BACKUP-FAILED-hook-raises"),
-    ("tools/skyguard/neutral.py", '        return portable.legacy_pre_tool(req, project, roots_fn, audit, precomputed=v)',
-     '        return v',
-     _SPT + "test_the_neutral_mcp_route_backs_up_before_it_answers", "save-neutral-mcp-enforced"),
-    # ---- where a save change is found: the delete, move and recycle routes no longer read it as S-DEL-CONFIG
-    ("tools/skyguard/deletes.py", '                if is_save(b, roots):\n                    actual = targets.physical_operand(e, w, cwd, env)\n                    saves.append(actual if a == b and actual else "")',
-     "                if False:\n                    saves.append(b)", _SPT + "test_one_save_is_allowed_with_a_backup_note",
-     "rule-S-SAVE-BACKUP-delete"),
-    ("tools/skyguard/deletes.py", "                if is_save(b, roots):\n                    continue",
-     "                if False:\n                    continue", _SPT + "test_every_change_shape_is_one_backed_up_save[mv-out]",
-     "rule-S-SAVE-BACKUP-move-out-is-no-delete"),
-    ("tools/skyguard/deletes.py", "                if kind and is_save(lit, roots):", "                if False:",
-     _SPT + "test_a_save_under_a_folder_with_glob_characters_in_its_name_is_still_one_save", "rule-S-SAVE-BACKUP-delete-glob"),
-    ("tools/skyguard/deletes.py", '            if is_save(b, roots):\n                actual = targets.physical(w, cwd, "powershell", env, literal=how == "single")\n                saves.append(actual if a == b and actual else "")\n                continue',
-     "            if False:\n                saves.append(b)\n                continue",
-     _SPT + "test_every_change_shape_is_one_backed_up_save[recycle-bin]", "rule-S-SAVE-BACKUP-recycle"),
-    ("tools/skyguard/writes.py", '            elif is_save(a, roots):\n                saves.append((targets.physical_operand(e, w, cwd, env) or "", "move"))',
-     '            elif False:\n                saves.append((a, "move"))', _SPT + "test_every_change_shape_is_one_backed_up_save[mv-out]",
-     "rule-S-SAVE-BACKUP-move"),
     # ---- recovery.backup_saves: both files, verified, recorded, one snapshot per pair, never pruned
-    ('tools/modding_harness/durable.py', '    if count != before[2] or digest(target, deadline) != value:', '    if False:',
-     _SPT + "test_a_copy_that_does_not_verify_denies", "rule-S-SAVE-BACKUP-FAILED-verify"),
-    ('tools/modding_harness/durable.py', '    value = hashlib.sha256()', '    if Path(path).parent.name == "blobs": return Path(path).name\n    value = hashlib.sha256()',
-     'tests/test_save_policy.py::test_a_damaged_reused_blob_refuses_and_is_retained_for_diagnosis', "save-backup-reverifies-a-stored-copy"),
-    ('tools/modding_harness/preservation.py', '                    rec = {"path": path, "canonical": real, "missing": ident is None}', '                    rec = {"path": path, "canonical": real, "missing": False}',
-     _SPT + "test_a_missing_cosave_is_recorded_as_missing_not_an_error", "save-backup-records-missing-cosave"),
-    ('tools/modding_harness/preservation.py', '                records.append({"logical_save": group_index, "members": members})',
-     '                if not records: records.append({"logical_save": group_index, "members": members})',
-     'tests/test_save_policy.py::test_two_saves_are_one_transaction_with_two_complete_groups', "save-backup-one-snapshot-per-pair"),
-    ('tools/modding_harness/preservation.py', '            durable.atomic_json(self.root / "transactions" / (transaction + ".json"), manifest)',
-     '            pass', _SPT + "test_a_manifest_that_cannot_be_written_denies",
-     "rule-S-SAVE-BACKUP-FAILED-manifest"),
-    ('tools/modding_harness/preservation.py', '            with exclusive(self.root / ".lock", wait):',
-     '            with __import__("contextlib").nullcontext():', _SPT + "test_a_busy_store_denies", "rule-S-SAVE-BACKUP-FAILED-lock"),
-    ('tools/modding_harness/preservation.py', '            raise PreservationFailed(str(exc)) from exc\n        finally:',
-     '            return None\n        finally:', _SPT + "test_an_unreadable_save_denies", "rule-S-SAVE-BACKUP-FAILED-unreadable"),
     ("tools/skyguard/snapshot.py", "            if backup._sha256(part) != sha:\n                raise OSError(",
      "            if False:\n                raise OSError(", _SPT + "test_a_restore_that_does_not_verify_at_its_target_writes_nothing",
      "save-restore-verifies-its-target"),
@@ -9629,14 +9524,8 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
      _SAT + 'test_a_malformed_approval_grants_nothing[relative-path]', 'save-approval-absolute-paths'),
     (_AP, '                        if len(set(paths)) != len(paths):\n', '                        if False:\n',
      _SAT + 'test_a_malformed_approval_grants_nothing[duplicate-path]', 'save-approval-no-duplicate-paths'),
-    ('tools/modding_harness/dispatch.py', '                grants, why = approval.read(transcript, action.host, action.session_id)', '                grants, why = approval.read(transcript, "claude", action.session_id)',
-     _SPT + "test_codex_bulk_change_reads_only_the_tui_users_approval", "save-approval-reads-its-agents-transcript"),
 ]]
 
-MUTATIONS += [pytest.param("tools/skyguard/save_store.py",
-    '        if checked.result.decision != "allow":', '        if False:',
-    "tests/test_legacy_save_store.py::test_recovery_format_in_place_obeys_local_restriction_before_current_preservation",
-    id="legacy-recovery-cannot-bypass-local-restriction")]
 
 MUTATIONS += [pytest.param("tools/skyguard/save_store.py", before, after,
     "tests/test_portable_profile.py::test_neutral_restore_carries_one_deadline_through_every_copy[" + case + "]",
@@ -9647,155 +9536,17 @@ MUTATIONS += [pytest.param("tools/skyguard/save_store.py", before, after,
      '    return target.restore(ident, to or None, selected)', 'False'),
 )]
 
-MUTATIONS += [pytest.param(path, before, after,
-    "tests/test_portable_profile.py::test_concrete_file_and_api_save_targets_are_literal_with_bracketed_paths[" + surface + "]",
-    id="save-target-literal-provenance-" + surface) for path, before, after, surface in (
-    ('tools/skyguard/write_rules.py', 'saves.Target(actual or "", op if op in saves.OPS else "write", True)',
-     'saves.Target(actual or "", op if op in saves.OPS else "write")', 'files'),
-    ('tools/skyguard/saves.py', 'Target(_join(folder, clean + EXTS[0]), "write", True)',
-     'Target(_join(folder, clean + EXTS[0]), "write")', 'mcp'),
-)]
 
-MUTATIONS += [pytest.param("tools/skyguard/local_policy.py", before, after, test,
-    id="local-policy-" + name) for before, after, test, name in (
-    ('        if result["kind"] != "allow":', '        if False:',
-     'tests/test_local_policy.py::test_legacy_preservation_requirements_cannot_disappear_in_unrecognized_helpers[backup]',
-     'preservation-requirement-retained'),
-    ('            result["warnings"] = tuple(warnings)', '            result["warnings"] = warnings',
-     'tests/test_local_policy.py::test_registered_allowed_file_edit_preserves_pair_once[allow]',
-     'worker-warning-tuple'),
-    ('"__name__": "_registered_skyrim_local_policy"', '"__name__": "__main__"',
-     'tests/test_local_policy.py::test_inspection_reports_requirements_without_authorizing_or_preserving[backup]',
-     'inspection-never-runs-legacy-main'),
-    ('                inspection and envelope["inspection"] is not True or', '                False or',
-     'tests/test_local_policy.py::test_only_explicit_internal_inspection_mode_is_accepted_by_worker[False]',
-     'inspection-mode-explicit'),
-    ('    if registration(project) != registered:\n        raise ValueError("local policy registration changed during inspection")',
-     '    if False:\n        raise ValueError("local policy registration changed during inspection")',
-     'tests/test_local_policy.py::test_inspection_detects_policy_change_after_worker_returns',
-     'inspection-source-recheck'),
-    ('((sources, "move"), (destinations, "write"))', '((sources, "move"), (destinations, "move"))',
-     'tests/test_local_policy.py::test_qualified_transfer_roles_preserve_move_source_and_written_destination',
-     'move-destination-is-write'),
-    ('            if (file_operation is None and result.get("op") in ("move", "rename") and\n                    hashlib.sha256(source).hexdigest() in QUALIFIED_POLICY_SHA256):',
-     '            if (file_operation is None and result.get("op") in ("move", "rename") and\n                    True):',
-     'tests/test_local_policy.py::test_unqualified_policy_cannot_relabel_its_own_transfer_requirements',
-     'transfer-source-qualification'),
-    ('    if registered is None or hashlib.sha256(registered[1]).hexdigest() not in QUALIFIED_POLICY_SHA256:\n        return plan\n    from modding_harness.dispatch import Mutation',
-     '    if registered is None:\n        return plan\n    from modding_harness.dispatch import Mutation',
-     'tests/test_save_profile.py::test_unqualified_policy_cannot_enable_additional_backup_membership',
-     'backup-suffix-source-qualification'),
-    ('        if registration(project) != registered:\n            raise ValueError("registered policy changed during save preservation")',
-     '        if False:\n            raise ValueError("registered policy changed during save preservation")',
-     'tests/test_save_profile.py::test_policy_change_after_backup_refuses_permission_and_keeps_verified_backup',
-     'backup-suffix-late-source-change'),
-    ('                   helper=plan.helper or helper, recheck=recheck)',
-     '                   helper=plan.helper, recheck=recheck)',
-     'tests/test_save_profile.py::test_bulk_backup_helper_requires_command_bound_human_scope',
-     'backup-suffix-helper-command-binding'),
-)]
 
-MUTATIONS += [pytest.param("tools/skyguard/local_policy.py", before, after, test,
-    id="local-policy-controlled-" + name) for before, after, test, name in (
-    ('    return replace(plan, mutations=tuple(dict.fromkeys((*plan.mutations, *current()))), helper=True, recheck=recheck)',
-     '    return plan',
-     'tests/test_controlled_policy.py::test_qualified_controlled_scope_preserves_exact_pair_without_executing_controller[bash-prepare]',
-     'scope-preserved'),
-    ('        if (registration(project) != registered or _controlled_scope(action, project) != scope or',
-     '        if (registration(project) != registered or False or',
-     'tests/test_controlled_policy.py::test_controlled_dependencies_changed_after_backup_refuse_permission_and_retain_backup[request]',
-     'request-recheck'),
-    ('            if result.get("op") in ("controlled-prepare", "controlled-load") and hashlib.sha256(source).hexdigest() in QUALIFIED_POLICY_SHA256:',
-     '            if result.get("op") in ("controlled-prepare", "controlled-load"):',
-     'tests/test_controlled_policy.py::test_unqualified_policy_cannot_relabel_controlled_operation',
-     'source-qualification'),
-    ('    if bindings[0][1] != CONTROLLED_LOAD_SHA256:', '    if False:',
-     'tests/test_controlled_policy.py::test_unqualified_controlled_requests_write_no_backup[controller]',
-     'controller-identity'),
-    ('            sorted(map(profiles.canonical, requirements[0].get("affected", ()))) != sorted(map(profiles.canonical, selected))):',
-     '            tuple(map(profiles.canonical, requirements[0].get("affected", ()))) != tuple(map(profiles.canonical, selected))):',
-     'tests/test_controlled_policy.py::test_qualified_controlled_scope_preserves_exact_pair_without_executing_controller[bash-prepare]',
-     'requirement-order'),
-    ('                              sorted(map(profiles.canonical, result.get("affected", ()))) == sorted(map(profiles.canonical, selected)))',
-     '                              tuple(map(profiles.canonical, result.get("affected", ()))) == tuple(map(profiles.canonical, selected)))',
-     'tests/test_controlled_policy.py::test_qualified_controlled_scope_preserves_exact_pair_without_executing_controller[powershell-prepare]',
-     'worker-requirement-order'),
-)]
 
 MUTATIONS.append(pytest.param("tools/skyguard/save_profile.py", '        suffix = legacy_suffix(path)',
     '        suffix = None',
     'tests/test_save_profile.py::test_backup_suffix_stays_attached_to_both_logical_members[.bak]',
     id='legacy-backup-suffix-membership'))
 
-MUTATIONS += [pytest.param("tools/skyguard/local_policy.py", before, after,
-    "tests/test_local_policy.py::test_registered_policy_cannot_drop_malformed_or_contradictory_backup_counts[" + case + "]",
-    id="local-policy-backup-count-" + name) for before, after, case, name in (
-    ('    if "count" in decision and (type(count) is not int or count < 0 or\n                                kind == "backup" and count > 2):',
-     '    if False:', '3', 'contradictory-threshold'),
-    ('    if "count" in decision and (type(count) is not int or count < 0 or',
-     '    if "count" in decision and (not isinstance(count, int) or count < 0 or', 'True', 'boolean'),
-)]
 
-MUTATIONS += [pytest.param("tools/skyguard/ordered_upgrade.py", before, after, test,
-    id="ordered-policy-" + name) for before, after, test, name in (
-    ('    if rollback[local_policy.LEGACY] not in local_policy.QUALIFIED_POLICY_SHA256:', '    if False:',
-     'tests/test_ordered_policy.py::test_unqualified_source_groups_or_partial_runtime_cannot_produce_a_migration[original-policy]',
-     'source-qualification'),
-    ('    if hashlib.sha256(normalized.encode("utf-8")).hexdigest() != WRAPPER_NORMALIZED_SHA256:', '    if False:',
-     'tests/test_ordered_policy.py::test_unqualified_source_groups_or_partial_runtime_cannot_produce_a_migration[original-wrapper]',
-     'wrapper-qualification'),
-    ('        if any(upgrade.json_bytes(group) not in keys for group in merged.get("hooks", {}).get("PreToolUse", [])):',
-     '        if False:',
-     'tests/test_ordered_policy.py::test_unqualified_source_groups_or_partial_runtime_cannot_produce_a_migration[original-windows-command]',
-     'complete-native-group'),
-    ('    if not required <= candidate.keys():', '    if False:',
-     'tests/test_ordered_policy.py::test_unqualified_source_groups_or_partial_runtime_cannot_produce_a_migration[original-missing-runtime]',
-     'complete-runtime'),
-    ('    if review["observed_local_files"].get(local_policy.CONFIG) is not None and upgrade.json_bytes(existing) != upgrade.json_bytes(registration):',
-     '    if existing and upgrade.json_bytes(existing) != upgrade.json_bytes(registration):',
-     'tests/test_ordered_policy.py::test_unqualified_source_groups_or_partial_runtime_cannot_produce_a_migration[original-empty-registration]',
-     'existing-empty-registration'),
-)]
 
-MUTATIONS += [pytest.param("tools/skyguard/local_policy.py", before, after, test,
-    id="local-policy-finite-" + name) for before, after, test, name in (
-    ('    return replace(plan, mutations=mutations, wildcard=wildcard, helper=True, recheck=recheck)',
-     '    return plan',
-     'tests/test_finite_policy.py::test_finite_legacy_scope_preserves_all_required_members_once[restore]',
-     'requirements-retained'),
-    ('                    requirement["roles"] = [list(role) for role in _transfer_roles(namespace, payload)]',
-     '                    requirement["roles"] = []',
-     'tests/test_finite_policy.py::test_finite_legacy_scope_preserves_all_required_members_once[suffix-move]',
-     'qualified-transfer-roles'),
-    ('        if registration(project) != registered or inspect_policy(action, project, deadline) != report:',
-     '        if False:',
-     'tests/test_finite_policy.py::test_finite_requirement_change_after_backup_refuses_and_retains_original_bytes',
-     'requirement-recheck'),
-    ('    if registered is None or hashlib.sha256(registered[1]).hexdigest() not in QUALIFIED_POLICY_SHA256:\n        return plan\n    report = inspect_policy(action, project, deadline)\n    requirements = report["requirements"]\n    if report["refusal"] is not None or len(requirements) != 1:',
-     '    if registered is None:\n        return plan\n    report = inspect_policy(action, project, deadline)\n    requirements = report["requirements"]\n    if report["refusal"] is not None or len(requirements) != 1:',
-     'tests/test_finite_policy.py::test_unqualified_policy_cannot_add_finite_shell_scope',
-     'source-qualification'),
-)]
 
-MUTATIONS += [pytest.param("tools/skyguard/local_policy.py", before, after, test,
-    id="local-policy-declared-" + name) for before, after, test, name in (
-    ('            if not groups or not grant.matches(action.session_id, operation, complete, action.command, True, len(groups)):',
-     '            if not groups or not grant.matches(action.session_id, operation, complete, action.command, False, len(groups)):',
-     'tests/test_declared_scope.py::test_unbound_grant_cannot_create_a_declared_plan',
-     'command-binding'),
-    ('                _declared_choice(action, transcript, operation, profile) != choice):',
-     '                False):',
-     'tests/test_declared_scope.py::test_declared_helper_rechecks_human_evidence_after_preserving_bytes',
-     'human-recheck'),
-    ('                                declared=hashlib.sha256(source).hexdigest() in QUALIFIED_POLICY_SHA256)',
-     '                                declared=True)',
-     'tests/test_declared_scope.py::test_unqualified_policy_cannot_use_a_declared_game_plan',
-     'source-qualification'),
-    ('    return next(iter(choices.values())) if len(choices) == 1 else None',
-     '    return next(iter(choices.values())) if choices else None',
-     'tests/test_declared_scope.py::test_different_complete_declarations_for_the_same_opaque_command_are_ambiguous',
-     'ambiguous-declarations'),
-)]
 
 MUTATIONS += [pytest.param("tools/skyguard/legacy_saves.py", before, after, test,
     id="legacy-backup-suffix-reader-" + name) for before, after, test, name in (
@@ -9858,56 +9609,8 @@ MUTATIONS += [pytest.param("agent/guards/adapters/claude/" + hook, before, after
 # Comparison aliases must never choose a different physical save's backup bytes.
 MUTATIONS += [pytest.param(path, before, after, "tests/test_save_physical_paths.py::" + test,
     id="save-physical-" + name) for path, before, after, test, name in (
-    ("tools/skyguard/paths.py", '    return p.replace("/", "\\\\")', '    return norm_abs(path, msys=msys)',
-     'test_raw_namespace_preserves_requested_pair_not_folded_peer[files-.]', 'namespace-io'),
-    ("tools/skyguard/targets.py", '        return paths.physical_abs(w)', '        return compared',
-     'test_raw_namespace_preserves_requested_pair_not_folded_peer[files-.]', 'explicit-operand'),
-    ("tools/skyguard/targets.py", '            return paths.physical_abs(paths._join(base, s))', '            return compared',
-     'test_relative_file_and_shell_keep_raw_namespace_cwd[files]', 'relative-cwd'),
-    ("tools/skyguard/targets.py", '    return physical(e.cd_before, cwd, e.dialect, env)',
-     '    return resolve(e.cd_before, cwd, e.dialect, env)',
-     'test_raw_namespace_preserves_requested_pair_not_folded_peer[cd-.]', 'changed-cwd'),
-    ('tools/skyguard/write_rules.py', '            actual = targets.physical(file_path, cwd, "cmd", env_, literal=True)',
-     '            actual = a', 'test_raw_namespace_preserves_requested_pair_not_folded_peer[files-.]', 'file-route'),
-    ("tools/skyguard/writes.py", '                saves.append((targets.physical_operand(e, w, cwd, env) or "", "write"))',
-     '                saves.append((a, "write"))', 'test_raw_namespace_preserves_requested_pair_not_folded_peer[write-.]', 'shell-write'),
-    ("tools/skyguard/deletes.py", '                    saves.append(actual if a == b and actual else "")', '                    saves.append(b)',
-     'test_raw_namespace_preserves_requested_pair_not_folded_peer[delete-.]', 'shell-delete'),
-    ("tools/skyguard/writes.py", '                saves.append((targets.physical_operand(e, w, cwd, env) or "", "move"))',
-     '                saves.append((a, "move"))', 'test_raw_namespace_preserves_requested_pair_not_folded_peer[move-.]', 'shell-move'),
-    ("tools/skyguard/writes.py", '            if is_save(a_dst, roots):\n                saves.append((targets.physical_operand(e, dst, cwd, env) or "", "write"))',
-     '            if is_save(a_dst, roots):\n                saves.append((a_dst, "write"))', 'test_raw_namespace_preserves_requested_pair_not_folded_peer[copy-.]', 'shell-copy'),
-    ("tools/skyguard/writes.py", '                    physical_dst = targets.physical_operand(e, dst, cwd, env)', '                    physical_dst = a_dst',
-     'test_copy_to_raw_folder_preserves_destination_pair', 'folder-copy'),
-    ("tools/skyguard/writes.py", '            saves.append((targets.physical(word, actual_base, "cmd", env, literal=True) or "", "write"))',
-     '            saves.append((a, "write"))', 'test_raw_namespace_preserves_requested_pair_not_folded_peer[python-.]', 'interpreter'),
-    ("tools/skyguard/deletes.py", '                actual = targets.physical(w, cwd, "powershell", env, literal=how == "single")\n                saves.append(actual if a == b and actual else "")',
-     '                actual = targets.physical(w, cwd, "powershell", env, literal=how == "single")\n                saves.append(b)',
-     'test_raw_namespace_preserves_requested_pair_not_folded_peer[recycle-.]', 'recycle'),
-    ("tools/skyguard/saves.py", '        n = paths.physical_abs(word, msys=(shell != "powershell"))',
-     '        n = paths.norm_abs(word, msys=(shell != "powershell"))',
-     'test_resaver_retains_raw_io_target_and_namespace_prefix_is_not_a_wildcard', 'resaver'),
-    ("tools/skyguard/paths.py", '        d = physical_abs(v)', '        d = norm_abs(v)',
-     'test_raw_config_root_is_retained_for_devbench_and_profile_membership', 'configured-root'),
-    ("tools/skyguard/saves.py", '        if not name or (not WILD.search(name) and not name.lower().endswith(EXTS)):', '        if False:',
-     'test_unqualified_raw_member_or_dot_segment_refuses_without_peer_backup[Distinct.ess.]', 'unsupported-member'),
-    ("tools/skyguard/saves.py", '        if not t.literal and WILD.search(os.path.splitdrive(folder)[1]):',
-     '        if not t.literal and WILD.search(folder):',
-     'test_ordinary_namespace_aliases_still_preserve_the_same_pair', 'namespace-not-wildcard'),
-    ("tools/skyguard/targets.py", '            absolute = _drive_relative(p, base, "cmd")', '            absolute = None',
-     'test_drive_relative_file_operand_uses_known_same_drive_cwd', 'drive-relative-file'),
-    ("tools/skyguard/writes.py", '    if python_literals:', '    if False:',
-     'test_raw_namespace_preserves_requested_pair_not_folded_peer[python-escaped-.]', 'python-literal-dispatch'),
-    ("tools/skyguard/writes.py", '        return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None',
-     '        return repr(node.value) if isinstance(node, ast.Constant) and isinstance(node.value, str) else None',
-     'test_raw_namespace_preserves_requested_pair_not_folded_peer[python-escaped-.]', 'python-decoded-value'),
-    ("tools/skyguard/writes.py", ' else str(Path(*parts))', ' else parts[0]',
-     'test_python_path_absolute_later_argument_selects_the_actual_save', 'python-complete-path'),
     # Classification and I/O have separate resolvers. Restoring expansion only in
     # the classifier is masked by the correct I/O identity; revert that I/O flag.
-    ("tools/skyguard/writes.py", '            saves.append((targets.physical(word, actual_base, "cmd", env, literal=True) or "", "write"))',
-     '            saves.append((targets.physical(word, actual_base, "cmd", env) or "", "write"))',
-     'test_python_literal_quoting_does_not_hide_an_owned_save_name', 'literal-not-cmd-expansion'),
     ("tools/skyguard/writes.py", '        # The invoked Python can have a different syntax version from this guard.\n        raise ValueError("Python literal write scope could not be parsed") from None',
      '        return []', 'test_unknown_python_syntax_refuses_before_any_save_permission', 'unparsed-not-readonly'),
 )]
@@ -9916,7 +9619,7 @@ MUTATIONS += [pytest.param("tools/skyguard/writes.py", before, after,
     "tests/test_python_literal_writes.py::" + test, id="python-literal-" + name) for before, after, test, name in (
     ('    if len(code) > 1024 * 1024:', '    if False:',
      'test_oversized_python_analysis_refuses_instead_of_guessing_an_identity', 'analysis-bound'),
-    ('        nodes = python_nodes(code)', '        nodes = python_nodes("pass")',
+    ('        nodes = python_nodes(code)\n    except SyntaxError:', '        nodes = python_nodes("pass")\n    except SyntaxError:',
      'test_python_write_literals_decode_to_the_filename_value', 'syntax-reader'),
 )]
 
@@ -9927,7 +9630,7 @@ MUTATIONS += [
                  "tests/test_save_store_rule_coverage.py::test_configured_store_mutations_are_denied_before_ordinary_location_rules[shell]",
                  id="rule-S-SAVE-STORE-configured-destination"),
     pytest.param("tools/skyguard/write_rules.py",
-                 '    if placed and self_rules.save_store_target(placed, roots, holder=op in ("delete", "move")):',
+                 '    if store_place and self_rules.save_store_target(store_place, roots, holder=op in ("delete", "move"), env=env_):',
                  "    if False:",
                  "tests/test_save_store_rule_coverage.py::test_configured_store_mutations_are_denied_before_ordinary_location_rules[files]",
                  id="rule-W-SAVE-STORE-configured-destination"),
@@ -9963,14 +9666,6 @@ MUTATIONS += [
 
 # A read-only proposal must neither execute policy workers nor produce execution evidence.
 MUTATIONS += [
-    pytest.param('tools/skyguard/portable.py', 'preserve=not preview)', 'preserve=True)', 'tests/test_approval_preview.py::test_preview_cli_preserves_exact_scope_without_writes', id='approval-preview-preservation'),
-    pytest.param('tools/skyguard/portable.py', 'audit = _PreviewAudit(str(project)) if preview else', 'audit = Audit(str(project)) if preview else', 'tests/test_approval_preview.py::test_preview_cli_preserves_exact_scope_without_writes', id='approval-preview-audit'),
-    pytest.param('tools/skyguard/portable.py', '        if not preview:\n            plan = local_policy.supplement_native_backups', '        if True:\n            plan = local_policy.supplement_native_backups', 'tests/test_approval_preview.py::test_preview_never_runs_unqualified_workers_or_callbacks', id='approval-preview-worker-gate'),
-    pytest.param('tools/skyguard/portable.py', '        if local_surface and local_policy.registration(project) is not None:', '        if False:', 'tests/test_approval_preview.py::test_normal_check_fallback_exposes_full_scope_with_registered_policy', id='approval-preview-personal-policy'),
-    pytest.param('tools/skyguard/engine.py', '        if not readonly:\n            _relock_due', '        if True:\n            _relock_due', 'tests/test_approval_preview.py::test_preview_shadow_does_not_write_reject_markers_or_relock[False]', id='approval-preview-relock'),
-    pytest.param('tools/skyguard/engine.py', 'if not readonly and _state_reject_is_new(project, st.reason):', 'if _state_reject_is_new(project, st.reason):', 'tests/test_approval_preview.py::test_preview_shadow_does_not_write_reject_markers_or_relock[True]', id='approval-preview-reject-marker'),
-    pytest.param('tools/skyguard/engine.py', '        if not readonly:\n            _relock_due', '        if False:\n            _relock_due', 'tests/test_approval_preview.py::test_readonly_shadow_does_not_change_normal_relock_path', id='approval-preview-preserve-normal-relock'),
-    pytest.param('tools/skyguard/portable.py', 'reason=reason)\n    elif result.preservation == "failed":', 'reason=reason + chr(10) + result.reason)\n    elif result.preservation == "failed":', 'tests/test_approval_preview.py::test_compact_bulk_hook_and_preview_scope_oracle[sp-bash-three]', id='approval-bulk-reason-inline-scope'),
 ]
 
 # CI run 39145224156: Windows-only twins defined after _WINDOWS_ONLY_TWINS was applied. Each is killed on Windows.
@@ -9980,10 +9675,6 @@ _LATE_WINDOWS_ONLY = {
     # 0x400 is FILE_ATTRIBUTE_REPARSE_POINT; off Windows st_file_attributes is absent and is_symlink() alone skips the link
     "housekeep-sweep-follows-junctions": "the junction attribute exists only on Windows",
 }
-_LATE_WINDOWS_ONLY.update({"ordered-policy-" + name: "the reviewed personal-policy upgrade refuses off Windows, so "
-                           "every tests/test_ordered_policy.py anchor skips there" for name in (
-    "source-qualification", "wrapper-qualification", "complete-native-group", "complete-runtime",
-    "existing-empty-registration")})
 assert set(_LATE_WINDOWS_ONLY) <= {p.id for p in MUTATIONS}, set(_LATE_WINDOWS_ONLY) - {p.id for p in MUTATIONS}
 MUTATIONS[:] = [
     pytest.param(*p.values, id=p.id, marks=tuple(p.marks) + (
@@ -10046,23 +9737,9 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
      '    if dialect == "bash" and re.search(r"[a-z0-9]", base) and ("*" in base or _glob_word(base)):', _PS2,
      "concatenated-name-candidates-bash-only"),
     (_SP, ' or "%" in b or "!" in b):', ' or "%" in b):', _PS2, "cmd-delayed-word-is-a-name"),
-    ("tools/skyguard/shell_rules.py", "    for e in parsed.unnamed:", "    for e in ():",
-     _SPP + "test_an_unnamed_program_naming_a_save_asks_and_a_change_it_hides_is_still_backed_up",
-     "rule-S-SAVE-OPAQUE-dropped"),
-    ("tools/skyguard/shell_rules.py", "        if _resaver_op(e):                  # read as ReSaver",
-     "        if False:                  # read as ReSaver",
-     _SPP + "test_known_resaver_does_not_hide_later_opaque_resaver_outputs", "save-opaque-asks-a-known-resaver"),
-    (_SP, "                    self.no_candidate = not cands", "                    self.no_candidate = True",
-     _SPP + "test_an_unnamed_program_naming_a_save_asks_and_a_change_it_hides_is_still_backed_up",
-     "save-opaque-asks-a-word-with-candidates"),
-    (_SP, '        if program == "?" and self.no_candidate:', "        if False:",
-     _SPP + "test_an_unnamed_program_naming_a_save_asks_and_a_change_it_hides_is_still_backed_up",
-     "unnamed-execs-not-recorded"),
     (_SP, "    except ParseError:\n        pass\n    try:\n        _records_to_execs(sc)",
      "    except ParseError:\n        return\n    try:\n        _records_to_execs(sc)",
      _PS1 + "test_a_speculative_eval_reading_keeps_what_it_completed", "speculative-reading-drops-completed"),
-    ("tools/skyguard/saves.py", '"shell.S-RESAVER-APPLY", "shell.S-SAVE-OPAQUE"))', '"shell.S-RESAVER-APPLY"))',
-     _SPP + "test_guards_off_does_not_lift_the_unnamed_program_save_ask", "save-opaque-ask-shadowed"),
 ]]
 
 # 2026-10-19 procsubst, part 3: a dynamic word's literal part is a candidate (`"$X"reg` with X empty runs reg).
@@ -10073,12 +9750,6 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
 
 # A shared-core ask still has to pass the save policy before reaching the host.
 MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
-    ("tools/modding_harness/dispatch.py", '                if restriction.decision == "deny":',
-     '                if restriction.decision in ("deny", "ask"):',
-     "tests/test_shared_core_ask_order.py", "core-local-ask-skips-save-preservation"),
-    ("tools/modding_harness/dispatch.py", '            if result.decision == "deny":',
-     '            if result.decision in ("deny", "ask"):',
-     "tests/test_shared_core_ask_order.py", "core-profile-ask-skips-save-preservation"),
 ]]
 
 
@@ -10108,16 +9779,6 @@ MUTATIONS.append(pytest.param(
 _PSAVE = "tests/test_save_policy.py::"
 _CORE_PROFILE_ASK = ('            if result.decision == "deny":', '            if result.decision in ("deny", "ask"):')
 _CORE_LOCAL_ASK = ('                if restriction.decision == "deny":', '                if restriction.decision in ("deny", "ask"):')
-MUTATIONS += [pytest.param("tools/modding_harness/dispatch.py", *m[:3], id=m[3]) for m in [
-    (*_CORE_PROFILE_ASK, _PSAVE + "test_three_saves_beside_an_ask_are_refused_without_the_typed_approval[opaque]",
-     "rule-S-SAVE-APPROVAL-wins-over-an-ask"),
-    (*_CORE_PROFILE_ASK, _PSAVE + "test_one_save_beside_an_ask_is_backed_up_before_the_ask[git-discard]",
-     "rule-S-SAVE-BACKUP-before-an-ask"),
-    (*_CORE_PROFILE_ASK, _PSAVE + "test_codex_save_change_beside_an_ask_keeps_the_save_policy[one-save-asks-after-backup]",
-     "save-codex-ask-after-backup"),
-    (*_CORE_LOCAL_ASK, "tests/test_portable_profile.py::test_a_local_restriction_ask_waits_for_the_save_policy",
-     "save-local-restriction-ask-held"),
-]]
 
 # v4.0.0 review L3 LOW-1: a malformed inline snippet is the engine's parse refusal, not a crash (GUARD INERT).
 MUTATIONS += [pytest.param("tools/skyguard/engine.py",
@@ -10356,11 +10017,6 @@ MUTATIONS += [pytest.param(_SR, *m[:3], id=m[3]) for m in [
      _OPS + "[token-cap-no-expansion]", "rule-S-OPAQUE-PROTECTED-token-cap-needs-expansion"),
     ("    return not parsed.ok and bool(_DYNAMIC.search(command))", "    return bool(_DYNAMIC.search(command))",
      _OPS + "[expansion-beside-data]", "rule-S-OPAQUE-PROTECTED-token-cap-needs-cap"),
-    ("    if _unfinished(parsed, command):\n        m = RESAVER_TEXT_SAVE.search(command)",
-     "    if False:\n        m = RESAVER_TEXT_SAVE.search(command)",
-     _OPT + "test_past_the_token_cap_a_save_in_the_text_still_asks", "rule-S-SAVE-OPAQUE-token-cap"),
-    ("    opaque = _opaque_save(parsed, roots, cwd, env, command)", "    opaque = _opaque_save(parsed, roots, cwd, env)",
-     _OPT + "test_past_the_token_cap_a_save_in_the_text_still_asks", "rule-S-SAVE-OPAQUE-token-cap-wired"),
 ]]
 MUTATIONS.append(pytest.param(
     _G3P, '        if fp[1] and fp[0] in sub and "$" not in sub[fp[0]] and "`" not in sub[fp[0]]:', "        if False:",
@@ -10450,20 +10106,10 @@ MUTATIONS += [
 ]
 # Release review of bc246b8, 2026-11-02: what the guard counted, and what archiving kept. One twin per clause.
 MUTATIONS += [pytest.param(src, a, b, test, id=name) for name, src, a, b, test in [
-    ('gap-comma-not-marked',
-     'tools/skyguard/shellparse.py',
-     '                    f.cmd.words[-1].comma = True\n',
-     '                    pass\n',
-     'tests/test_review_v4_guard_gaps.py::test_a_bulk_save_change_needs_the_typed_approval'),
-    ('gap-comma-group-ignored',
-     'tools/skyguard/shellparse.py',
-     '        while isinstance(argv[i], _ListItem) and i + 1 < len(argv):\n',
-     '        while False:\n',
-     'tests/test_review_v4_guard_gaps.py::test_a_bulk_save_change_needs_the_typed_approval'),
     ('gap-documents-dir-not-a-root',
      'tools/skyguard/paths.py',
-     '    config_values = _values(env, "SKYRIM_CONFIG_DIR") + _values(env, "SKYRIM_DOCUMENTS_DIR")\n',
-     '    config_values = _values(env, "SKYRIM_CONFIG_DIR")\n',
+     'CONFIG_KEYS = ("SKYRIM_CONFIG_DIR", "SKYRIM_DOCUMENTS_DIR", "SKYRIM_PROFILE_SAVES")\n',
+     'CONFIG_KEYS = ("SKYRIM_CONFIG_DIR", "SKYRIM_PROFILE_SAVES")\n',
      'tests/test_review_v4_guard_gaps.py::test_saves_under_a_moved_documents_folder_are_protected_with_mo2_profile_inis'),
     ('ci-shards-need-not-add-up',
      'scripts/check_ci_leg.py',
@@ -10474,37 +10120,12 @@ MUTATIONS += [pytest.param(src, a, b, test, id=name) for name, src, a, b, test i
      'tools/skyguard/shellparse.py',
      '            ws, vals = _expand_braces(d, ws, vals)\n',
      '            pass\n',
-     'tests/test_review_v4_guard_gaps.py::test_ordinary_commands_stay_allowed'),
+     'tests/test_review_v4_guard_gaps.py::test_a_quoted_brace_stays_one_word'),
     ('gap-quoted-brace-expanded',
      'tools/skyguard/shellparse.py',
      ' or not _unquoted_brace(w.raw):\n',
      ':\n',
      'tests/test_review_v4_guard_gaps.py::test_a_quoted_brace_stays_one_word'),
-    ('gap-brace-sequence-not-wild',
-     'tools/skyguard/saves.py',
-     'WILD = re.compile(r"[*?\\[{]")',
-     'WILD = re.compile(r"[*?\\[]")',
-     'tests/test_review_v4_guard_gaps.py::test_a_bulk_save_change_needs_the_typed_approval'),
-    ('gap-extract-into-saves',
-     'tools/skyguard/writes.py',
-     '            elif is_save_folder(a_bulk, roots):\n',
-     '            elif False:\n',
-     'tests/test_review_v4_guard_gaps.py::test_a_bulk_save_change_needs_the_typed_approval'),
-    ('gap-bulk-copy-into-saves',
-     'tools/skyguard/writes.py',
-     '            if is_save_folder(a_dst, roots) and (not srcs or any(',
-     '            if False and (not srcs or any(',
-     'tests/test_review_v4_guard_gaps.py::test_a_bulk_save_change_needs_the_typed_approval'),
-    ('gap-folder-source-not-bulk',
-     'tools/skyguard/writes.py',
-     '    return _looks_like_dir(source)\n',
-     '    return False\n',
-     'tests/test_review_v4_guard_gaps.py::test_a_bulk_save_change_needs_the_typed_approval'),
-    ('gap-named-file-counts-as-bulk',
-     'tools/skyguard/writes.py',
-     '    return _looks_like_dir(source)\n',
-     '    return True\n',
-     'tests/test_review_v4_guard_gaps.py::test_ordinary_commands_stay_allowed'),
     ('gap-foreach-member',
      'tools/skyguard/deletes.py',
      '        if p == "foreach-object" and any(',
@@ -10555,21 +10176,6 @@ MUTATIONS += [pytest.param(src, a, b, test, id=name) for name, src, a, b, test i
      'f.attr in ("rename", "replace")):\n',
      'f.attr in ()):\n',
      'tests/test_review_v4_guard_gaps.py::test_literal_python_moves_of_data_are_refused'),
-    ('gap-python-copy-of-save',
-     'tools/skyguard/writes.py',
-     '        if name in changes:\n',
-     '        if False:\n',
-     'tests/test_review_v4_guard_gaps.py::test_literal_interpreter_changes_of_one_save_are_backed_up'),
-    ('gap-node-copy-of-save',
-     'tools/skyguard/writes.py',
-     '    for m in _INTERP_TWO_LITS.finditer(code):\n',
-     '    for m in ():\n',
-     'tests/test_review_v4_guard_gaps.py::test_literal_interpreter_changes_of_one_save_are_backed_up'),
-    ('gap-other-writers-of-save',
-     'tools/skyguard/writes.py',
-     'for w in _save_only_writes(e)\n',
-     'for w in ()\n',
-     'tests/test_review_v4_guard_gaps.py::test_other_writers_of_one_save_are_backed_up'),
     ('hk-archive-keeps-off',
      'tools/housekeep.py',
      ' + archive_keeps(Path(a["path"]), guard)\n',
@@ -10619,9 +10225,9 @@ MUTATIONS += [pytest.param(src, a, b, test, id=name) for name, src, a, b, test i
 MUTATIONS += [pytest.param('tools/housecarl_integration/gateway.py', a, b, 'tests/test_review_v4_housekeep.py::' + t, id=n) for n, a, b, t in [
     ('hc-view-outlives-a-failed-check', '        shutil.rmtree(data, ignore_errors=True)\n', '        pass\n',
      'test_house_carl_leaves_no_linked_view_when_its_check_fails'),
-    ('hc-copies-a-master', '                raise Refusal("Cannot link master {} for the read-only check ({}). If the toolkit\'s file lock is on, "\n                              "lift it and retry; masters are never copied.".format(name, exc)) from exc\n', '                shutil.copyfile(original, data / name)\n',
+    ('hc-copies-a-master', '                raise Refusal("Cannot link master {} for the xEdit step ({}). If the toolkit\'s file lock is on, "\n                              "lift it and retry; masters are never copied.".format(name, exc)) from exc\n', '                shutil.copyfile(original, data / name)\n',
      'test_house_carl_refuses_rather_than_copying_a_master'),
-    ('hc-master-change-unseen', '            if (info.st_size, info.st_mtime_ns) != (size, mtime):\n', '            if False:\n',
+    ('hc-master-change-unseen', '                if (os.stat(original).st_size, os.stat(original).st_mtime_ns) != (size, mtime):\n', '                if False:\n',
      'test_house_carl_notices_a_master_that_changed_during_its_check'),
     ('hc-read-only-master-linked', '            if not info.st_mode & stat.S_IWRITE:\n', '            if False:\n',
      'test_house_carl_refuses_a_read_only_master_before_linking_it'),
@@ -10657,21 +10263,6 @@ MUTATIONS += [pytest.param(src, a, b, test, id=name) for name, src, a, b, test i
      '(_ListItem(sub[w]) if isinstance(w, _ListItem) else sub[w]) if w in sub else w',
      'sub.get(w, w)',
      'tests/test_review_v4_guard_gaps.py::test_a_comma_list_keeps_its_group_through_a_variable'),
-    ('gap2-xcopy-any-shell',
-     'tools/skyguard/writes.py',
-     '(e.dialect == "cmd" or p == "xcopy")',
-     'e.dialect == "cmd"',
-     'tests/test_review_v4_guard_gaps.py::test_round_two_bulk_spellings_need_the_typed_approval'),
-    ('gap2-tar-flag-anywhere',
-     'tools/skyguard/writes.py',
-     're.fullmatch(r"-[a-zA-Z]*x[a-zA-Z]*", w) for w in argv)',
-     're.fullmatch(r"-[a-zA-Z]*x[a-zA-Z]*", w) for w in argv[:1])',
-     'tests/test_review_v4_guard_gaps.py::test_round_two_bulk_spellings_need_the_typed_approval'),
-    ('gap2-rsync-trailing-option',
-     'tools/skyguard/writes.py',
-     '_RSYNC_VALUED = ("--exclude", "--include",',
-     '_RSYNC_VALUED = ("--include",',
-     'tests/test_review_v4_guard_gaps.py::test_round_two_bulk_spellings_need_the_typed_approval'),
 ]]
 MUTATIONS += [pytest.param(src, a, b, test, id=name) for name, src, a, b, test in [
     ('r3-daily-priority-untyped',
@@ -10718,21 +10309,6 @@ MUTATIONS += [pytest.param(src, a, b, test, id=name) for name, src, a, b, test i
      '((k in acount) && acount[k] < rcount[k])',
      '(0)',
      'tests/test_esp_verify.py::test_one_of_two_identical_references_going_missing_is_a_drop'),
-    ('r3r-python-import-aliases',
-     'tools/skyguard/writes.py',
-     '            names.update({a.asname or a.name: node.module + "." + a.name for a in node.names})\n',
-     '            pass\n',
-     'tests/test_review_v4_guard_gaps.py::test_literal_python_spellings_of_one_save_change_are_backed_up'),
-    ('r3r-python-module-alias',
-     'tools/skyguard/writes.py',
-     '            modules.update({a.asname or a.name: a.name for a in node.names})\n',
-     '            pass\n',
-     'tests/test_review_v4_guard_gaps.py::test_literal_python_spellings_of_one_save_change_are_backed_up'),
-    ('r3r-python-keyword-args',
-     'tools/skyguard/writes.py',
-     '            first = node.args[0] if node.args else given.get("src")\n',
-     '            first = node.args[0] if node.args else None\n',
-     'tests/test_review_v4_guard_gaps.py::test_literal_python_spellings_of_one_save_change_are_backed_up'),
     ('r3r-python-keyword-dst',
      'tools/skyguard/writes.py',
      '            second = node.args[1] if len(node.args) > 1 else given.get("dst")\n',
@@ -11073,25 +10649,8 @@ MUTATIONS += [pytest.param(f, find, rep, test, id=i) for i, f, find, rep, test i
      '            raise RuntimeError("Co-save bytes or presence changed unexpectedly; candidate output retained")',
      "            pass", _RNT + "test_a_cosave_changed_by_the_write_is_an_error"),
     # the guard
-    ("rule-S-RESAVER-NATIVE-DIRECT-ignores-dash-o", _SRN,
-     'RESAVER_NATIVE_WRITES = ("-o", "--batch", "--batch-all", "--apply")',
-     'RESAVER_NATIVE_WRITES = ("--batch", "--batch-all", "--apply")',
-     _RNG + "test_a_direct_native_write_is_denied[dash-o]"),
-    ("rule-S-RESAVER-NATIVE-DIRECT-ignores-gui", _SRN, "        if program in RESAVER_NATIVE_GUI:", "        if False:",
-     _RNG + "test_a_direct_native_write_is_denied[gui]"),
-    ("rule-S-RESAVER-NATIVE-DIRECT-trusts-unproven-args", _SRN,
-     '            if any(_native_write_word(a) for a in argv) or any(_DYNAMIC.search(a) for a in argv):',
-     "            if any(_native_write_word(a) for a in argv):",
-     _RNG + "test_a_direct_native_write_is_denied[unproven-args]"),
-    ("rule-S-RESAVER-NATIVE-DIRECT-ignores-launchers", _SRN, "        if program in RESAVER_NATIVE_LAUNCHERS:",
-     "        if False:", _RNG + "test_a_direct_native_write_is_denied[gui-via-start]"),
-    ("rule-S-RESAVER-NATIVE-DIRECT-not-wired", _SRN, "    native = resaver_native_direct(command, parsed)\n    if native:",
-     '    native = ""\n    if native:', _RNG + "test_a_direct_native_write_is_denied[structured-apply]"),
-    ("rule-S-RESAVER-NATIVE-DIRECT-shadowed", "tools/skyguard/engine.py",
-     'NEVER_SHADOW = NEVER_SHADOW | frozenset(("shell.S-RESAVER-NATIVE-DIRECT",))', "",
-     _RNG + "test_the_rule_is_never_shadowed"),
-    ("resaver-native-adapter-not-a-resaver-write", _SRN, "        if _base_name(script).startswith(RESAVER_ADAPTER):",
-     "        if False:", _RNG + "test_the_adapter_run_directly_is_a_resaver_write[python-B]"),
+    ("rule-S-RESAVER-NATIVE-DIRECT-not-wired", _SRN, "    native = resaver_native_direct(command, parsed)          #",
+     '    native = ""          #', _RNG + "test_a_direct_native_write_gets_the_note[structured-apply]"),
     # backend selection: Java default, no fallback either way
     ("resaver-backend-native-falls-back", "tools/resaver-cli.sh", '  exec "${PY[@]}" -B "$HERE/resaver_native.py" "$@"',
      '  "${PY[@]}" -B "$HERE/resaver_native.py" "$@" && exit 0',
@@ -11270,27 +10829,6 @@ MUTATIONS += [pytest.param(_HKD, before, after, _HKDT + test, id="hk-derived-" +
 ]]
 
 # H1 ordered-upgrade integration: current guard policies and exact historical definitions.
-_H1O = "tools/skyguard/ordered_upgrade.py"
-_H1OC = 'CLAUDE_BLOCKING = frozenset(("protect-bash.sh", "protect-files.sh", "protect-mcp.sh"))'
-_H1OU = _H1T + "test_ordered_upgrade_uses_the_shipped_guard_failure_policy"
-MUTATIONS += [pytest.param(_H1O, find, rep, test, id=ident) for find, rep, test, ident in [
-    (_H1OC, 'CLAUDE_BLOCKING = frozenset(("protect-files.sh", "protect-mcp.sh"))',
-     _H1OU, "h1-ordered-bash-fails-open"),
-    (_H1OC, 'CLAUDE_BLOCKING = frozenset(("protect-bash.sh", "protect-mcp.sh"))',
-     _H1OU, "h1-ordered-files-fails-open"),
-    (_H1OC, 'CLAUDE_BLOCKING = frozenset(("protect-bash.sh", "protect-files.sh"))',
-     _H1OU, "h1-ordered-mcp-fails-open"),
-    ('        handler["onFailure"] = "block"', '        handler["onFailure"] = "ignore"',
-     _H1OU, "h1-ordered-wrong-failure-policy"),
-    ("    if script in CLAUDE_BLOCKING:", "    if True:",
-     _H1OU, "h1-ordered-backup-hooks-block"),
-    ('            handler.pop("onFailure", None)', "            pass",
-     "tests/test_ordered_policy.py::test_published_legacy_groups_migrate_to_current_blocking_guards[original-v3.9.1]",
-     "h1-ordered-legacy-schema-not-recognized"),
-    ("    groups = [*current, *published, installed]", "    groups = [*published, installed]",
-     "tests/test_ordered_policy.py::test_published_legacy_groups_migrate_to_current_blocking_guards[original-pre-h1]",
-     "h1-ordered-previous-v4-schema-not-recognized"),
-]]
 
 # Task 7 A2: unreadable authority is never an empty live set.
 _RR7 = "tests/test_review_recovery.py::"
@@ -11458,10 +10996,6 @@ MUTATIONS += [pytest.param(f, find, rep, test, id="review-guards-" + ident) for 
      _RG7 + 'test_unproved_native_cli_flags_are_writes[`pick`]', 'backtick-argument'),
     (_SR7, '_native_write_word(w.strip("\\\"\'")) or _DYNAMIC.search(w)', '_native_write_word(w.strip("\\\"\'"))',
      _RG7 + 'test_unparsed_native_fallback_keeps_unknown_flags_conservative', 'native-fallback'),
-    (_SR7, '            if any(_DYNAMIC.search(a) for a in e.argv):\n                opaque = True', '            if False:\n                opaque = True',
-     _RG7 + 'test_adapter_dynamic_operation_keeps_the_text_fallback', 'adapter-op-markers'),
-    (_SR7, '            if any(_DYNAMIC.search(a) for a in e.argv):\n                # A resolved input',
-     '            if False:\n                # A resolved input', _RG7 + 'test_unproved_adapter_output_cannot_preserve_only_the_input', 'adapter-output-markers'),
     (_SP7, '                    self.reparse(code, "bash", carry_cd=True)', '                    self.reparse(code, "bash")',
      _EVAL7, 'eval-carries-directory'),
     (_SP7, '            if carry_cd:\n                self.cd = final_cd', '            if False:\n                self.cd = final_cd',
@@ -12070,8 +11604,8 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
     ("tools/skyguard/self_rules.py", "    return rel is not None and [p.lower() for p in rel] == SAVE_LOCK_SWITCH",
      "    return rel is not None and [p.lower() for p in rel][-1:] == SAVE_LOCK_SWITCH[-1:]",
      _SLG + "test_a_same_named_file_elsewhere_is_not_the_switch", "rule-S-SAVE-LOCK-exact-path"),
-    ("tools/skyguard/self_rules.py", "    target = target or save_store_target",
-     "    target = save_store_target",
+    ("tools/skyguard/self_rules.py", "    if target is None:\n        def target(",
+     "    if True:\n        def target(",
      _SLG + "test_a_shell_change_to_the_switch_is_refused[overwrite]", "rule-S-SAVE-LOCK-target-used"),
     ("tools/skyguard/write_rules.py", "    if (bare and self_rules.save_lock_target(bare, roots)) or (",
      "    if False or (",
@@ -12097,12 +11631,6 @@ MUTATIONS += [pytest.param(path, anchor, replacement, _OG + test, id="opus-" + n
      "test_a_source_bound_by_name_is_not_read_twice", "ps-named-slot-takes-no-word"),
     ("tools/skyguard/targets.py", '        word = _PWD_SUBST[dialect].sub(lambda _m: cwd, word)\n', '        pass\n',
      'test_the_working_folder_by_command_substitution_is_the_working_folder[rm -rf "$(pwd)/Data"-bash]', "pwd-substitution"),
-    ("tools/skyguard/writes.py", '            elif is_settings_folder(a_bulk, roots) and (\n', '            elif False and (\n',
-     'test_a_tree_into_the_settings_folder_needs_the_saves_approval[tar -xf p.tar -C "<C>"-bash]', "settings-folder-bulk"),
-    ("tools/skyguard/writes.py", '            if is_settings_folder(a_dst, roots) and any(_may_bring_saves(s) for s in srcs) and _settings_hold_saves(\n', '            if False and (\n',
-     'test_a_tree_into_the_settings_folder_needs_the_saves_approval[cp -r bk/Saves "<C>/"-bash]', "settings-folder-copy"),
-    ("tools/skyguard/writes.py", '            if is_settings_folder(a_dst, roots) and any(_may_bring_saves(s) for s in srcs) and _settings_hold_saves(\n', '            if is_settings_folder(a_dst, roots) and (\n',
-     'test_a_named_settings_file_is_not_a_bulk_save_change[cp Skyrim.ini "<C>/"]', "settings-folder-named-file"),
     ("tools/skyguard/deletes.py", '                if ua is not None and _in_game_data(place(ua)[1], roots):', '                if False:',
      "test_a_listing_of_data_piped_into_a_delete_is_refused[ls Data/* | xargs rm -rf-bash]", "piped-data-listing"),
     ("tools/skyguard/deletes.py", '    return any(low.startswith(d.rstrip("/").lower() + "/data/") for d in roots.install_dirs)', '    return any(low.startswith(d.rstrip("/").lower() + "/") for d in roots.install_dirs)',
@@ -12129,16 +11657,6 @@ MUTATIONS += [pytest.param(path, anchor, replacement, _OG + test, id="opus-" + n
      "test_a_script_reading_its_input_runs[python x.py <<< \"write( a b\"]", "stdin-data-runs"),
     ("tools/skyguard/writes.py", '''    return "i" not in seen and "PYTHONINSPECT" not in command and program != "stdin"\n''', '''    return "PYTHONINSPECT" not in command and program != "stdin"\n''',
      "test_a_body_python_runs_as_code_must_still_parse[python -i x.py <<'EOF'\\nnot python at open(p, m)\\nEOF]", "stdin-inspect-is-code"),
-    ("tools/skyguard/writes.py", '            if a_dst is None and _unplaced_save(dst):\n', '            if False:\n',
-     "test_an_unresolvable_literal_save_path_is_refused", "unplaced-save-shell"),
-    ("tools/skyguard/writes.py", '''not re.search(r"[$`%]", word) and bool''', '''bool''',
-     "test_a_run_time_folder_is_a_known_limit", "unplaced-runtime-value"),
-    ("tools/skyguard/write_rules.py", '        if a is None and _unplaced_save(file_path):\n', '        if False:\n',
-     "test_the_write_tool_refuses_a_short_name_save_path", "unplaced-save-write-tool"),
-    ("tools/skyguard/writes.py", '        elif copied and not word.moved and is_save_folder(a, roots) and word.source.lower().endswith(SAVE_EXTS) and not word.tree:\n', '        elif False:\n',
-     "test_a_python_copy_into_saves_gets_the_save_policy[import shutil; shutil.copy('C:/bk/main.ess', r'<C>/Saves/')-S-SAVE-BACKUP]", "python-copy-one-save"),
-    ("tools/skyguard/writes.py", '        elif copied and not word.moved and (is_save_folder(a, roots) or (\n', '        elif False and (is_save_folder(a, roots) or (\n',
-     "test_a_python_copy_into_saves_gets_the_save_policy[import shutil; shutil.copytree('bk', r'<C>/Saves', dirs_exist_ok=True)-S-SAVE-APPROVAL]", "python-copytree-saves"),
     ("tools/skyguard/shellparse.py", '    "gsudo": (frozenset(("-u", "--user", "-i", "--integrity")), 0),\n', '',
      "test_a_wrapped_or_other_delete_is_read[gsudo rm -rf Data]", "wrapper-gsudo"),
     ("tools/skyguard/deletes.py", '"rimraf", "trash", "trash-put"))', '"rimraf"))', "test_a_wrapped_or_other_delete_is_read[trash Data]", "delete-trash"),
@@ -12148,16 +11666,8 @@ MUTATIONS += [pytest.param(path, anchor, replacement, _OG + test, id="opus-" + n
      'test_a_wrapped_or_other_delete_is_read[forfiles /p Data /s /c "cmd /c del @path"]', "delete-forfiles"),
     ("tools/skyguard/writes.py", '''_CMD_SWITCH = re.compile(r"/{1,2}[A-Za-z?\\-]+(:\\S*)?")''', '''_CMD_SWITCH = re.compile(r"/[A-Za-z?\\-]+(:\\S*)?")''',
      "test_git_bash_xcopy_switches_are_switches", "xcopy-double-slash"),
-    ("tools/skyguard/writes.py", '        if any(n.lower().endswith(SAVE_EXTS) for n in names):', '        if True:',
-     'test_a_tree_into_a_settings_folder_with_no_saves_needs_no_approval[tar -xf p.tar -C "<C>"-bash]', "settings-folder-empty-saves"),
-    ("tools/skyguard/writes.py", '            if e.program in ("rsync", "scp") and is_save(a_bulk, roots):\n', '            if False:\n',
-     "test_rsync_of_one_named_save_is_one_save", "rsync-one-save"),
-    ("tools/skyguard/writes.py", '                if named and all(s.lower().endswith(SAVE_EXTS) for s in named):\n', '                if False:\n',
-     "test_rsync_of_one_named_save_is_one_save", "rsync-named-into-folder"),
     ("tools/skyguard/shellparse.py", '''(?:(?:then|do|else|elif|builtin|command|!)[ \\t]+)*(?:shift''', '''(?:shift''',
      "test_a_shift_after_a_keyword_moves_the_arguments[f() { if true; then shift; fi; rm -rf \"$1\"; }; f /tmp/x Data]", "shift-after-keyword"),
-    ("tools/skyguard/shell_rules.py", '            if e.argv[k] in ("-X", "-W", "--check-hash-based-pycs"):\n', '            if False:\n',
-     "test_the_native_adapter_is_read_past_a_valued_python_option", "adapter-past-valued-option"),
     ("tools/skyguard/deletes.py", '    if p in ("io.file.move", "io.directory.move", "io.file.replace"):\n', '    if p in ("io.file.move", "io.directory.move"):\n',
      "test_file_replace_takes_its_source_away", "file-replace-source"),
     ("tools/skyguard/shellparse.py", '''        if self._brace_scan(j, "\\"" if in_dq else "'\\"") != end:\n''', '''        if self._brace_scan(j, "'\\"") != end:\n''',
@@ -12258,10 +11768,6 @@ MUTATIONS += [pytest.param(path, anchor, replacement, test, id="opus2-" + name)
      "tests/test_review_v4_35f8_fixes.py::test_the_wrapped_command_is_read_past_its_options[runuser -l -c 'rm -rf Data' root]", "runuser-c"),
     ("tools/skyguard/shellparse.py", '(?P<lead>[;&|({\\n)]))[ \\t]*(?:(?:then|do', '(?P<lead>[;&|({\\n]))[ \\t]*(?:(?:then|do',
      _OG + "test_a_shift_in_a_one_line_case_arm_moves_the_arguments", "shift-in-case-arm"),
-    ("tools/skyguard/writes.py", 'e.program not in ("rsync", "scp") or any(_may_bring_saves(s) for s in _remote_copy_operands(e)[:-1])) and (', 'True) and (',
-     _OG + "test_one_named_settings_file_is_not_a_bulk_save_change[rsync a.ini '<C>/']", "rsync-named-settings-file"),
-    ("tools/skyguard/writes.py", '    for _folder, _dirs, names in os.walk(physical.rstrip("/\\\\") + "/Saves", onerror=failed.append):', '    for _folder, _dirs, names in [next(os.walk(physical.rstrip("/\\\\") + "/Saves", onerror=failed.append), ("", [], []))]:',
-     _OG + "test_saves_one_folder_down_still_count", "settings-saves-one-down"),
     ("tools/skyguard/shellparse.py", '                k += 0 if j < len(w) else 1\n', '                pass\n',
      _OG + "test_an_option_value_is_not_a_script_name", "stdin-option-value"),
     ("tools/skyguard/deletes.py", '            renamed = _INTERP_RENAME_LIT.match(code, m.start())\n', '            renamed = _INTERP_RENAME_LIT.search(code)\n',
@@ -12310,8 +11816,6 @@ MUTATIONS += [pytest.param("tools/skyguard/writes.py", anchor, replacement, test
 # The review of 35f8cd0: one revert per fix.
 _F35 = "tests/test_review_v4_35f8_fixes.py::"
 MUTATIONS += [pytest.param(path, anchor, replacement, test, id="f35-" + name) for path, anchor, replacement, test, name in [
-    ("tools/skyguard/writes.py", '            if is_settings_folder(a_dst, roots) and _keeps_source_folders(e) and _settings_hold_saves(', '            if False and _settings_hold_saves(',
-     _F35 + "test_a_relative_rsync_into_the_settings_folder_needs_the_saves_approval", "rsync-relative"),
     ("tools/skyguard/shellparse.py", '        if m.group("lead") != ")" or re.search(r"\\bcase\\b", body[:m.start()]):\n', '        if True:\n',
      _F35 + "test_a_shift_after_a_closing_bracket_that_is_no_case_arm_moves_nothing", "shift-bracket-case-only"),
     ("tools/skyguard/shellparse.py", '"-s", "--shell", "-w",\n', '"-s", "--shell", "-l", "--login", "-w",\n',
@@ -12328,44 +11832,16 @@ MUTATIONS += [pytest.param(path, anchor, replacement, test, id="f35-" + name) fo
      _F35 + "test_oar_user_settings_are_not_treated_as_the_mods_data", "oar-user-json"),
     ("tools/mod-install.py", '        plan = replace_unedited_mod_data(plan, previous_install(records_dir() / "{}.files.txt".format(name)))\n', '        pass\n',
      "tests/test_mod_install.py::test_mo2_update_replaces_unedited_mod_data_and_the_plan_says_so", "mod-data-replaced"),
-    ("tools/skyguard/writes.py", 're.fullmatch(r"--pa(?:r(?:e(?:n(?:ts?)?)?)?)?", w)', 'w == "--parents"',
-     _F35 + "test_every_spelling_of_a_parents_copy_into_the_settings_folder_needs_the_approval[cp --parent Saves/main.ess '<C>/']", "parents-prefix"),
-    ("tools/skyguard/deletes.py", 'return (True, m.group(1) or None) if m else (False, None)', 'return (True, None) if m else (False, None)',
-     _F35 + "test_every_spelling_of_a_parents_copy_into_the_settings_folder_needs_the_approval[cp --parents -t'<C>' Saves/main.ess]", "target-joined"),
-    ("tools/skyguard/writes.py", '(_name(s).lower().endswith(SAVE_EXTS) or _may_bring_saves(s)) for s in sources)', 'True for s in sources)',
-     _F35 + "test_a_named_settings_file_is_no_bulk_save_change_however_it_is_copied[cp --parents '<C>/a.ini' '<C>/']", "named-file-no-approval"),
     ("tools/skyguard/writes.py", 'elif w in (_RSYNC_VALUED if p == "rsync" else _CP_VALUED):', 'elif w in _CP_VALUED:',
-     _F35 + "test_a_named_settings_file_is_no_bulk_save_change_however_it_is_copied[rsync -e /usr/bin/ssh -R a.ini '<C>/']", "rsync-rsh-value"),
+     _F35 + "test_rsyncs_remote_shell_value_is_no_copied_file[rsync -e /usr/bin/ssh -R a.ini b/]", "rsync-rsh-value"),
     ("tools/skyguard/writes.py", 'len(argv) and p != "rsync":', 'len(argv):',
      _F35 + "test_to_rsync_t_keeps_times_and_names_no_destination", "rsync-t-is-times"),
-    ("tools/skyguard/writes.py", 'any(_may_bring_saves(s) for s in _remote_copy_operands(e)[:-1])) and (', 'any(_may_bring_saves(s) for s in _plain_operands(e.argv)[:-1])) and (',
-     _F35 + "test_a_named_settings_file_is_no_bulk_save_change_however_it_is_copied[rsync -e /usr/bin/ssh -R a.ini '<C>/']", "rsync-rsh-bulk"),
-    ("tools/skyguard/writes.py", '(literal(i) or path_argument(i) for i in items)', '(literal(i) for i in items)',
-     _F35 + "test_every_spelling_of_a_python_save_delete_is_read[import os as o; from pathlib import Path; o.remove(Path('<C>/Saves/main.ess'))]", "delete-path-argument"),
-    ("tools/skyguard/writes.py", 'first.elts if isinstance(first, (ast.List, ast.Tuple, ast.Set)) else [first] if first is not None else []', '[first] if first is not None else []',
-     _F35 + "test_every_spelling_of_a_python_save_delete_is_read[from send2trash import send2trash; send2trash(['<C>/Saves/main.ess'])]", "delete-list"),
-    ("tools/skyguard/writes.py", 'given.get("path", given.get("paths"))', 'None',
-     _F35 + "test_every_spelling_of_a_python_save_delete_is_read[from os import remove; remove(path='<C>/Saves/main.ess')]", "delete-keyword"),
-    ("tools/skyguard/writes.py", '"shutil", "send2trash"):', '"shutil"):',
-     _F35 + "test_every_spelling_of_a_python_save_delete_is_read[import send2trash; send2trash.send2trash('<C>/Saves/main.ess')]", "delete-module"),
     ("tools/skyguard/shellparse.py", '            if c in "WX":\n', '            if c == "?":\n',
      _F35 + "test_only_pythons_own_i_counts", "i-inside-wignore"),
     ("tools/skyguard/shellparse.py", '    if python:\n        seen, program = python_options(argv)\n', '    if True:\n        seen, program = python_options(argv)\n',
      _F35 + "test_an_option_value_stops_at_a_file_name_for_perl", "perl-w-no-value"),
     ("tools/skyguard/shellparse.py", '                k += 0 if j < len(w) else 1\n', '                pass\n',
      _F35 + "test_a_python_option_value_with_a_dot_still_reads_its_program_from_a_pipe[-X pycache_prefix=.cache]", "dotted-option-value"),
-    ("tools/skyguard/writes.py", '(_name(s).lower().endswith(SAVE_EXTS) or _may_bring_saves(s)) for s in sources)', '(_name(s).endswith(SAVE_EXTS) or _may_bring_saves(s)) for s in sources)',
-     _F35 + "test_a_kept_folder_save_of_any_case_needs_the_approval[cp --parents Saves/MAIN.ESS '<C>/']", "kept-save-any-case"),
-    ("tools/skyguard/writes.py", '_plain_operands_valued(e.argv, _SCP_VALUED if e.program == "scp" else _RSYNC_VALUED)', '_plain_operands_valued(e.argv, _RSYNC_VALUED + _SCP_VALUED)',
-     _F35 + "test_a_switch_of_rsync_is_not_an_option_value[rsync -P main.ess '<C>/Saves/']", "rsync-switch-no-value"),
-    ("tools/skyguard/writes.py", '_plain_operands_valued(e.argv, _SCP_VALUED if e.program == "scp" else _RSYNC_VALUED)', '_plain_operands_valued(e.argv, _RSYNC_VALUED)',
-     _F35 + "test_an_scp_option_value_is_not_a_source", "scp-option-value"),
-    ("tools/skyguard/deletes.py", '_CP_TARGET = re.compile(r"-[abdfHiLlnPpRrsTuvxZ]*t(.*)")', '_CP_TARGET = re.compile(r"-t(.*)")',
-     _F35 + "test_every_spelling_of_cps_target_folder_is_read[cp -vt '<C>/Saves' main.ess]", "target-clustered"),
-    ("tools/skyguard/deletes.py", 'if len(head) >= 3 and "--target-directory".startswith(head):', 'if head == "--target-directory":',
-     _F35 + "test_every_spelling_of_cps_target_folder_is_read[cp --target='<C>/Saves' x/main.ess]", "target-shortened"),
-    ("tools/skyguard/writes.py", 'if any(a.name == "*" for a in node.names):', 'if False:',
-     _F35 + "test_a_star_import_or_a_set_of_saves_is_read[from os import *; remove('<C>/Saves/main.ess')]", "star-import-delete"),
     ("tools/skyguard/shellparse.py", """        return program == "stdin" or "i" in seen\n""", """        return program == "stdin"\n""",
      _F35 + "test_python_i_reads_a_pipe_after_its_script[-i tool.py]", "python-i-reads-pipe"),
     ("tools/skyguard/shellparse.py", """tuple(argv[k + 1:k + 2]) not in ((), ("-",))""", """tuple(argv[k + 1:k + 2]) != ()""",
@@ -12382,3 +11858,534 @@ MUTATIONS += [pytest.param(path, anchor, replacement, test, id="f35-" + name) fo
      _F35 + "test_every_python_option_spelling_still_reads_its_program_from_a_pipe[-E]", "python-e-is-no-code"),
 ]]
 
+
+# Issue #26 (round 3): a computed Python write target in code that names a save location. writes.python_computed_writes
+# (what is written and where it can land), _location_literals / _path_literals / _shallow_path_strings (which literals
+# name the location), names_save_location, and the hook in writes.scan. One twin per clause; reverse twins prove a
+# clause does not over-reach (a literal stays literal, a read stays a read, text stays text).
+_I26 = "tests/test_issue10_shapes.py::"
+_R26 = "tests/test_issue26_review.py::"
+_T26 = "tests/test_issue26_round3.py::"
+_T4 = "tests/test_issue26_round4.py::"
+_W = "tools/skyguard/writes.py"
+MUTATIONS += [pytest.param(path, anchor, replacement, test, id="i26-" + name)
+              for path, anchor, replacement, test, name in [
+]]
+_SV26 = "tests/test_issue26_review.py::test_the_refusal_says_what_to_do_instead"
+
+# #26 round 8 (round 7 review): the word scan spellings, star names from every table, computed deletes.
+_T8 = "tests/test_issue26_round8.py::"
+MUTATIONS += [pytest.param(_W, anchor, replacement, test if "::" in test and not test.startswith("R4::") else
+                           (_T4 + test[4:] if test.startswith("R4::") else _T8 + test), id="i26-" + name)
+              for anchor, replacement, test, name in [
+]]
+# Headless cleanup when a SteamVR helper exits by itself (ported from the Souls lifecycle repair, 2026-11-09).
+# One twin per clause of vr_background_desktop.terminate_verified's proved-exit excuse, plus the stop wiring.
+_HX = "tests/test_headless_helper_exit.py::"
+MUTATIONS += [pytest.param(path, anchor, replacement, _HX + test, id="helper-exit-" + name)
+              for path, anchor, replacement, test, name in [
+    ("tools/vr_background_desktop.py", "        if error == 87 and process_generation_limited(pid) is None:\n",
+     "        if False:\n", "test_a_helper_already_gone_is_recorded_as_exited", "gone-not-excused"),
+    ("tools/vr_background_desktop.py", "        if error == 87 and process_generation_limited(pid) is None:\n",
+     "        if error == 87:\n", "test_an_unopenable_pid_still_listed_keeps_its_error", "gone-unproved"),
+    ("tools/vr_background_desktop.py", "        if error == 87 and process_generation_limited(pid) is None:\n",
+     "        if process_generation_limited(pid) is None:\n", "test_open_access_denied_is_never_an_exit",
+     "open-denied-excused"),
+    ("tools/vr_background_desktop.py", "            if kernel32.WaitForSingleObject(handle, int(EXIT_SETTLE_SECONDS * 1000)) == 0:",
+     "            if False:", "test_real_process_that_exited_while_a_handle_holds_it_is_exited", "rundown-not-excused"),
+    ("tools/vr_background_desktop.py", "            if kernel32.WaitForSingleObject(handle, int(EXIT_SETTLE_SECONDS * 1000)) == 0:",
+     "            if True:", "test_a_live_helper_that_refuses_termination_keeps_its_error", "live-failure-excused"),
+    ("tools/vr-headless.py", '            if terminate_verified(x["Id"], x["StartTime"]) == "exited":',
+     "            if terminate_verified(x[\"Id\"], x[\"StartTime\"]) and False:",
+     "test_stop_completes_when_a_helper_exits_by_itself", "stop-ignores-exited"),
+]]
+MUTATIONS += [pytest.param("tools/vr-headless.py", anchor, replacement, _HX + test, id="helper-exit-" + name)
+              for anchor, replacement, test, name in [
+    ("                if census is None:\n", "                if True:\n",
+     "test_many_late_helpers_are_all_terminated_within_the_budget", "census-per-helper"),
+    ("        if passes and time.monotonic() > deadline:\n", "        if time.monotonic() > deadline:\n",
+     "test_a_census_slower_than_the_whole_budget_still_terminates_what_it_proved", "deadline-before-first-pass"),
+]]
+# A failure while the managed game runs (Souls control05 shape): the toolkit keeps the orderly quit and the error.
+_RF = "tests/test_headless_run_failure.py::"
+MUTATIONS += [pytest.param("tools/vr-headless.py", anchor, replacement, _RF + test, id="run-failure-" + name)
+              for anchor, replacement, test, name in [
+    ("            rc = cmd_stop()                      # owned processes exist: orderly exit, then restore",
+     "            rc = cmd_off()                      # owned processes exist: orderly exit, then restore",
+     "test_a_failure_while_the_game_runs_still_quits_it_once_then_restores[inventory]", "cleanup-without-quit"),
+    ("        error = e\n        raise\n    finally:\n", "        error = e\n        return 2\n    finally:\n",
+     "test_a_failure_while_the_game_runs_still_quits_it_once_then_restores[ctrl-c]", "ctrl-c-swallowed"),
+    ('            print("ERROR during the managed session', '            (lambda *a, **k: None)("ERROR during the managed session',
+     "test_the_original_error_survives_a_cleanup_that_also_fails", "original-error-dropped"),
+]]
+
+# #26 round 9 (round 8 review): unbound/positional unlink, counted functions as values, bash quoting.
+_T9 = "tests/test_issue26_round9.py::"
+MUTATIONS += [pytest.param(_W, anchor, replacement, _T9 + test, id="i26-" + name)
+              for anchor, replacement, test, name in [
+]]
+# #26 round 10 (round 9 review): bound methods as values, nt/posix spellings, $"..." and line continuations.
+MUTATIONS += [pytest.param(_W, anchor, replacement, "tests/test_issue26_round9.py::" + test, id="i26-" + name)
+              for anchor, replacement, test, name in [
+]]
+# #26 conservative scan (user decision 2026-11-10): every call judged or a known read; one twin per clause.
+_T11 = "tests/test_issue26_round11.py::"
+MUTATIONS += [pytest.param(_W, anchor, replacement, _T11 + test, id="i26-" + name)
+              for anchor, replacement, test, name in [
+]]
+
+# #26 round 12 (safe-list review): rebinding, judged file writes, one-level reads, open mode, copy.
+_I26R12 = "tests/test_issue26_round12.py::"
+MUTATIONS += [pytest.param(_W, anchor, replacement, _I26R12 + test, id="i26-" + name)
+              for anchor, replacement, test, name in [
+]]
+
+# #26 round 13 (second safe-list review): unpacking, decoy imports, O_RDONLY, change-method values.
+_I26R13 = "tests/test_issue26_round13.py::"
+MUTATIONS += [pytest.param(_W, anchor, replacement, (test if "::" in test else _I26R13 + test) if not test.startswith("test_the_safe_list") else "tests/test_issue26_round12.py::" + test, id="i26-" + name)
+              for anchor, replacement, test, name in [
+]]
+
+# #26 round 14 (third safe-list review): size cap, judged calls as values, shadowed defs, O_RDONLY, depth.
+MUTATIONS += [pytest.param(path, anchor, replacement, "tests/test_issue26_round14.py::" + test, id="i26-" + name)
+              for path, anchor, replacement, test, name in [
+]]
+
+# #26 twin cleanup (2026-11-10): one twin per guarded clause, each against the body its mutation flips.
+MUTATIONS += [pytest.param(path, anchor, replacement,
+                           "tests/test_issue26_layers.py::test_each_guarded_clause_marks_its_body_computed[" + name + "]",
+                           id="i26-" + name)
+              for path, anchor, replacement, name in [
+]]
+
+# Save vault at session start (2026-11-11): one twin per clause of run._vault_note, and one per wiring site.
+MUTATIONS += [pytest.param("tools/skyguard/run.py", anchor, replacement, "tests/test_session_vault_note.py::" + test,
+                           id="svn-" + name)
+              for anchor, replacement, test, name in [
+    ('    if not (own and tool.is_file()) or env.get("SKYGUARD_SAVE_VAULT", "").strip().lower() == "off":',
+     '    if not tool.is_file() or env.get("SKYGUARD_SAVE_VAULT", "").strip().lower() == "off":',
+     'test_nothing_for_a_project_that_is_not_this_toolkit', 'any-project'),
+    ('    if not (own and tool.is_file()) or env.get("SKYGUARD_SAVE_VAULT", "").strip().lower() == "off":',
+     '    if not (own and tool.is_file()):', 'test_the_vault_switch_silences_the_line_and_the_start', 'switch-ignored'),
+    ('    in_test = bool(env.get("PYTEST_CURRENT_TEST") or ', '    in_test = bool(None or ',
+     'test_under_the_test_harness_no_watcher_starts_and_no_real_heartbeat_is_read[PYTEST_CURRENT_TEST]',
+     'ignores-pytest'),
+    (' or env.get("HARNESS_FIXTURE_ROOT"))   # no opt-in', ' or None)   # no opt-in',
+     'test_under_the_test_harness_no_watcher_starts_and_no_real_heartbeat_is_read[HARNESS_FIXTURE_ROOT]',
+     'ignores-launcher'),
+    ('    if in_test and not env.get("SAVE_VAULT_DIR"):\n        return ""', '    if False:\n        return ""',
+     'test_under_the_test_harness_no_watcher_starts_and_no_real_heartbeat_is_read[PYTEST_CURRENT_TEST]',
+     'reads-the-real-heartbeat-in-tests'),
+    ('    if stopped and not in_test and not sweep_off:', '    if stopped and not sweep_off:',
+     'test_under_the_test_harness_no_watcher_starts_and_no_real_heartbeat_is_read[PYTEST_CURRENT_TEST]',
+     'starts-in-tests'),
+    ('    if stopped and not in_test and not sweep_off:', '    if stopped and not in_test:',
+     'test_the_sweep_switch_also_stops_the_watcher_start', 'starts-despite-the-sweep-switch'),
+    ('    if stopped and not in_test and not sweep_off:', '    if not in_test and not sweep_off:',
+     'test_a_running_vault_is_one_line_and_starts_nothing', 'starts-a-running-vault'),
+    ('    stopped = "NOT RUNNING" in line ', '    stopped = "NOT RUNNING" in line + ini_line ',
+     'test_an_ini_vault_down_alone_is_shown_and_left_to_the_running_watcher', 'ini-down-restarts'),
+    ('    if ini_alive != alive:', '    if False:',
+     'test_a_vault_with_a_problem_is_reported_and_not_restarted', 'ini-line-dropped'),
+    ('        out = _vault_note(a.project) + out\n        _session_snapshot(a.project, req.source',
+     '        _session_snapshot(a.project, req.source',
+     'test_both_session_starts_show_the_vault_line[codex-session-start-payload1]', 'codex-not-wired'),
+    ('        out = _vault_note(a.project) + out\n        _session_snapshot(a.project, "" if p["empty"]',
+     '        _session_snapshot(a.project, "" if p["empty"]',
+     'test_both_session_starts_show_the_vault_line[claude-session-kb-guard-payload0]', 'claude-not-wired'),
+]]
+
+# setup.sh and the save vault's sign-in task (2026-11-11): registered only when asked for; a failure is exit 1.
+_SSV = "tests/test_setup_save_vault.py::"
+MUTATIONS += [
+    pytest.param("setup.sh", '        --save-vault-task) WANT_VAULT_TASK=yes; shift ;;',
+                 '        --save-vault-task) WANT_VAULT_TASK=no; shift ;;',
+                 _SSV + "test_the_flag_tries_to_register_and_a_failure_is_exit_1", id="ssv-flag-ignored"),
+    pytest.param("setup.sh", 'if [ "$WANT_VAULT_TASK" = yes ] && [ -n "$VAULT_TASK_RC" ] && [ "$VAULT_TASK_RC" != 0 ]; then',
+                 'if false; then',
+                 _SSV + "test_the_flag_tries_to_register_and_a_failure_is_exit_1", id="ssv-failure-exits-0"),
+    pytest.param("setup.sh", '    if [ "$WANT_VAULT_TASK" = yes ]; then\n        if [ -z "$PY_FOUND" ]; then\n            VAULT_TASK_RC=2',
+                 '    if true; then\n        if [ -z "$PY_FOUND" ]; then\n            VAULT_TASK_RC=2',
+                 _SSV + "test_setup_names_the_vault_and_registers_no_task_unasked", id="ssv-registers-unasked",
+                 marks=pytest.mark.skipif(sys.platform != "win32", reason="the sign-in task branch is Windows only")),
+]
+
+# The watcher kept running from every host's pre-tool path (2026-11-11): one twin per clause of vault_watch.ensure.
+_VW = "tests/test_vault_watch.py::"
+_VW_MARKERS = '    if any(e.get(k) for e in (env, os.environ) for k in ("PYTEST_CURRENT_TEST", "HARNESS_FIXTURE_ROOT")):'
+MUTATIONS += [pytest.param("tools/skyguard/vault_watch.py", anchor, replacement, _VW + test, id="vw-" + name)
+              for anchor, replacement, test, name in [
+    ('    if not (own and TOOL.is_file()):\n        return ""', '    if not TOOL.is_file():\n        return ""',
+     'test_nothing_for_a_project_that_is_not_this_toolkit', 'any-project'),
+    ('    if env.get("SKYGUARD_SAVE_VAULT", "").strip().lower() == "off":\n        return ""',
+     '    if False:\n        return ""', 'test_each_switch_stops_the_start[SKYGUARD_SAVE_VAULT]', 'vault-switch-ignored'),
+    ('    if env.get("SKYGUARD_HOUSEKEEP_SWEEP", "").strip().lower() == "off":\n        return ""',
+     '    if False:\n        return ""', 'test_each_switch_stops_the_start[SKYGUARD_HOUSEKEEP_SWEEP]',
+     'sweep-switch-ignored'),
+    (_VW_MARKERS, _VW_MARKERS.replace("(env, os.environ)", "(env,)"),
+     'test_under_a_test_harness_nothing_is_started[process-PYTEST_CURRENT_TEST]', 'process-markers-unread'),
+    (_VW_MARKERS, _VW_MARKERS.replace("(env, os.environ)", "(os.environ,)"),
+     'test_under_a_test_harness_nothing_is_started[mapping-HARNESS_FIXTURE_ROOT]', 'mapping-markers-unread'),
+    (_VW_MARKERS, _VW_MARKERS.replace('("PYTEST_CURRENT_TEST", "HARNESS_FIXTURE_ROOT")', '("HARNESS_FIXTURE_ROOT",)'),
+     'test_under_a_test_harness_nothing_is_started[process-PYTEST_CURRENT_TEST]', 'starts-under-pytest'),
+    (_VW_MARKERS, _VW_MARKERS.replace('("PYTEST_CURRENT_TEST", "HARNESS_FIXTURE_ROOT")', '("PYTEST_CURRENT_TEST",)'),
+     'test_under_a_test_harness_nothing_is_started[process-HARNESS_FIXTURE_ROOT]', 'starts-under-the-launcher'),
+    ('        if running(root, now):\n            return ""', '        if False:\n            return ""',
+     'test_a_running_watcher_costs_nothing_and_starts_nothing', 'restarts-a-running-watcher'),
+    ('            if now - marker.stat().st_mtime < THROTTLE_S:\n                return ""',
+     '            if False:\n                return ""',
+     'test_a_start_is_tried_at_most_once_per_throttle_period', 'no-throttle'),
+    ('        return now - float(beat.get("last_sweep", 0)) <= STALE_S', '        return True',
+     'test_a_stopped_watcher_is_started_once_and_said', 'stale-heartbeat-reads-as-running'),
+    ('        return FAILED', '        return STARTED',
+     'test_a_launch_that_fails_is_said_and_never_raises', 'failed-launch-says-started'),
+]]
+MUTATIONS += [
+    pytest.param("tools/skyguard/portable.py", "    vault_note = vault_watch.ensure(str(project))", '    vault_note = ""',
+                 _VW + "test_every_pre_tool_check_looks_at_the_watcher_and_passes_its_note_on", id="vw-not-wired"),
+    pytest.param("tools/skyguard/run.py", "            vault_watch.start(project)\n", "            pass\n",
+                 "tests/test_session_vault_note.py::test_a_stopped_vault_is_said_and_its_watcher_is_started_detached",
+                 id="svn-session-start-launch-not-wired"),
+]
+
+# Save vault (2026-11-10): one twin per guarded clause of tools/save_vault.py.
+MUTATIONS += [pytest.param("tools/save_vault.py", anchor, replacement, "tests/test_save_vault.py::" + test,
+                           id="sv-" + name)
+              for anchor, replacement, test, name in [
+    ('    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("HARNESS_FIXTURE_ROOT"):\n        raise SystemExit("install-task: refused',
+     '    if os.environ.get("HARNESS_FIXTURE_ROOT"):\n        raise SystemExit("install-task: refused',
+     'test_no_logon_task_is_registered_under_a_test_harness[PYTEST_CURRENT_TEST]', 'task-under-pytest'),
+    ('    if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("HARNESS_FIXTURE_ROOT"):\n        raise SystemExit("install-task: refused',
+     '    if os.environ.get("PYTEST_CURRENT_TEST"):\n        raise SystemExit("install-task: refused',
+     'test_no_logon_task_is_registered_under_a_test_harness[HARNESS_FIXTURE_ROOT]', 'task-under-launcher'),
+    ('        if now - self.state["seen"][key][1] < SETTLE_S:\n            return False',
+     '        if False:\n            return False', 'test_a_changed_pair_waits_one_settle_period', 'settle-clock'),
+    ('        if now - pair["newest"] < SETTLE_S:\n            return False',
+     '        if False:\n            return False', 'test_a_young_file_waits_even_on_first_sight', 'settle-age'),
+    ('        if pair["tmp"] and not ignore_tmp:\n            return False',
+     '        if False:\n            return False', 'test_tmp_files_are_never_captured', 'tmp-sibling'),
+    ('ext = next((e for e in self.exts if low.endswith(e)), None)',
+     'ext = next((e for e in self.exts if e in low), None)', 'test_an_old_tmp_file_is_never_kept_as_a_save', 'exact-suffix'),
+    ('                    if age < TMP_LIVE_S:',
+     '                    if True:', 'test_a_leftover_tmp_does_not_block_its_pair_forever', 'tmp-live-age'),
+    ('                self.store.load(tx)',
+     '                self.store.inspect(tx)', 'test_a_blob_that_does_not_verify_is_named', 'verify-rehashes'),
+    ('            with open(path, "ab") as stream:',
+     '            with open(path, "wb") as stream:', 'test_events_survive_a_second_capture', 'events-append-only'),
+    ('                key = ckey + "|" + stem.casefold()',
+     '                key = ckey + "|" + entry.name.casefold()', 'test_one_version_holds_both_members', 'pair-by-stem'),
+    ('note = "co-save missing" if missing == [".skse"] else',
+     'note = "" if missing == [".skse"] else', 'test_a_missing_cosave_is_recorded_not_an_error', 'cosave-missing-noted'),
+    ('        if len(pair["members"]) < len(self.exts) and now - pair["newest"] < PAIR_GRACE_S:',
+     '        if False:', 'test_a_late_cosave_joins_its_pair', 'partner-grace'),
+    ('                if misses[key] >= VANISH_MISSES:',
+     '                if misses[key] >= 1:', 'test_one_failed_listing_is_not_a_vanish', 'vanish-two-misses'),
+    ('                if canonical(was["folder"]) not in readable:\n                    continue',
+     '                if False:\n                    continue', 'test_unreadable_folder_is_not_vanished', 'unreadable-not-vanished'),
+    ('                if was.get("gone"):\n',
+     '                if False:\n', 'test_a_removed_pair_is_recorded_vanished_once', 'vanished-once'),
+    ('                        was["gone"] = False                   # back again; a changed signature gets a new version',
+     '                        pass', 'test_a_returning_pair_is_no_longer_gone', 'return-clears-gone'),
+    ('    if age > STALE_S:',
+     '    if age > STALE_S * 1000:', 'test_stale_heartbeat_reports_watcher_down', 'stale-heartbeat'),
+    ('            limit = 1 if self.game_running() else len(queue)',
+     '            limit = len(queue)', 'test_only_one_pair_per_pass_while_the_game_runs', 'one-pair-while-busy'),
+    ('        tries = BUSY_TRIES if self.game_running() else len(queue)',
+     '        tries = 1 if self.game_running() else len(queue)', 'test_one_pair_that_cannot_be_kept_does_not_starve_the_rest', 'no-starvation'),
+    ('                deferred += 1                                  # one process check per pass, not one per pair\n                continue',
+     '                deferred += 1\n                tried += 1\n                continue', 'test_deferred_pairs_do_not_starve_a_same_volume_folder', 'deferred-not-a-try'),
+    ('        if failing:',
+     '        if False:', 'test_one_pair_that_cannot_be_kept_does_not_starve_the_rest', 'failing-reported'),
+    ('            if k not in pairs or (kept_after.get(k) or {}).get("sig") == pairs[k]["sig"]:',
+     '            if False:', 'test_a_failure_count_clears_once_the_pair_is_kept_elsewhere_or_gone', 'fails-cleared'),
+    ('errors + ["folder unreadable: " + f for f in self.unreadable]',
+     'errors', 'test_an_unreadable_folder_is_reported', 'unreadable-reported'),
+    ('    except (OSError, subprocess.SubprocessError):\n        return True\n    if not out.strip():',
+     '    except (OSError, subprocess.SubprocessError):\n        return False\n    if not out.strip():', 'test_busy_counts_unknown_as_running', 'unknown-is-busy'),
+    ('    if not out.strip():\n        return True',
+     '    if not out.strip():\n        return False', 'test_busy_counts_an_empty_process_list_as_running', 'empty-list-is-busy'),
+    ('                        os.link(member["path"], link)\n',
+     '                        raise OSError(1, "no link")\n', 'test_the_capture_never_reads_a_live_save', 'hard-link-snapshot'),
+    ('                        if not same_volume:\n                            raise OSError("another volume")',
+     '                        if False:\n                            raise OSError("another volume")', 'test_another_volume_is_copied_never_linked', 'other-volume-not-linked'),
+    ('                        st = os.stat(member["path"])',
+     '                        st = os.stat(link)', 'test_a_locked_save_is_kept_by_copy', 'copy-checks-live-stat'),
+    ('                    if [st.st_size, st.st_mtime_ns] != [member["size"], member["mtime_ns"]]:',
+     '                    if False:', 'test_a_save_replaced_between_scan_and_link_is_not_kept_under_the_old_signature', 'link-stat-recheck'),
+    ('                        if not same_volume and self.is_busy():',
+     '                        if False:', 'test_another_volume_waits_if_the_game_starts_during_the_pass', 'other-volume-waits'),
+    ('            if not ignore_tmp and self._writing_now(pair):',
+     '            if False:', 'test_a_pair_the_game_starts_saving_is_skipped_before_linking', 'tmp-recheck-before-link'),
+    ('members.append({"original": str(link), "source": str(link),',
+     'members.append({"original": member["path"], "source": str(link),', 'test_the_capture_resolves_no_live_save_name', 'store-gets-the-link'),
+    ('            if was and was.get("sig") == pair["sig"] and not was.get("gone"):\n                return None',
+     '            if False:\n                return None', 'test_two_processes_keep_one_version_once', 'capture-rechecks-kept'),
+    ('        if was and was.get("sig") == pair["sig"] and not was.get("gone"):\n            return False',
+     '        if False:\n            return False', 'test_unchanged_pair_is_not_kept_twice', 'due-skips-kept'),
+    ('        if force and self.game_running():\n            force = False',
+     '        if False:\n            force = False', 'test_now_does_not_shorten_the_wait_while_the_game_runs', 'now-not-while-busy'),
+    ('            return now - pair["newest"] >= FORCE_MIN_AGE_S',
+     '            return True', 'test_now_still_waits_out_a_write_in_progress', 'now-min-age'),
+    ('                    st = entry.stat(follow_symlinks=False)',
+     '                    st = os.stat(os.path.join(str(folder), entry.name))', 'test_scanning_never_opens_a_live_save_by_name', 'scan-by-listing'),
+    ('    if not beat.get("watched"):',
+     '    if False:', 'test_a_vault_watching_nothing_is_not_reported_running', 'zero-folders'),
+    ('        if watched == 0:',
+     '        if False:', 'test_a_heartbeat_with_no_folders_is_not_ok', 'heartbeat-zero-folders'),
+    ('to=None, as_stem=None, replace=False, apply=False):',
+     'to=None, as_stem=None, replace=False, apply=True):', 'test_restore_without_apply_writes_nothing', 'restore-dry-run-default'),
+    ('                self.capture(key, pairs[key], ignore_tmp=True)    # the current pair is kept before it is replaced',
+     '                pass', 'test_replace_vaults_the_current_pair_first', 'replace-keeps-current-first'),
+    ('self.kept(), force=True, ignore_tmp=True):',
+     'self.kept(), force=True, ignore_tmp=False):', 'test_replace_keeps_the_current_pair_even_with_a_tmp_beside_it', 'replace-due-ignores-tmp'),
+    ('pairs[key], ignore_tmp=True)    # the current pair',
+     'pairs[key], ignore_tmp=False)    # the current pair', 'test_replace_keeps_the_current_pair_even_with_a_tmp_beside_it', 'replace-capture-ignores-tmp'),
+    ('            if now_kept.get("sig") != pairs[key]["sig"]:',
+     '            if False:', 'test_replace_refuses_when_the_current_pair_could_not_be_kept', 'replace-refuses-unkept'),
+    ('            if apply and self.is_busy():',
+     '            if False:', 'test_restore_into_the_live_folder_is_refused_while_the_game_runs', 'live-restore-refused-while-busy'),
+    ('                    if not replace:\n                        raise FileExistsError',
+     '                    if False:\n                        raise FileExistsError', 'test_a_present_pair_is_never_overwritten_without_replace', 'present-needs-replace'),
+    ('                    if lacking:',
+     '                    if False:', 'test_a_version_without_a_cosave_never_orphans_the_present_one', 'no-orphaned-cosave'),
+    ('                if any(c in as_stem for c in "/\\\\:") or as_stem in (".", ".."):',
+     '                if False:', 'test_restore_as_refuses_paths_and_a_running_game', 'as-takes-a-name'),
+    ('        if self.is_busy():\n            # each record',
+     '        if False:\n            # each record', 'test_legacy_import_waits_for_the_game', 'legacy-waits-for-game'),
+    ('                if rid in kept["legacy"]:\n                    continue',
+     '                if False:\n                    continue', 'test_legacy_import_stays_idempotent_beside_a_running_watcher', 'legacy-idempotent'),
+    ('            if e.get("event") not in ("version", "import")',
+     '            if e.get("event") not in ("version",)', 'test_legacy_backups_can_be_listed_and_restored', 'legacy-listed'),
+    ('                elif event.get("event") == "vanished" and key in data["pairs"]:',
+     '                elif False:', 'test_a_rebuilt_index_remembers_a_vanished_pair', 'rebuild-vanished'),
+    ('                    try:\n                        link.unlink()\n                    except FileNotFoundError:',
+     '                    try:\n                        pass\n                    except FileNotFoundError:', 'test_staging_links_are_removed', 'links-removed'),
+    ('                try:\n                    link.unlink()\n                except OSError:',
+     '                try:\n                    pass\n                except OSError:', 'test_links_left_by_a_crash_are_cleared_at_watcher_start', 'stray-links-cleared'),
+    ('                vault.clean_staging()',
+     '                pass', 'test_the_watcher_clears_stray_links_when_it_starts', 'watch-clears-strays'),
+    ('user=escape(user), py=escape(python)',
+     'user=user, py=python', 'test_the_logon_task_names_its_user_and_escapes_paths', 'task-xml-escaped'),
+    ('            pairs, _, _ = self.scan(folders=[Path(event["folder"])])',
+     '            pairs, _, _ = self.scan()', 'test_replace_keeps_the_current_pair_even_from_a_vault_that_does_not_watch_its_folder', 'replace-scans-event-folder'),
+    ('            if key not in pairs:\n                raise PreservationFailed("the present',
+     '            if False:\n                raise PreservationFailed("the present', 'test_replace_refuses_when_the_present_pair_cannot_be_read', 'replace-unreadable-refused'),
+    ('        try:\n            vaults.append(f())\n        except Exception as exc:  # e.g. Documents briefly unreachable: the other vaults still run',
+     '        vaults.append(f())\n        if False:  # e.g. Documents briefly unreachable: the other vaults still run', 'test_a_vault_that_fails_to_start_does_not_stop_the_other', 'watch-start-isolated'),
+    ('            for vault in vaults:\n                if vault is not None:\n                    locks.enter_context(',
+     '            for vault in vaults[:1]:\n                if vault is not None:\n                    locks.enter_context(', 'test_a_second_watcher_on_the_ini_vault_alone_also_blocks', 'lock-every-root'),
+    ('            for vault in vaults:\n                if vault is None:\n                    continue\n                try:',
+     '            for vault in vaults[:1]:\n                if vault is None:\n                    continue\n                try:', 'test_one_watcher_sweeps_both_vaults', 'watch-sweeps-all'),
+    ('            if not volume[pair["folder"]] and self.game_running():',
+     '            if False:', 'test_other_volume_pairs_cost_one_game_check_per_pass', 'volume-precheck'),
+    ('                if info["sha256"] != member["sha256"]:\n                    raise PreservationFailed("stored version failed verification")',
+     '                if False:\n                    raise PreservationFailed("stored version failed verification")', 'test_a_corrupt_stored_copy_is_never_restored', 'write-hash-check'),
+    ('            clash = [str(x) for x in targets if x.name.lower() in self._listed(to)]\n            if clash:',
+     '            clash = [str(x) for x in targets if x.name.lower() in self._listed(to)]\n            if False:', 'test_copy_to_never_overwrites', 'copy-to-no-clobber'),
+    ('            if self.is_busy():\n                raise PreservationFailed("the game (or SteamVR) started; import-legacy',
+     '            if False:\n                raise PreservationFailed("the game (or SteamVR) started; import-legacy', 'test_legacy_import_stops_when_the_game_starts', 'legacy-busy-per-record'),
+    ('                        os.unlink(target)                      # a file this restore itself just wrote',
+     '                        pass', 'test_a_publish_that_fails_midway_leaves_nothing_behind', 'rollback-drops-published'),
+    ('                        os.replace(aside, target)\n                    except OSError:\n                        rolled = False',
+     '                        pass\n                    except OSError:\n                        rolled = False', 'test_a_replace_that_fails_midway_puts_the_current_pair_back', 'rollback-returns-set-aside'),
+    ('                            os.replace(target, aside)      # a locked save refuses here, before anything changed',
+     '                            pass', 'test_replace_vaults_the_current_pair_first', 'replace-sets-aside-first'),
+    ('            if apply and self.is_busy() and canonical(to) in',
+     '            if False and canonical(to) in', 'test_to_a_save_folder_waits_for_the_game', 'to-save-folder-waits'),
+    ('                            locks.enter_context(exclusive(fresh.root / "status" / "watch.lock", 0))',
+     '                            pass', 'test_a_vault_that_recovers_on_refresh_takes_its_lock', 'recovered-vault-locked'),
+]]
+
+# LOOT advisor (4.1): one twin per guarded clause of tools/loot_advisor.py and tools/libloot/.
+_LA = "tests/test_loot_advisor.py::"
+MUTATIONS += [pytest.param(path, anchor, replacement, _LA + test, id="la-" + name)
+              for path, anchor, replacement, test, name in [
+    ("tools/loot_advisor.py", "    proposed = list(g.sort_plugins(active))\n",
+     "    proposed = list(g.sort_plugins(active))\n    g.set_load_order(proposed)\n",
+     "test_the_advice_never_writes_the_load_order", "writes-the-order"),
+    ("tools/loot_advisor.py", "        if version <= readable and (best is None", "        if (best is None",
+     "test_the_newest_branch_this_libloot_reads_is_chosen", "branch-too-new"),
+    ("tools/loot_advisor.py", "    if not offline:\n", "    if True:\n", "test_offline_makes_no_network_call", "offline-fetches"),
+    ("tools/loot_advisor.py", "old.name not in (store.name, previous)", "old.name != store.name",
+     "test_the_cache_keeps_the_current_and_previous_masterlist_only", "cache-keeps-previous"),
+    ("tools/loot_advisor.py", "            if not present(_name(r)):\n", "            if True:\n",
+     "test_masterlist_messages_dirty_plugins_requirements_and_incompatibilities_are_reported", "requirement-present"),
+    ("tools/loot_advisor.py", "            if present(_name(c)):\n", "            if True:\n",
+     "test_masterlist_messages_dirty_plugins_requirements_and_incompatibilities_are_reported", "incompatible-active"),
+    ("tools/loot_advisor.py", "    if missing:\n        raise ValueError(\"active plugins not on disk",
+     "    if False:\n        raise ValueError(\"active plugins not on disk",
+     "test_an_active_plugin_missing_from_disk_is_could_not_check", "missing-plugin"),
+    ("tools/libloot/libloot_loader.py", "    if want is None:\n", "    if False:\n",
+     "test_an_unlisted_or_changed_wheel_is_refused", "unlisted-wheel"),
+    ("tools/libloot/libloot_loader.py", "    if got != want:\n", "    if False:\n",
+     "test_an_unlisted_or_changed_wheel_is_refused", "changed-wheel"),
+    ("tools/libloot/libloot_loader.py", "                if dest != part.resolve() and part.resolve() not in dest.parents:\n",
+     "                if False:\n", "test_a_wheel_member_outside_its_folder_is_refused_and_nothing_is_left", "zip-escape"),
+    ("tools/libloot/libloot_loader.py", "    verify_extracted(data, target)\n", "    pass\n",
+     "test_a_changed_extracted_file_is_refused", "extracted-reverified"),
+    ("tools/libloot/libloot_loader.py", "lambda plat: plat == SHIPPED_PLATFORM", "lambda plat: True",
+     "test_a_shipped_wheel_for_another_platform_is_not_used", "shipped-platform"),
+    ("tools/libloot/build.py", "            if not f.is_file() or _sha256(f) != want:\n", "            if not f.is_file():\n",
+     "test_record_refuses_an_artifact_that_does_not_match_its_run", "record-checks-hash"),
+]]
+
+# ReSaver Plus stock tier (4.1): one twin per guarded clause of tools/resaver_stock.py and resaver_native.stock_main.
+_RS = "tests/test_resaver_stock.py::"
+MUTATIONS += [pytest.param(path, anchor, replacement, _RS + test, id="rs-" + name)
+              for path, anchor, replacement, test, name in [
+    ("tools/resaver_stock.py", "    if missing:\n        raise CannotDo(", "    if False:\n        raise CannotDo(",
+     "test_an_option_the_version_lacks_exits_3_and_runs_nothing", "missing-option"),
+    ("tools/resaver_stock.py", '    _needs(caps, op, stock + ["-o"])', "    _needs(caps, op, stock)",
+     "test_a_build_without_a_new_output_option_exits_3", "write-needs-new-output"),
+    ("tools/resaver_stock.py", '    _needs(caps, op, stock + ["-o"])', '    _needs(caps, op, ["-o"])',
+     "test_a_missing_write_option_exits_3_before_any_backup", "write-needs-its-option"),
+    ("tools/resaver_stock.py", "    if len(positions) not in allowed:\n", "    if False:\n",
+     "test_a_read_takes_no_options_and_checks_its_arguments", "read-argument-count"),
+    ("tools/resaver_stock.py", "        if not flags:\n            raise ValueError(\"clean on a stock build",
+     "        if False:\n            raise ValueError(\"clean on a stock build",
+     "test_clean_needs_a_named_kind_on_a_stock_build", "clean-needs-a-kind"),
+    ("tools/resaver_stock.py", '    if not out["testedVersion"]:\n', "    if False:\n",
+     "test_an_untested_version_still_works_and_says_so", "untested-version-said"),
+    ("tools/resaver_stock.py", "    if not path.is_absolute():\n", "    if False:\n",
+     "test_a_relative_or_missing_stock_path_is_refused", "stock-path-absolute"),
+    ("tools/resaver_native.py", '        if "--apply" not in argv:\n            raise resaver_stock.CannotDo(',
+     '        if False:\n            raise resaver_stock.CannotDo(',
+     "test_without_apply_a_stock_build_cannot_preview_and_nothing_runs", "no-preview"),
+    ("tools/resaver_native.py", "        backups = backup(project, source, output, op)\n        code, text, err = run_text(binary, native, sha)\n",
+     "        backups = []\n        code, text, err = run_text(binary, native, sha)\n",
+     "test_a_stock_write_is_backed_up_first_written_new_and_reread", "backup-first"),
+    ("tools/resaver_native.py", "        code, text, err = run_text(binary, native, sha)\n        if pair_hashes(source) != before:\n",
+     "        code, text, err = run_text(binary, native, sha)\n        if False:\n",
+     "test_a_source_changed_during_the_write_fails", "source-unchanged"),
+    ("tools/resaver_native.py", '        if before[".skse"] is not None and not output.with_suffix(".skse").is_file():\n',
+     "        if False:\n", "test_a_missing_cosave_fails_and_keeps_the_candidate", "cosave-came-along"),
+    ("tools/resaver_native.py", "        if reread != 0:\n", "        if False:\n",
+     "test_an_output_the_build_cannot_reread_fails", "output-reread"),
+    ("tools/resaver_native.py", "    if digest(binary) != expected_hash:\n        raise Refused(\"The ReSaver executable changed",
+     "    if False:\n        raise Refused(\"The ReSaver executable changed",
+     "test_the_executable_changing_mid_call_is_refused", "exe-rehashed"),
+]]
+
+# 4.1 release review: the save vault and its INI vault are save stores (self_rules.vault_stores).
+_VS = "tests/test_save_store_rule_coverage.py::test_the_save_vault_and_its_ini_vault_are_save_stores["
+MUTATIONS += [pytest.param(path, anchor, replacement, _VS + test + "]", id="vs-" + name)
+              for path, anchor, replacement, test, name in [
+    ("tools/skyguard/self_rules.py", "    for store in vault_stores(env):\n", "    for store in []:\n",
+     "shell-delete-skyrim", "vault-checked"),
+    ("tools/skyguard/self_rules.py", '    return [root, root.with_name(root.name + "-config")]', "    return [root]",
+     "shell-delete-skyrim-config", "ini-vault-checked"),
+    ("tools/skyguard/self_rules.py", "            return save_store_target(placed, roots, holder, cache, env=env)",
+     "            return save_store_target(placed, roots, holder, cache)", "shell-write-skyrim", "shell-env"),
+    ("tools/skyguard/write_rules.py", 'holder=op in ("delete", "move"), env=env_):', 'holder=op in ("delete", "move")):',
+     "files-write-skyrim", "files-env"),
+    ("tools/skyguard/self_rules.py", "            if cache.protects(abs_path, str(store), holder):",
+     "            if cache.protects(abs_path, str(store), False):", "shell-delete-parent-skyrim", "shell-parent"),
+    ("tools/skyguard/self_rules.py", "        elif protects(abs_path, [str(store)], ancestor=holder):",
+     "        elif protects(abs_path, [str(store)], ancestor=False):", "files-delete-parent-skyrim", "files-parent"),
+]]
+
+# 4.1 release review: save vault fixes (restore keeps a set-aside pair whose bytes differ, the .tmp check by listing,
+# short link names, no live read when a link fails while the game runs, the heartbeat is the watcher's).
+_SVR = "tests/test_save_vault.py::"
+MUTATIONS += [pytest.param("tools/save_vault.py", anchor, replacement, _SVR + test, id="svr-" + name)
+              for anchor, replacement, test, name in [
+    ("                    same = want is not None and durable.digest(aside) == want\n", "                    same = True\n",
+     "test_a_same_size_same_time_rewrite_is_left_beside_the_save_never_deleted", "aside-bytes-checked"),
+    ("            if asides:\n                self.record(", "            if False:\n                self.record(",
+     "test_a_same_size_same_time_rewrite_is_left_beside_the_save_never_deleted", "restore-begin-recorded"),
+    ("                    if entry.name.casefold() in wanted:\n", "                    if False:\n",
+     "test_the_tmp_check_opens_no_handle_on_the_tmp", "tmp-by-listing"),
+    ('(uuid.uuid4().hex + ext)', '(uuid.uuid4().hex + "-" + Path(member["path"]).name)',
+     "test_the_staging_link_name_does_not_carry_the_save_name", "short-link-name"),
+    ("                        if same_volume and self.is_busy():\n", "                        if False:\n",
+     "test_a_link_that_fails_while_the_game_runs_waits_instead_of_reading_the_live_save", "failed-link-waits"),
+    ("        if beat:\n            self.heartbeat(", "        if True:\n            self.heartbeat(",
+     "test_a_one_off_sweep_writes_no_heartbeat", "cli-sweep-no-beat"),
+    ("            if beat and self.clock() - beaten >= BEAT_S:\n", "            if False:\n",
+     "test_a_long_pass_refreshes_the_heartbeat_as_it_goes", "long-pass-beats"),
+    ("    except (KeyError, TypeError, ValueError, OverflowError, OSError, AttributeError):\n        return 0.0",
+     "    except ():\n        return 0.0", "test_an_unreadable_or_z_suffixed_time_does_not_break_status", "bad-time-sorts"),
+    ("DEFAULT_RESERVE_GB = 2 ", "DEFAULT_RESERVE_GB = 20 ", "test_the_default_reserve_is_the_stores_own", "reserve-default"),
+]]
+
+# 4.1 release review: LOOT advisor and loader fixes.
+_LR = "tests/test_loot_advisor.py::"
+MUTATIONS += [pytest.param(path, anchor, replacement, _LR + test, id="lr-" + name)
+              for path, anchor, replacement, test, name in [
+    ("tools/libloot/libloot_loader.py", '"libloot-%s-%s-%s-*.whl" % (want, tag, tag)', '"libloot-*-%s-%s-*.whl" % (tag, tag)',
+     "test_a_built_wheel_of_another_version_is_never_picked", "carried-version-only"),
+    ("tools/libloot/libloot_loader.py", '    for f in target.rglob("*"):\n', "    for f in []:\n",
+     "test_a_file_the_wheel_does_not_hold_is_refused", "no-unlisted-files"),
+    ("tools/loot_advisor.py",
+     '    if (plugins_txt.name.casefold() != "plugins.txt" if os.name == "nt" else plugins_txt.name != "Plugins.txt"):\n',
+     "    if False:\n",
+     "test_a_plugins_file_with_another_name_is_refused", "plugins-txt-name"),
+    ("tools/loot_advisor.py", "        if version is None or version > readable:\n", "        if False:\n",
+     "test_a_cached_masterlist_this_libloot_cannot_read_is_not_used", "cache-branch-readable"),
+    ("tools/loot_advisor.py", "            if validate is not None:\n", "            if False:\n",
+     "test_a_fresh_masterlist_that_does_not_parse_never_becomes_the_cache", "validated-before-meta"),
+    ("tools/loot_advisor.py", '            if not re.fullmatch(r"[0-9a-f]{40}", sha):\n', "            if False:\n",
+     "test_a_malformed_commit_id_is_refused", "commit-id-checked"),
+    ("tools/loot_advisor.py", "    if len(data) > MAX_DOWNLOAD:\n", "    if False:\n",
+     "test_an_oversized_download_is_refused", "download-capped"),
+    ("tools/loot_advisor.py", '    findings = [i for i in report["issues"] if str(i.get("type", "")).lower() != "say"]',
+     '    findings = report["issues"]', "test_a_say_message_alone_exits_0", "say-is-not-a-finding"),
+]]
+
+# 4.1 release review: tools (missing-textures answers, payload libloot check, ReSaver stock identity/options/verify,
+# plugin-check engine order, headless open without the wait right).
+MUTATIONS += [pytest.param(path, anchor, replacement, test, id="rt-" + name)
+              for path, anchor, replacement, test, name in [
+    ("tools/missing-textures.py", "        if unanswered:\n", "        if False:\n",
+     "tests/test_missing_textures.py::test_a_mesh_house_carl_gave_no_answer_for_is_could_not_check", "mesh-answered"),
+    ("tools/missing-textures.py", "        if asked - told:\n", "        if False:\n",
+     "tests/test_missing_textures.py::test_a_texture_asset_status_did_not_answer_for_is_could_not_check",
+     "texture-answered"),
+    ("tools/missing-textures.py", "        key = line.strip().replace('/', '\\\\').lower()\n", "        key = line.strip().lower()\n",
+     "tests/test_missing_textures.py::test_a_forward_slash_header_is_matched", "header-normalised"),
+    ("tools/missing-textures.py", "            mesh, shape = names.get(key), None", "            mesh, shape = names.get(key, mesh), None",
+     "tests/test_missing_textures.py::test_all_present_is_clean", "unasked-mesh-ends-block"),
+    ("tools/missing-textures.py", "    return 1 if out['missing'] or out['unread_meshes'] else 0",
+     "    return 1 if out['missing'] else 0",
+     "tests/test_missing_textures.py::test_an_absent_mesh_alone_is_not_clean", "absent-mesh-not-clean"),
+    ("tools/check-release-payload.py", "    yield from check_libloot(root)\n", "",
+     "tests/test_release_payload.py::test_the_libloot_wheels_and_their_gpl_source_must_ship_and_match", "libloot-wired"),
+    ("tools/check-release-payload.py",
+     "        bad = [f.name for f in files if listed.get(f.name) != hashlib.sha256(f.read_bytes()).hexdigest()]",
+     "        bad = []", "tests/test_release_payload.py::test_the_libloot_wheels_and_their_gpl_source_must_ship_and_match",
+     "libloot-hashed"),
+    ("tools/resaver_native.py", "    if not resaver_stock.is_resaver(caps):\n", "    if False:\n",
+     "tests/test_resaver_stock.py::test_a_program_whose_help_does_not_name_resaver_is_not_run", "is-resaver"),
+    ("tools/resaver_native.py", '        if any(a.startswith("-") for a in argv[2:]):', '        if any(a.startswith("--") for a in argv[2:]):',
+     "tests/test_resaver_stock.py::test_a_short_option_after_a_read_is_refused", "short-option-refused"),
+    ("tools/resaver_native.py", '                              "writes": resaver_stock.writes_offered(caps),',
+     '                              "writes": sorted(resaver_stock.STOCK_WRITES),',
+     "tests/test_resaver_stock.py::test_verify_lists_only_the_writes_this_version_can_do", "verify-writes-filtered"),
+    ("tools/plugin-check.py",
+     "    order = [n for n in order if is_master(n)] + [n for n in order if not is_master(n)]\n", "",
+     "tests/test_plugin_check.py::test_master_order_is_judged_in_the_engines_order", "engine-order"),
+    ("tools/vr_background_desktop.py", "    if not handle and ctypes.get_last_error() == 5:\n", "    if False:\n",
+     "tests/test_headless_helper_exit.py::test_a_helper_that_refuses_only_the_wait_right_is_still_terminated",
+     "open-without-wait-right"),
+]]
+
+# 4.1 confirmation review: link deferrals are reported, an earlier failure stays visible mid-pass, the vault check
+# needs no roots, no bytecode in the unpacked libloot. (Not twinned: sys.dont_write_bytecode = True in load() -- the
+# suite runs under -B, so the mutant is equivalent there; the planted-.pyc twin below covers the refusal.)
+MUTATIONS += [pytest.param(path, anchor, replacement, test, id="cr-" + name)
+              for path, anchor, replacement, test, name in [
+    ("tools/save_vault.py", '                self.state["fails"][key] = self.state["fails"].get(key, 0) + 1\n                link_notes',
+     "                link_notes", "tests/test_save_vault.py::test_a_link_that_keeps_failing_while_the_game_runs_is_reported",
+     "link-deferral-counts"),
+    ("tools/save_vault.py", "                self.heartbeat(not prior, len(queue) - len(captured),",
+     "                self.heartbeat(True, len(queue) - len(captured),",
+     "tests/test_save_vault.py::test_a_long_pass_keeps_an_earlier_failure_visible", "prior-failure-visible"),
+    ("tools/skyguard/write_rules.py",
+     "    store_place = placed if roots is not None else targets.resolve_literal(file_path, cwd, env_)",
+     "    store_place = placed",
+     "tests/test_save_store_rule_coverage.py::test_the_vault_is_a_save_store_even_with_no_paths_file", "vault-without-roots"),
+    ("tools/libloot/libloot_loader.py", "        if rel in listed:\n            continue",
+     '        if "__pycache__" in f.relative_to(target).parts or rel in listed:\n            continue',
+     "tests/test_loot_advisor.py::test_python_bytecode_in_the_unpacked_copy_is_refused_and_none_is_written",
+     "no-pycache"),
+]]

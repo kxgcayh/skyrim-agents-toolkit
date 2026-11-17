@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from typing import Tuple
 
-from . import codes, engine, mcp_rules, saves
+from . import codes, engine, mcp_rules
 from .request import Request
 from .verdict import DECISIONS, STATUSES, Verdict
 
@@ -154,8 +154,8 @@ def render(v: Verdict) -> str:
 
 
 def _soft_roots(roots_fn):
-    """The DevBench save check reads one optional fact from the roots; an unreadable paths file costs that answer
-    (it then asks), never a refusal of every call -- as on Claude's protect-mcp role."""
+    """The roots, read softly: an unreadable paths file costs the answers that need them, never a refusal of every
+    call -- as on Claude's protect-mcp role."""
     try:
         return roots_fn()
     except engine.RootsUnavailable:

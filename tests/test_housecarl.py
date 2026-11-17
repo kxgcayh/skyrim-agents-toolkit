@@ -13,12 +13,15 @@ from housecarl_integration import Refusal
 from housecarl_integration import files, gateway, order
 
 
-def plugin(path, flags=0, masters=()):
-    body = b""
+def plugin(path, flags=0, masters=(), version=None, onam=(), records=()):
+    body = b"" if version is None else b"HEDR" + struct.pack("<HfiI", 12, version, len(records), 0x800)
     for name in masters:
         value = name.encode("cp1252") + b"\0"
         body += b"MAST" + struct.pack("<H", len(value)) + value
-    path.write_bytes(b"TES4" + struct.pack("<II", len(body), flags) + b"\0" * 12 + body)
+    if onam:
+        body += b"ONAM" + struct.pack("<H", 4 * len(onam)) + b"".join(struct.pack("<I", v) for v in onam)
+    tail = b"".join(sig + struct.pack("<III", 0, 0, formid) + b"\0" * 8 for sig, formid in records)
+    path.write_bytes(b"TES4" + struct.pack("<II", len(body), flags) + b"\0" * 12 + body + tail)
 
 
 class _Source:
@@ -353,7 +356,8 @@ def test_transaction_failures_never_publish(install, monkeypatch, stage):
             calls.append("writer")
             if stage == "backend":
                 fail()
-            plugin(self.work / "mods/Target/Sword.esp", flags=0x800)
+            # The original's own header, so each stage is refused by ITS check, not by the header-retention check.
+            plugin(self.work / "mods/Target/Sword.esp", flags=0, masters=["Skyrim.esm"])
             if stage == "stale":
                 Path(install["plugins_txt"]).write_text("*Sword.esp\n")
             return SimpleNamespace(content=[SimpleNamespace(type="text", text=json.dumps({"ok": True, "verify_ran": True}))])
@@ -711,3 +715,477 @@ def test_a_backend_set_up_for_another_version_is_named_not_reported_as_the_pin(t
     with pytest.raises(Refusal, match="Incomplete installed-backend"):      # the current pin goes on to the next check
         runtime.verify_installation({"server": str(tmp_path / "housecarl-mcp.exe"), "server_hashes": {},
                                      "upstream_version": UPSTREAM_VERSION})
+
+
+# ---- issue 20: @file FormID lists on write tools follow House Carl's own grammar ------------------------------
+
+_ARTIFACT = ('{"housecarl_artifact":1,"tool":"housecarl_records","identity":"formid","epoch":"e1","row_count":3}\n'
+             '{"formid":"012EB7:Skyrim.esm","name":"a"}\n{"error":"no such record","input":"FFFFFF:Skyrim.esm"}\n'
+             '\n{"formid":"000800:Sword.esp"}\n')
+
+
+@pytest.mark.parametrize("name,content,expected", [
+    ("ids.txt", "012EB7:Skyrim.esm\r\n000800:Sword.esp\n\n", ["012EB7:Skyrim.esm", "000800:Sword.esp"]),
+    ("ids.csv", "012EB7:Skyrim.esm, 000800:Sword.esp", ["012EB7:Skyrim.esm", "000800:Sword.esp"]),
+    ("ids.json", '["012EB7:Skyrim.esm", "000800:Sword.esp"]', ["012EB7:Skyrim.esm", "000800:Sword.esp"]),
+    ("result.jsonl", _ARTIFACT, ["012EB7:Skyrim.esm", "000800:Sword.esp"]),
+    ("bom.txt", "\ufeff012EB7:Skyrim.esm\n", ["012EB7:Skyrim.esm"]),
+])
+@pytest.mark.parametrize("spelling", ["list", "string"])
+def test_formid_files_are_frozen_and_name_the_edit_set(install, name, content, expected, spelling):
+    source = Path(install["root"]) / name
+    source.write_bytes(content.encode("utf-8"))
+    token = "@" + str(source)
+    args = gateway.check_arguments("housecarl_forward", {"formids": [token] if spelling == "list" else token}, install)
+    frozen = Path(args["formids"][0][1:])
+    assert len(args["formids"]) == 1 and args["formids"][0].startswith("@")
+    assert frozen.parent == Path(install["state_dir"]) / "inputs" and frozen.read_bytes() == source.read_bytes()
+    assert args[gateway.FROZEN_FORMIDS] == expected
+    assert gateway.allowed_records(args) == {t.casefold().lstrip("0") for t in expected}
+    source.write_text("FFFFFF:Skyrim.esm\n")            # a later edit of the caller's file cannot reach the transaction
+    assert frozen.read_bytes() == content.encode("utf-8")
+
+
+@pytest.mark.parametrize("content,match", [
+    ("", "is empty"),
+    ('{"housecarl_artifact":1,"identity":"path"}\n{"path":"meshes/a.nif"}\n', "'path' identities"),
+    ('{"housecarl_artifact":1,"identity":null}\n{"count":3}\n', "None identities"),
+    ('{"housecarl_artifact":1,"identity":"formid"}\n{"error":"x"}\n', "no record rows"),
+    ('{"housecarl_artifact":1,"identity":"formid"}\nnot json\n', "line 2 is not a JSON row"),
+    ('{"housecarl_artifact":1,"identity":"formid"}\n{"name":"x"}\n', "carries no 'formid' value"),
+])
+def test_unusable_formid_files_get_a_gateway_refusal(install, content, match):
+    source = Path(install["root"]) / "bad.jsonl"
+    source.write_text(content, encoding="utf-8")
+    with pytest.raises(Refusal, match=match) as caught:
+        gateway.check_arguments("housecarl_forward", {"formids": ["@" + str(source)]}, install)
+    assert "Accepted list files" in str(caught.value)
+
+
+def test_formid_file_spelling_errors_are_refusals(install):
+    source = Path(install["root"]) / "ids.txt"
+    source.write_text("012EB7:Skyrim.esm\n")
+    for formids, match in ((["@" + str(source), "000800:Sword.esp"], "mixes an '@file' entry"),
+                           (["@" + str(source), "@" + str(source)], "mixes an '@file' entry"),
+                           (["@ids.txt"], "absolute path"), (["@"], "names no file"),
+                           (["@" + str(source) + ".missing"], "could not be read")):
+        with pytest.raises(Refusal, match=match):
+            gateway.check_arguments("housecarl_remove", {"formids": formids}, install)
+
+
+@pytest.mark.parametrize("key", ["ops", "assignments", "records"])
+def test_non_json_manifest_files_are_refused_by_name_not_as_a_decode_error(install, key):
+    source = Path(install["root"]) / "ops.txt"
+    source.write_text("012EB7:Skyrim.esm\n")
+    with pytest.raises(Refusal, match=key + r"=@.* must be a JSON document"):
+        gateway.check_arguments("housecarl_apply", {key: "@" + str(source)}, install)
+
+
+def test_reads_pass_formid_files_through_untouched(install):
+    args = gateway.check_arguments("housecarl_records", {"formids": ["@C:/anywhere/ids.txt"]}, install)
+    assert args["formids"] == ["@C:/anywhere/ids.txt"] and gateway.FROZEN_FORMIDS not in args
+
+
+def test_the_backend_receives_the_frozen_file_not_the_gateway_key(install, monkeypatch):
+    from types import SimpleNamespace
+    source = Path(install["root"]) / "result.jsonl"
+    source.write_text(_ARTIFACT, encoding="utf-8")
+    seen = []
+
+    class FakeBackend:
+        def __init__(self, config, snapshot, work):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def call(self, name, args):
+            seen.append((name, args))
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text=json.dumps({"ok": True}))])
+
+    monkeypatch.setattr(gateway, "Backend", FakeBackend)
+    out = asyncio.run(gateway.Gateway(install).call("housecarl_forward", {
+        "patch": "Fwd.esp", "source": "Sword.esp", "formids": ["@" + str(source)], "dry_run": True}))
+    assert out["dry_run"] is True
+    (name, args), = seen
+    assert gateway.FROZEN_FORMIDS not in args
+    frozen = Path(args["formids"][0][1:])
+    assert frozen.parent == Path(install["state_dir"]) / "inputs" and frozen.read_text(encoding="utf-8") == _ARTIFACT
+
+
+# Install repair 2026-10-29 (762f1773), ported: a forward INTO an already-active plugin must not enable a writable
+# Target copy over its own read provider. The backend creates and owns a private working folder; the detached copy is
+# imported there and the forward goes through the ordinary `into` lane.
+def _detached_forward_backend(seen, placeholder_body=b"", meta_extra=""):
+    from types import SimpleNamespace
+
+    class FakeBackend:
+        def __init__(self, config, snapshot, work):
+            self.work = work
+
+        async def __aenter__(self):
+            (self.work / "profile").mkdir(parents=True, exist_ok=True)
+            (self.work / "profile/modlist.txt").write_text("+Other\n", encoding="utf-8")
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def call(self, name, args):
+            seen.append((name, dict(args)))
+            if name == "housecarl_create_plugin":
+                folder = self.work / "mods" / ("Owned " + args["patch"])
+                folder.mkdir(parents=True)
+                body = placeholder_body
+                (folder / (args["patch"] + ".esp")).write_bytes(
+                    b"TES4" + struct.pack("<II", len(body), 0) + b"\0" * 12 + body)
+                (folder / "meta.ini").write_text("[General]\ngenerated=true\nplugin=%s.esp\n%s" % (args["patch"], meta_extra),
+                                                 encoding="utf-8")
+                return SimpleNamespace(content=[SimpleNamespace(type="text", text="created")])
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text=json.dumps({"ok": True}))])
+    return FakeBackend
+
+
+def test_a_forward_into_an_active_plugin_writes_through_a_private_folder(install, monkeypatch):
+    seen = []
+    monkeypatch.setattr(gateway, "Backend", _detached_forward_backend(seen))
+    monkeypatch.setattr(gateway, "independent_check", lambda *a, **k: {})
+    out = asyncio.run(gateway.Gateway(install).call("housecarl_forward", {
+        "into": "Sword.esp", "source": "LateMaster.esp", "formids": ["000800:LateMaster.esp"], "dry_run": True}))
+    assert out["dry_run"] is True
+    (init, init_args), (fwd, fwd_args) = seen
+    assert init == "housecarl_create_plugin" and init_args["patch"].startswith("ToolkitTransaction")
+    assert fwd == "housecarl_forward" and fwd_args["into"] == "Owned " + init_args["patch"]
+    assert "in_place" not in fwd_args and "acknowledge" not in fwd_args
+    work = next((Path(install["state_dir"]) / "transactions").iterdir())
+    assert (work / "mods" / fwd_args["into"] / "Sword.esp").is_file()                     # the detached copy, imported
+    assert "plugin=Sword.esp" in (work / "mods" / fwd_args["into"] / "meta.ini").read_text(encoding="utf-8")
+    assert "+Target" not in (work / "profile/modlist.txt").read_text(encoding="utf-8")   # never a read provider
+
+
+def test_other_writes_into_an_active_plugin_keep_the_target_lane(install, monkeypatch):
+    seen = []
+    monkeypatch.setattr(gateway, "Backend", _detached_forward_backend(seen))
+    monkeypatch.setattr(gateway, "independent_check", lambda *a, **k: {})
+    asyncio.run(gateway.Gateway(install).call("housecarl_apply", {
+        "in_place": "Sword.esp", "ops": [{"formid": "000800:Sword.esp", "set": {}}], "dry_run": True}))
+    (name, args), = seen
+    assert name == "housecarl_apply" and args["in_place"] == "Sword.esp"
+    work = next((Path(install["state_dir"]) / "transactions").iterdir())
+    assert (work / "profile/modlist.txt").read_text(encoding="utf-8").startswith("+Target\n")
+
+
+@pytest.mark.parametrize("body, meta, why", [
+    (b"MAST" + struct.pack("<H", 11) + b"Skyrim.esm\0", "", "not empty"),          # the initializer has a master
+    (b"", "plugin=ToolkitTransactionX.esp\n", None),     # a line naming another plugin is not this one's: no effect
+])
+def test_an_unexpected_private_folder_publishes_nothing(install, monkeypatch, body, meta, why):
+    seen = []
+    monkeypatch.setattr(gateway, "Backend", _detached_forward_backend(seen, body, meta))
+    monkeypatch.setattr(gateway, "independent_check", lambda *a, **k: {})
+    run = lambda: asyncio.run(gateway.Gateway(install).call("housecarl_forward", {
+        "into": "Sword.esp", "source": "LateMaster.esp", "formids": ["000800:LateMaster.esp"], "dry_run": True}))
+    if why:
+        with pytest.raises(Refusal, match=why):
+            run()
+        assert len(seen) == 1                                    # the forward itself never ran
+    else:
+        run()                                                    # an unrelated extra metadata line changes nothing
+        assert [n for n, _ in seen] == ["housecarl_create_plugin", "housecarl_forward"]
+
+
+@pytest.mark.parametrize("meta", [
+    "[General]\nplugin={p}.esp\n",                                   # generated=true gone
+    "[General]\ngenerated=true\nmasterplugin={p}.esp\n",              # only a longer key contains plugin=
+    "[General]\nnotgenerated=true\nplugin={p}.esp\n",                 # only a longer key contains generated=true
+], ids=["generated-missing", "plugin-only-as-substring", "generated-only-as-substring"])
+def test_a_private_folder_without_ownership_metadata_publishes_nothing(install, monkeypatch, meta):
+    seen = []
+    backend = _detached_forward_backend(seen)
+    original_call = backend.call
+
+    async def call(self, name, args):
+        out = await original_call(self, name, args)
+        if name == "housecarl_create_plugin":
+            target = next((self.work / "mods").rglob("meta.ini"))
+            target.write_text(meta.format(p=args["patch"]), encoding="utf-8")
+        return out
+    backend.call = call
+    monkeypatch.setattr(gateway, "Backend", backend)
+    monkeypatch.setattr(gateway, "independent_check", lambda *a, **k: {})
+    with pytest.raises(Refusal, match="ownership metadata"):
+        asyncio.run(gateway.Gateway(install).call("housecarl_forward", {
+            "into": "Sword.esp", "source": "LateMaster.esp", "formids": ["000800:LateMaster.esp"], "dry_run": True}))
+    assert len(seen) == 1
+
+
+# Install repair b1c79507 (2026-10-28), the retention half, ported: an edit of an existing plugin that loses a master or
+# changes the ESM/ESL flags is never published.
+@pytest.mark.parametrize("flags, masters", [(0x200, ["Skyrim.esm"]), (0, []), (1, ["Skyrim.esm"])],
+                         ids=["esl-flag-added", "master-dropped", "esm-flag-added"])
+def test_an_edit_that_changes_the_header_is_never_published(install, monkeypatch, flags, masters):
+    from types import SimpleNamespace
+    target = Path(install["data_dir"]) / "Sword.esp"
+    original = target.read_bytes()
+
+    class FakeBackend:
+        def __init__(self, config, snapshot, work):
+            self.work = work
+
+        async def __aenter__(self):
+            (self.work / "profile").mkdir()
+            (self.work / "profile/modlist.txt").write_text("")
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def call(self, _name, _args):
+            plugin(self.work / "mods/Target/Sword.esp", flags=flags, masters=masters)
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text=json.dumps({"ok": True, "verify_ran": True}))])
+
+    monkeypatch.setattr(gateway, "Backend", FakeBackend)
+    monkeypatch.setattr(gateway, "independent_check", lambda *a, **k: {"records": {}, "errors": [], "complete": True})
+    # A restore that reports success but leaves the master out: the check after it still refuses.
+    monkeypatch.setattr(gateway, "retain_header", lambda *a, **k: {"complete": True})
+    with pytest.raises(Refusal, match="header flags"):
+        asyncio.run(gateway.Gateway(install).call("housecarl_apply", {
+            "in_place": "Sword.esp", "ops": [{"formid": "000800:Sword.esp", "field_path": "Name", "value": "new"}]}))
+    assert target.read_bytes() == original
+
+
+def _master_dropping_backend():
+    from types import SimpleNamespace
+
+    class FakeBackend:
+        def __init__(self, config, snapshot, work):
+            self.work = work
+
+        async def __aenter__(self):
+            (self.work / "profile").mkdir()
+            (self.work / "profile/modlist.txt").write_text("")
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def call(self, _name, _args):
+            plugin(self.work / "mods/Target/Sword.esp", flags=0, masters=[])   # the lean collector dropped Skyrim.esm
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text=json.dumps({"ok": True, "verify_ran": True}))])
+    return FakeBackend
+
+
+def _fake_preserve(seen, restore=True, ok=True):
+    """Stands in for node + tools/housecarl-preserve.js; records what the linked view held while it ran."""
+    def run(argv, **_kw):
+        from types import SimpleNamespace
+        assert Path(argv[1]).name == "housecarl-preserve.js"
+        spec = json.loads(Path(argv[2]).read_text(encoding="utf-8"))
+        data = Path(spec["game"]) / "Data"
+        seen.append({"data": data, "links": os.stat(data / "Skyrim.esm").st_nlink,
+                     "detached": os.stat(data / "Sword.esp").st_nlink})
+        if not ok:
+            return SimpleNamespace(stdout="", stderr="Error: Header readback mismatch")
+        if restore:
+            plugin(Path(spec["candidate"]), flags=0, masters=["Skyrim.esm"])
+        Path(argv[3]).write_text(json.dumps({"complete": True, "added_masters": ["Skyrim.esm"]}), encoding="utf-8")
+        return SimpleNamespace(stdout="RESULT: OK", stderr="")
+    return run
+
+
+def test_a_dropped_master_is_restored_before_publication(install, monkeypatch, tmp_path):
+    seen = []
+    (tmp_path / "temp").mkdir()
+    monkeypatch.setattr(gateway.tempfile, "tempdir", str(tmp_path / "temp"))   # never the real %TEMP%
+    monkeypatch.setattr(gateway, "Backend", _master_dropping_backend())
+    monkeypatch.setattr(gateway, "independent_check", lambda *a, **k: {"records": {}, "errors": [], "complete": True})
+    monkeypatch.setattr(gateway.subprocess, "run", _fake_preserve(seen))
+    asyncio.run(gateway.Gateway(install).call("housecarl_apply", {
+        "in_place": "Sword.esp", "ops": [{"formid": "000800:Sword.esp", "field_path": "Name", "value": "new"}]}))
+    target = Path(install["data_dir"]) / "Sword.esp"
+    assert order.plugin_header(target)["masters"] == ["Skyrim.esm"]
+    assert seen[0]["links"] >= 2 and seen[0]["detached"] == 1      # masters linked, the candidate a detached copy
+    assert not seen[0]["data"].parent.exists()                     # the linked view is gone after the call
+    receipts = list((Path(install["state_dir"]) / "transactions").glob("*/receipt.json"))
+    assert json.loads(receipts[0].read_text(encoding="utf-8"))["retained_header"]["added_masters"] == ["Skyrim.esm"]
+
+
+def test_a_failed_restore_publishes_nothing_and_removes_its_links(install, monkeypatch, tmp_path):
+    seen = []
+    (tmp_path / "temp").mkdir()
+    monkeypatch.setattr(gateway.tempfile, "tempdir", str(tmp_path / "temp"))   # never the real %TEMP%
+    target = Path(install["data_dir"]) / "Sword.esp"
+    original = target.read_bytes()
+    monkeypatch.setattr(gateway, "Backend", _master_dropping_backend())
+    monkeypatch.setattr(gateway, "independent_check", lambda *a, **k: {"records": {}, "errors": [], "complete": True})
+    monkeypatch.setattr(gateway.subprocess, "run", _fake_preserve(seen, ok=False))
+    with pytest.raises(Refusal, match="Restoring the original's masters failed"):
+        asyncio.run(gateway.Gateway(install).call("housecarl_apply", {
+            "in_place": "Sword.esp", "ops": [{"formid": "000800:Sword.esp", "field_path": "Name", "value": "new"}]}))
+    assert target.read_bytes() == original
+    assert not seen[0]["data"].exists()                            # links removed even though the step failed
+
+
+def test_restore_refuses_a_flag_change_before_running_xedit(install, monkeypatch, tmp_path):
+    candidate = tmp_path / "cand" / "Sword.esp"
+    candidate.parent.mkdir()
+    plugin(candidate, flags=0x200, masters=[])
+    (tmp_path / "temp").mkdir()
+    monkeypatch.setattr(gateway.tempfile, "tempdir", str(tmp_path / "temp"))   # a mutant must not reach real %TEMP%
+    monkeypatch.setattr(gateway.subprocess, "run", lambda *a, **k: pytest.fail("xEdit must not run"))
+    with pytest.raises(Refusal, match="changed the original's header flags"):
+        gateway.retain_header(install, candidate, order.capture(install), Path(install["data_dir"]) / "Sword.esp")
+
+
+def test_verifier_controls_on_synthetic_plugins(tmp_path):
+    import shutil
+    import subprocess
+    if not shutil.which("node"):
+        pytest.skip("Node not installed")
+    here = Path(__file__).resolve().parent
+    result = subprocess.run(["node", str(here / "housecarl-verify-controls.js"), str(here.parent / "tools"), str(tmp_path)],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "Passed 12 verifier controls" in result.stdout
+
+
+# --- Review 2026-11-08: header version/ONAM, link-removal ordering, timeouts -------------------------------------
+
+def _rewriting_backend(writer):
+    """A fake backend whose single call writes the candidate with `writer(path)`."""
+    from types import SimpleNamespace
+
+    class FakeBackend:
+        def __init__(self, config, snapshot, work):
+            self.work = work
+
+        async def __aenter__(self):
+            (self.work / "profile").mkdir()
+            (self.work / "profile/modlist.txt").write_text("")
+            return self
+
+        async def __aexit__(self, *_exc):
+            return False
+
+        async def call(self, _name, _args):
+            writer(self.work / "mods/Target/Sword.esp")
+            return SimpleNamespace(content=[SimpleNamespace(type="text", text=json.dumps({"ok": True, "verify_ran": True}))])
+    return FakeBackend
+
+
+def _apply(install):
+    asyncio.run(gateway.Gateway(install).call("housecarl_apply", {
+        "in_place": "Sword.esp", "ops": [{"formid": "000800:Sword.esp", "field_path": "Name", "value": "new"}]}))
+
+
+SWORD_RECORDS = [(b"WEAP", 0x00012EB7), (b"WEAP", 0x01000800)]   # an override of Skyrim.esm, and its own record
+
+
+@pytest.mark.parametrize("case", ["version-drift-unrestored", "onam-dropped-record-kept"])
+def test_an_edit_that_loses_header_version_or_onam_is_never_published(install, monkeypatch, case):
+    target = Path(install["data_dir"]) / "Sword.esp"
+    plugin(target, 1, ["Skyrim.esm"], version=1.7, onam=[0x00012EB7], records=SWORD_RECORDS)
+    original = target.read_bytes()
+    def writer(path):
+        if case == "version-drift-unrestored":
+            plugin(path, 1, ["Skyrim.esm"], version=1.71, onam=[0x00012EB7], records=SWORD_RECORDS)
+        else:
+            plugin(path, 1, ["Skyrim.esm"], version=1.7, onam=[], records=SWORD_RECORDS)
+    monkeypatch.setattr(gateway, "Backend", _rewriting_backend(writer))
+    monkeypatch.setattr(gateway, "independent_check", lambda *a, **k: {"records": {}, "errors": [], "complete": True})
+    monkeypatch.setattr(gateway, "retain_header", lambda *a, **k: {"complete": True})   # a restore that fixes nothing
+    with pytest.raises(Refusal, match="header version" if case.startswith("version") else "ONAM"):
+        _apply(install)
+    assert target.read_bytes() == original
+
+
+def test_an_onam_entry_may_go_with_its_removed_record(install, monkeypatch):
+    target = Path(install["data_dir"]) / "Sword.esp"
+    plugin(target, 1, ["Skyrim.esm"], version=1.7, onam=[0x00012EB7], records=SWORD_RECORDS)
+    monkeypatch.setattr(gateway, "Backend", _rewriting_backend(
+        lambda path: plugin(path, 1, ["Skyrim.esm"], version=1.7, onam=[], records=SWORD_RECORDS[1:])))
+    monkeypatch.setattr(gateway, "independent_check", lambda *a, **k: {"records": {}, "errors": [], "complete": True})
+    _apply(install)
+    assert gateway.header_fields(target)["onam"] == set()
+
+
+@pytest.mark.parametrize("candidate_version, triggered", [(1.69, True), (1.7, False), (1.71, "refused")], ids=["lowered", "same", "raised"])
+def test_a_version_only_drift_triggers_the_restore(install, monkeypatch, tmp_path, candidate_version, triggered):
+    from types import SimpleNamespace
+    original = Path(install["data_dir"]) / "Sword.esp"
+    plugin(original, 0, ["Skyrim.esm"], version=1.7)
+    candidate = tmp_path / "cand" / "Sword.esp"
+    candidate.parent.mkdir()
+    plugin(candidate, 0, ["Skyrim.esm"], version=candidate_version)   # every master present
+    (tmp_path / "temp").mkdir()
+    monkeypatch.setattr(gateway.tempfile, "tempdir", str(tmp_path / "temp"))
+    calls = []
+    def step(work, masters, cand, run):
+        calls.append(cand)
+        return SimpleNamespace(stdout="", stderr="authored: xEdit not run in this test")
+    monkeypatch.setattr(gateway, "_with_linked_masters", step)
+    if triggered == "refused":
+        with pytest.raises(Refusal, match="raised the plugin's header version"):
+            gateway.retain_header(install, candidate, order.capture(install), original)
+        assert calls == [], "a raised version is refused before any xEdit step"
+    elif triggered:
+        with pytest.raises(Refusal, match="Restoring the original's masters failed"):
+            gateway.retain_header(install, candidate, order.capture(install), original)
+        assert calls == [candidate]
+    else:
+        assert gateway.retain_header(install, candidate, order.capture(install), original) is None
+        assert calls == []
+
+
+def test_a_failed_link_removal_still_compares_every_master_first(tmp_path, monkeypatch):
+    master = tmp_path / "masters" / "Skyrim.esm"
+    master.parent.mkdir()
+    plugin(master, 1)
+    candidate = tmp_path / "cand" / "Sword.esp"
+    candidate.parent.mkdir()
+    plugin(candidate, 0, ["Skyrim.esm"])
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.setattr(gateway.shutil, "rmtree", lambda *a, **k: None)   # e.g. antivirus holding the links
+    monkeypatch.setattr(gateway.time, "sleep", lambda s: None)
+    def step():
+        os.utime(master, ns=(0, 10 ** 15))                                # the master changed during the step
+        raise RuntimeError("authored step failure")
+    with pytest.raises(Refusal) as caught:
+        gateway._with_linked_masters(work, {"Skyrim.esm": master}, candidate, step)
+    assert "Skyrim.esm changed" in str(caught.value) and "could not remove its links" in str(caught.value)
+    assert isinstance(caught.value.__context__, RuntimeError), "the step's own error stays attached"
+    for link in (work / "Data").iterdir():                                # test cleanup of the deliberately kept view
+        link.unlink()
+
+
+def test_an_xedit_timeout_is_a_refusal(tmp_path, monkeypatch):
+    import subprocess
+    def slow(*a, **k):
+        raise subprocess.TimeoutExpired(cmd="node", timeout=120)
+    monkeypatch.setattr(gateway.subprocess, "run", slow)
+    with pytest.raises(Refusal, match="did not finish within 120 s"):
+        gateway._node(["node"], {}, tmp_path, "independent xEdit check")
+
+
+def test_a_master_that_vanishes_during_the_step_is_reported_as_changed(tmp_path, monkeypatch):
+    master = tmp_path / "masters" / "Skyrim.esm"
+    master.parent.mkdir()
+    plugin(master, 1)
+    candidate = tmp_path / "cand" / "Sword.esp"
+    candidate.parent.mkdir()
+    plugin(candidate, 0, ["Skyrim.esm"])
+    work = tmp_path / "work"
+    work.mkdir()
+    with pytest.raises(Refusal, match=r"Skyrim\.esm \(missing or unreadable\) changed"):
+        gateway._with_linked_masters(work, {"Skyrim.esm": master}, candidate, lambda: master.unlink())
+
+
+def test_record_keys_refuses_an_out_of_range_master_index(tmp_path):
+    path = tmp_path / "Bad.esp"
+    plugin(path, 0, ["Skyrim.esm"], records=[(b"WEAP", 0x05000800)])
+    with pytest.raises(Refusal, match="out-of-range master index"):
+        gateway.record_keys(path)

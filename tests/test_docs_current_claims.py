@@ -13,16 +13,20 @@ def _read(rel: str) -> str:
     return (REPO / rel).read_text(encoding="utf-8")
 
 
-def test_saves_are_backed_up_not_confirmed():
-    """W-SAVE / S-WRITE-SAVE went with the 2026-10-13 save policy: a write onto 1-2 saves is backed up and allowed
-    (tests/test_save_policy.py::test_an_edit_tool_write_onto_a_save_is_backed_up and
-    ::test_a_devbench_save_over_an_existing_save_is_backed_up)."""
+def test_saves_are_neither_confirmed_nor_gated():
+    """4.1 (user ruling 2026-11-10): no rule decides on a save; the save vault keeps every version. No doc may still
+    promise a hook backup of one or two saves, a typed approval for more, or a confirmation."""
     readme = _read("README.md")
     assert "its one prompt is a write onto a save" not in readme
     assert "existing save is refused with `NEEDS YOUR CONFIRMATION`" not in readme
-    assert "A write onto one or two saves in `Saves/` is backed up first, then runs" in readme
-    assert "existing save is backed up first, then runs" in readme
+    assert "A write onto one or two saves in `Saves/` is backed up first, then runs" not in readme
+    assert "existing save is backed up first, then runs" not in readme
     assert "save-over-a-save confirmation" not in _read("ADAPTING.md")
+    for rel in ("README.md", "ADAPTING.md", "docs/safety-philosophy.md", "agent/instructions/core.md",
+                "agent/instructions/codex.md", "agent/skills/skyrim-save/SKILL.md"):
+        text = _read(rel)
+        assert "SAVE_ACCESS_APPROVAL" not in text, rel
+        assert "docs/save-vault.md" in text, rel
 
 
 def test_the_update_answer_names_a_path_a_user_can_follow():
@@ -40,23 +44,23 @@ def test_the_update_answer_names_a_path_a_user_can_follow():
     assert "**Which entry to call.**" in adapting
 
 
-def test_sed_without_binary_is_listed_as_refused_and_the_ask_rules_are_five():
+def test_sed_without_binary_is_listed_as_refused_and_the_ask_rules_are_four():
     """S-SED-CRLF denies `sed -i` without -b in the install area (tests/test_skyguard_shell.py::
-    test_sed_crlf_in_the_install_area_denies); core.md listed it as ADVISED. The ask rules are five once the
-    unreadable-command-naming-the-install rule lands (user ruling 3 of the v4 review)."""
+    test_sed_crlf_in_the_install_area_denies); core.md listed it as ADVISED. The ask rules are four since 4.1 (the
+    unnamed-program-given-a-save ask went with the save gate)."""
     core = _read("agent/instructions/core.md")
     denied = core[core.index("### DENIED"):core.index("### ADVISED")]
     advised = core[core.index("### ADVISED"):core.index("### ASKS THE USER")]
     assert "`sed -i` without `-b`" in denied
     assert "`sed -i` " not in advised and "`sed -i`," not in advised
-    assert "### ASKS THE USER -- five rules" in core
+    assert "### ASKS THE USER -- four rules" in core
     asks = core[core.index("### ASKS THE USER"):core.index("Few prompts by design")]
     # Review C-docs F8: S-OPAQUE-PROTECTED asks only for these three forms; an unreadable command naming the install
     # is allowed (or refused as a delete), never asked about.
     assert "an unnamed program, an eval of a variable, or awk system() given a protected path" in asks
     assert "cannot read" not in asks
     assert "`sed -i` without `-b`" in _read("README.md")
-    for rel, phrase in (("README.md", "Only five rules ask"), ("docs/safety-philosophy.md", "Five rules in the toolkit")):
+    for rel, phrase in (("README.md", "Only four rules ask"), ("docs/safety-philosophy.md", "Four rules in the toolkit")):
         assert phrase in _read(rel), rel
 
 
@@ -117,7 +121,8 @@ def test_skill_sentences_are_whole():
     assert "the line the refusal prints):\n\n" not in save
     devbench = _read("agent/skills/devbench/SKILL.md")
     assert "1.24.0, which is the newest release" not in devbench
-    assert "1.28.0 (2026-10-11) is the newest release" in devbench
+    assert "1.32.0 (2026-10-25) is the newest release" in devbench
+    assert "1.28.0 (2026-10-11) is the newest release" not in devbench
 
 
 def _v4_section() -> str:
@@ -131,9 +136,11 @@ def _v4_section() -> str:
 def test_the_changelog_v4_section_is_the_whole_release():
     """Review L4a M4 / L6 F2: a 201-line '## Unreleased' above '## v4.0.0' never reached the release notes, which
     release.yml extracts from the version heading to the next one."""
+    import re
     text = _read("CHANGELOG.md")
     first = text.index("\n## ")
-    assert text[first:].startswith("\n## v4.0.0"), text[first:first + 40]
+    # The first heading is a version (v4.1.0 since 4.1 opened), never an "Unreleased" section above it.
+    assert re.match(r"\n## v\d+\.\d+\.\d+ ", text[first:]), text[first:first + 40]
     notes = _v4_section()
     for entry in ("housekeep", "House Carl", "S-SAVE-OPAQUE", "Knowledgebase notes get committed"):
         assert entry in notes, entry
@@ -158,21 +165,6 @@ def test_pre_arc_carry_overs_are_gone():
     assert "not covered by the toolkit's hook testing" in _read("docs/getting-started.md")
     readme = _read("README.md")
     assert "## New in v4" in readme and "## New in v3" not in readme
-
-
-def test_no_doc_says_the_bulk_save_refusal_prints_the_approval_line():
-    """Review C-docs F1: the S-SAVE-APPROVAL refusal is two lines pointing to `check --preview` (rules.py template;
-    tests/test_approval_preview.py::test_adapting_shell_example_yields_the_grant_the_refusal_does_not_print runs the
-    documented route). Docs said the refusal prints or shows the line, which an agent cannot follow."""
-    stale = ("line the refusal shows", "line the refusal prints", "approval line the guard shows",
-             "line printed by the deciding hook", "the refusal (or `python tools/agent-harness.py check --preview`) prints")
-    for rel in ("README.md", "CHANGELOG.md", "ADAPTING.md", "docs/safety-philosophy.md", "agent/instructions/core.md",
-                "agent/skills/skyrim-save/SKILL.md"):
-        text = _read(rel)
-        for phrase in stale:
-            assert phrase not in text, (rel, phrase)
-    for rel in ("README.md", "docs/safety-philosophy.md", "agent/instructions/core.md", "agent/skills/skyrim-save/SKILL.md"):
-        assert "check --preview` prints" in _read(rel) or "check --preview`." in _read(rel), rel
 
 
 def test_the_v4_fixed_list_names_only_behaviour_3_9_1_shipped():
@@ -219,3 +211,23 @@ def test_upgrade_docs_say_new_folder_is_the_zips_inner_versioned_folder():
     slug = json.loads(_read("package.json"))["name"] + "-<version>/"
     for rel in ("README.md", "docs/upgrading-native-hooks.md", "CHANGELOG.md"):
         assert slug in _read(rel), rel
+
+
+def test_no_shipped_text_still_describes_the_retired_save_gate():
+    """4.1 release review: guard-coverage rows, setup's install text, the philosophy page, the ReSaver Plus README and
+    the skyrim-save skill still described hook backups, typed approvals and S-SAVE-* refusals after the gate was
+    retired. The vault protection they promise must also be stated (S-SAVE-STORE covers the vault since the review)."""
+    retired = ("S-SAVE-BACKUP", "S-SAVE-APPROVAL", "S-SAVE-OPAQUE", "S-SAVE-UNKNOWN", "SAVE_ACCESS_APPROVAL",
+               "verified save-pair backups", "bound human approval", "Save approvals are read",
+               "backs up and protects", "denies them (S-RESAVER-NATIVE-DIRECT)", "The guard denies `resaverpp-cli.exe`",
+               "waits until the game is closed", "two things are judged")
+    for rel in ("docs/guard-coverage.md", "setup.sh", "docs/safety-philosophy.md", "tools/resaver-plus/README.md",
+                "agent/skills/skyrim-save/SKILL.md", "docs/save-vault.md", "README.md", "tools/skyguard/rules.py",
+                ".claude/skyrim-paths.env.example", "docs/skse-devbench-tools.md"):
+        text = _read(rel)
+        if rel == "tools/skyguard/rules.py":
+            text = text.split("REMOVED", 1)[-1].split("\n# ", 1)[-1]     # its list of retired ids is the record
+            text = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+        for phrase in retired:
+            assert phrase not in text, (rel, phrase)
+    assert "S-SAVE-STORE" in _read("docs/save-vault.md")

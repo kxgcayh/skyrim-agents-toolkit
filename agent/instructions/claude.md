@@ -5,9 +5,10 @@
 
 Generated into `CLAUDE.md` only. Everything above is shared with every agent.
 
-- **Mandatory skills workflow**: Skills live in `.claude/skills/<name>/SKILL.md` (invoke via
-  `Skill: <name>`). Reading the relevant `SKILL.md` is a required first step before writing code, compiling Papyrus,
-  or editing assets — skills hold CLI recipes and engine quirks absent from base training.
+- **Skills** live in `.claude/skills/<name>/SKILL.md`. Invoke the relevant one (`Skill: <name>`) before writing
+  code, compiling Papyrus or editing assets. A path-scoped skill (`paths:`) is *listed* only after a `Read`/`Edit`
+  of a matching file, never by Glob or Bash; the binary-file skills (nif, bsa, save, audio) are unscoped, so always
+  listed. Listing is not loading: invoke it.
 - **Tone, directness & conciseness**: Dense, brief, technical answers without disingenuous modifiers
   ("genuinely", "honestly", "straightforward"). Push back constructively when an approach risks CTD or save
   corruption. During multi-tool chains, give a 1-sentence status every few calls.

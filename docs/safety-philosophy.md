@@ -35,7 +35,7 @@ Six thin wrappers over the Python engine `tools/skyguard/` intercept Claude's to
 
 - **protect-bash.sh** -- Blocks destructive commands; **advises** on file operations in the game directory (a note to Claude, not a prompt to you)
 - **protect-files.sh** -- Blocks writes to plugin/archive binaries through the Edit/Write tools; **advises** on all other edits in the install
-- **protect-mcp.sh** -- Guards the DevBench MCP tools (and the curl / `devbench-cli.sh` route to the same tools): denies the one console command measured to crash a large load order (`smp reset`). Recognized changes to one or two saves require verified permanent save-pair backups before proceeding; bulk access needs the bound human approval described below.
+- **protect-mcp.sh** -- Guards the DevBench MCP tools (and the curl / `devbench-cli.sh` route to the same tools): denies the one console command measured to crash a large load order (`smp reset`). Since 4.1 no hook judges a save: the save vault keeps every version (`docs/save-vault.md`).
 - **backup-before-edit.sh** -- Copies a file before Claude modifies it **through the Edit/Write/NotebookEdit tools**. ⚠ Anything written by a script run through Bash is invisible to it -- that is a property of hooks, not a bug here. MEASURED: zero backups of a 177,459-byte `KNOWLEDGEBASE.md` across seven months, because it is written by a script. `session-kb-guard.sh` below covers that channel.
 - **snapshot-before-tool.sh** -- Snapshots Papyrus source/compiled scripts before shell commands
 - **session-kb-guard.sh** -- At SessionStart, copies the files nothing can rebuild
@@ -54,32 +54,9 @@ Every change made through the edit tools (and Codex `apply_patch`) is logged wit
 ## Design Principles
 
 ### 1. No Silent Modifications
-Destructive changes are blocked outright. Everything else that is consequential but legitimate is **advised**: a note
-is injected into Claude's context and the call proceeds -- you are not prompted. Five rules in the toolkit ask you to
-decide: a git command that would throw away uncommitted changes in a protected folder, a `lock disable` that turns the
-vanilla-file lock off for good, an in-place restore (`snapshot restore --in-place` or
-`restore-from-backup.sh --restore`), which writes over live files, and a program the guard cannot name (a variable
-such as `$R`) given one of your saves -- it may write, move or delete the save, or nothing, and the guard cannot count
-that change to back it up first -- and such a program, or an `eval` of code a variable holds, naming another protected
-path (the install, `Data`, the settings or MO2 folders, a plugin or archive), since the guard cannot tell what it does
-there.
+Destructive changes are blocked outright. Everything else that is consequential but legitimate is **advised**: a note is injected into Claude's context and the call proceeds -- you are not prompted. Four rules in the toolkit ask you to decide: a git command that would throw away uncommitted changes in a protected folder, a `lock disable` that turns the vanilla-file lock off for good, an in-place restore (`snapshot restore --in-place` or `restore-from-backup.sh --restore`), which writes over live files, and a program the guard cannot name (a variable such as `$R`), or an `eval` of code a variable holds, naming a protected path (the install, `Data`, the settings or MO2 folders, a plugin or archive), since the guard cannot tell what it does there.
 
-Saves follow their own rule (user ruling 2026-10-13), because a save is the one thing a mod manager cannot give back.
-A command that changes one or two saves -- writes, copies onto, edits, moves, renames or deletes them, a DevBench save
-over an existing one, ReSaver `--apply` -- runs WITHOUT a prompt, but only after the deciding hook has copied both
-files of each pair (the `.ess` and its `.skse` co-save count as one save), read each copy back to its SHA-256 and
-recorded it; if that backup fails the command is refused. More than two saves, or a wildcard, is refused until you
-type the `SAVE_ACCESS_APPROVAL` line that `python tools/agent-harness.py check --preview` prints for that exact
-command (the refusal points there) -- read only from what you typed, never from anything the agent read. Those backups
-are never pruned. Reading, hashing, listing and copying saves out are free; deleting or moving the whole `Saves`
-folder stays refused.
-
-New save transactions live in `.modding-agent-harness/backups/saves/`, independent of the coding agent.
-Version 1 approvals bind canonical full paths and session/operation; wildcards also bind the command hash
-and logical save count. Legacy basename-only grants do not qualify. The neutral configuration file can
-select another backup destination and reserve; the store cannot include a save root. Both older Skyrim
-save formats remain readable, and legacy recovery leaves their evidence intact. Restore defaults to a
-new directory, expands a member selection to its pair, verifies chosen blobs and journals publication.
+Saves have no rule since 4.1 (user ruling 2026-11-10): the save vault keeps every settled version of every save and settings INI, whatever changed it, and nothing asks first (`docs/save-vault.md`). The 4.0 rule read each command's text to count the saves it changed, backed one or two up and refused more until you typed an approval; measured over 1,602 sessions it refused 191 commands, none of which changed a real save, while a save changed by a script it could not read had no backup at all. A backup taken whatever changed the save beats a rule that has to understand the command first. Deleting or moving the whole `Saves` folder, or everything in it at once, is still refused, and the optional OS save locks are unchanged. Backups the 4.0 gate took stay where they were (`.modding-agent-harness/backups/saves/`) and stay restorable.
 
 ⚠ This inverted in v3.8.3 and this page said the opposite until v3.9. A guard that prompts on routine work gets approved by reflex and then protects nothing; the X4 toolkit measured 40 such prompts across 13,282 commands, every one of them noise. So the honest summary is: **few prompts, a short deny list, and a lot of advice** -- not "nothing happens without your approval".
 

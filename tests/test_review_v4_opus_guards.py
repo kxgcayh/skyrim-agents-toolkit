@@ -37,19 +37,15 @@ def judge(world, command, shell="bash", cwd=None):
 
 # ---- 1.1: PowerShell gives a positional word to the first position not filled by name
 @pytest.mark.parametrize("command", [
-    "Copy-Item -Path C:/bk/a.ess '<C>/Saves/b.ess'",
-    "Copy-Item -LiteralPath C:/bk/a.ess '<C>/Saves/b.ess'",
-    "Rename-Item -Path '<C>/Saves/main.ess' old.ess",
-    "Rename-Item -LiteralPath '<C>/Saves/main.ess' old.ess",
+    "Copy-Item -Path C:/bk/a.esp '<I>/Data/b.esp'",
+    "Copy-Item -LiteralPath C:/bk/a.esp '<I>/Data/b.esp'",
+    "Rename-Item -Path '<I>/Data/main.esp' old.esp",
+    "Rename-Item -LiteralPath '<I>/Data/main.esp' old.esp",
 ])
 @ROOTED_ON_A_DRIVE
 def test_a_named_path_leaves_the_positional_word_to_the_destination(world, command):
-    assert judge(world, command, "powershell", "C:/Temp")[2], command
-
-
-@ROOTED_ON_A_DRIVE
-def test_a_named_archive_path_leaves_the_positional_word_to_the_destination(world):
-    assert judge(world, "Expand-Archive -Path x.zip '<C>/Saves'", "powershell", "C:/Temp")[1] == {"S-SAVE-APPROVAL"}
+    """Seen on the plugin a copy or rename lands on in the load path (it was seen on a save until 4.1)."""
+    assert "S-COPY-PLUGIN" in judge(world, command, "powershell", "C:/Temp")[1], command
 
 
 @ROOTED_ON_A_DRIVE
@@ -82,16 +78,6 @@ def test_the_working_folder_by_command_substitution_is_the_working_folder(world,
 
 def test_another_substitution_is_still_unknown():
     assert targets.resolve("$(cat f)/a", "C:/x", "bash", {}) is None
-
-
-# ---- 1.3: a tree restored into the settings folder replaces same-named saves
-@pytest.mark.parametrize("command, shell", [
-    ('cp -r bk/Saves "<C>/"', "bash"), ('rsync -a bk/ "<C>/"', "bash"), ('tar -xf p.tar -C "<C>"', "bash"),
-    ('robocopy bk "<C>" /E', "bash"),
-    pytest.param('Expand-Archive x.zip -DestinationPath "<C>"', "powershell", marks=ROOTED_ON_A_DRIVE),
-])
-def test_a_tree_into_the_settings_folder_needs_the_saves_approval(world, command, shell):
-    assert judge(world, command, shell, "C:/Temp")[1] == {"S-SAVE-APPROVAL"}
 
 
 @pytest.mark.parametrize("command, shell", [
@@ -198,33 +184,9 @@ def test_a_body_python_runs_as_code_must_still_parse(world, command):
         judge(world, command, cwd="C:/Temp")
 
 
-# ---- 1.9: a save path the guard cannot resolve is refused, as saves.py says; a run-time value says nothing
-def test_an_unresolvable_literal_save_path_is_refused(world):
-    command = 'cp x.ess "C:/Users/Foo [x]/Documents/My Games/Skyrim VR/Saves/a.ess"'
-    assert judge(world, command, cwd="C:/Temp")[1] == {"S-SAVE-UNKNOWN"}
-
-
 def test_a_run_time_folder_is_a_known_limit(world):
     assert judge(world, 'cp bk.ess "$SAVES/main.ess"', cwd="C:/Temp")[0] == "allow"
     assert judge(world, 'cp bk.ess "$X/My Games/Skyrim VR/Saves/main.ess"', cwd="C:/Temp")[0] == "allow"
-
-
-def test_the_write_tool_refuses_a_short_name_save_path(world):
-    a = audit.Audit("")
-    a.raw = lambda line: None
-    v = write_rules.decide("C:/Users/MOONA~1/Documents/My Games/Skyrim VR/Saves/a.ess", a, roots=world[2], cwd="C:/Temp", env=os.environ)
-    assert v.decision == "deny"
-
-
-# ---- 1.10: Python copies into the Saves folder
-@pytest.mark.parametrize("code, rule", [
-    ("import shutil; shutil.copy('C:/bk/main.ess', r'<C>/Saves/')", "S-SAVE-BACKUP"),
-    ("import shutil; shutil.move('C:/bk/main.ess', r'<C>/Saves/')", "S-SAVE-BACKUP"),
-    ("import shutil; shutil.copytree('bk', r'<C>/Saves', dirs_exist_ok=True)", "S-SAVE-APPROVAL"),
-    ("import shutil; shutil.copytree('bk', r'<C>', dirs_exist_ok=True)", "S-SAVE-APPROVAL"),
-])
-def test_a_python_copy_into_saves_gets_the_save_policy(world, code, rule):
-    assert rule in judge(world, 'python -c "' + code + '"', cwd="C:/Temp")[1]
 
 
 # ---- 1.11: programs that run or delete
@@ -242,29 +204,10 @@ def test_their_read_only_forms_pass(world, command):
     assert judge(world, command)[0] == "allow"
 
 
-# ---- 1.12, 1.14, 1.16 to 1.20, 1.22
-def test_git_bash_xcopy_switches_are_switches(world):
-    assert judge(world, "xcopy bk '<C>/Saves' //E //Y", cwd="C:/Temp")[1] == {"S-SAVE-APPROVAL"}
-
-
-def test_rsync_of_one_named_save_is_one_save(world):
-    install, config, roots = world
-    command = "rsync a.ess '{}/Saves/b.ess'".format(config)
-    found = writes.scan(command, shellparse.parse(command, "bash"), roots, cwd="C:/Temp", env=os.environ).save_targets
-    assert [t.replace("\\", "/").lower() for t, _op in found] == [(config + "/Saves/b.ess").lower()]
-    assert judge(world, "rsync a.ess '<C>/Saves/b.ess'", cwd="C:/Temp")[1] == {"S-SAVE-BACKUP"}
-    assert judge(world, "rsync bk/x.ess '<C>/Saves/'", cwd="C:/Temp")[0] == "allow"
-    assert judge(world, "rsync -a bk/ '<C>/Saves/'", cwd="C:/Temp")[1] == {"S-SAVE-APPROVAL"}
-
-
 @pytest.mark.parametrize("command", ['f() { if true; then shift; fi; rm -rf "$1"; }; f /tmp/x Data',
                                      'f() { builtin shift; rm -rf "$1"; }; f /tmp/x Data'])
 def test_a_shift_after_a_keyword_moves_the_arguments(world, command):
     assert judge(world, command)[0] == "deny"
-
-
-def test_the_native_adapter_is_read_past_a_valued_python_option(world):
-    assert judge(world, "python -X utf8 tools/resaver_native.py clean a.ess b.ess --apply")[1] == {"S-SAVE-BACKUP"}
 
 
 @ROOTED_ON_A_DRIVE
@@ -297,15 +240,6 @@ def test_other_interpreters_still_read_their_delete_calls(world):
     assert judge(world, "Rscript -e \"file.remove(paste0('<I>/Data', '/x.txt'))\"", cwd="C:/Temp")[0] == "deny"
 
 
-# ---- 1.13: the whitelist reads the path after `..`
-def test_a_whitelisted_folder_climbed_out_of_is_not_whitelisted(world):
-    install, config, roots = world
-    a = audit.Audit("")
-    a.raw = lambda line: None
-    path = install + "/.claude/backups/../../../Docs/My Games/Skyrim VR/Saves/main.ess"
-    assert write_rules.decide(path, a, roots=roots, cwd=install, env=os.environ).saves
-
-
 # ---- the review of the fixes
 @pytest.mark.parametrize("command", ["bash tools/skyguard.sh save-lock --forget-missing off", "bash tools/skyguard.sh save-lock --forget-missing on",
                                      "bash tools/skyguard.sh save-lock --project . off"])
@@ -328,15 +262,6 @@ def test_one_named_settings_file_is_not_a_bulk_save_change(world, command):
     assert judge(world, command, cwd="C:/Temp")[0] == "allow"
 
 
-def test_saves_one_folder_down_still_count(tmp_path):
-    install, config = (tmp_path / "Game").as_posix(), (tmp_path / "Docs/My Games/Skyrim VR").as_posix()
-    os.makedirs(install + "/Data")
-    os.makedirs(config + "/Saves/Profile")
-    open(config + "/Saves/Profile/a.ess", "wb").close()
-    roots = paths.roots(install, "", {"SKYRIM_GAME_ROOT": install, "SKYRIM_CONFIG_DIR": config})
-    assert judge((install, config, roots), "cp -r bk/Saves '<C>/'", "bash", "C:/Temp")[1] == {"S-SAVE-APPROVAL"}
-
-
 def test_an_option_value_is_not_a_script_name():
     with pytest.raises(ValueError):
         shell_rules_decide = "python -X utf8 <<'EOF'\nnot python at open(p, m)\nEOF"
@@ -353,4 +278,29 @@ def test_a_delete_and_a_rename_of_one_name_do_not_share_a_destination(world):
 ])
 def test_a_path_destination_is_read_like_a_string_one(world, code, want):
     assert judge(world, 'python -c "' + code + '"')[0] == want
+
+
+# ---- restored in 4.1 (kept behaviour; the reads of the retired save plan are taken out)
+def test_a_whitelisted_folder_climbed_out_of_is_not_whitelisted(world):
+    install, config, roots = world
+    a = audit.Audit("")
+    a.raw = lambda line: None
+    inside = install + "/.claude/backups/x.ini"
+    assert write_rules.decide(inside, a, roots=roots, cwd=install, env=os.environ).context == ""       # whitelisted
+    path = install + "/.claude/backups/../../Data/SKSE/Plugins/x.ini"                               # climbed out
+    assert "x.ini" in write_rules.decide(path, a, roots=roots, cwd=install, env=os.environ).context
+
+
+def test_git_bash_xcopy_switches_are_switches(world):
+    """`//E` is how Git Bash spells an xcopy switch MSYS must not rewrite: a switch, never the destination (it was
+    shown on a copy into Saves until 4.1; a plugin copied into Data gets its note the same way)."""
+    assert "S-COPY-PLUGIN" in judge(world, "xcopy bk/x.esp '<I>/Data' //E //Y", cwd="C:/Temp")[1]
+
+
+@ROOTED_ON_A_DRIVE
+def test_a_piped_copy_onto_a_plugin_is_seen(world):
+    """`Get-Item x | Copy-Item -Destination <plugin>`: the source arrives through the pipe, the copy is still read."""
+    bs = chr(92)
+    cmd = "Get-Item C:" + bs + "Temp" + bs + "x.esp | Copy-Item -Destination '<I>/Data/x.esp'"
+    assert "S-COPY-PLUGIN" in judge(world, cmd, "powershell", "C:/Temp")[1]
 

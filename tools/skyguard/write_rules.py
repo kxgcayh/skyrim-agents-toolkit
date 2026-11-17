@@ -50,8 +50,9 @@ def papyrus_zone(abs_path: str, roots) -> bool:
 
 def decide(file_path: str, audit, roots=None, cwd: str = "", env=None, op: str = "write",
            transcript: str = "") -> Verdict:
-    """op: what the call does to the file, for the save policy (saves.py): `write` (an edit, a write, a patch that
-    adds or updates it), `delete` or `move` (a patch that deletes it or moves it away)."""
+    """op: what the call does to the file: `write` (an edit, a write, a patch that adds or updates it), `delete` or
+    `move` (a patch that deletes it or moves it away). A delete or move also protects a folder ABOVE a save store,
+    the session transcripts or the guards' state (W-SAVE-STORE, W-SELF-TRANSCRIPT, the self-state check)."""
     if file_path == "":
         audit.rule(HOOK, "W-INERT-NOPATH", "deny", NO_PATH_LOG, level="REFUSE")
         return Verdict("deny", NO_PATH_DENY)
@@ -72,7 +73,9 @@ def decide(file_path: str, audit, roots=None, cwd: str = "", env=None, op: str =
     # roots (an old caller, an unreadable paths file on Codex) the path's own words decide (self_rules.text_kind).
     env_ = os.environ if env is None else env
     placed = targets.resolve_literal(file_path, cwd, env_) if roots is not None else None
-    if placed and self_rules.save_store_target(placed, roots, holder=op in ("delete", "move")):
+    # The save vault lives outside the install, so its check needs no roots (an unreadable paths file).
+    store_place = placed if roots is not None else targets.resolve_literal(file_path, cwd, env_)
+    if store_place and self_rules.save_store_target(store_place, roots, holder=op in ("delete", "move"), env=env_):
         reason = rules.message("W-SAVE-STORE", file=file_path)
         audit.rule(HOOK, "W-SAVE-STORE", "deny", reason)
         return Verdict("deny", reason)
@@ -83,7 +86,7 @@ def decide(file_path: str, audit, roots=None, cwd: str = "", env=None, op: str =
         reason = rules.message("W-SAVE-LOCK", file=lock_word)
         audit.rule(HOOK, "W-SAVE-LOCK", "deny", reason)
         return Verdict("deny", reason)
-    # User ruling 2026-10-20: the agent's own session transcripts (save approvals are read there) are the host's alone.
+    # User ruling 2026-10-20: the agent's own session transcripts (the user's record of the session) are the host's alone.
     spoken = placed if roots is not None else targets.resolve_literal(file_path, cwd, env_)
     if spoken and self_rules.transcript_target(spoken, env_, transcript, holder=op in ("delete", "move")):
         reason = rules.message("W-SELF-TRANSCRIPT", file=file_path)
@@ -124,18 +127,10 @@ def decide(file_path: str, audit, roots=None, cwd: str = "", env=None, op: str =
         advice.add(text)
 
     if roots is not None:
-        from .writes import _unplaced_save, in_install_area, is_save
+        from .writes import in_install_area, is_save
         a = targets.resolve_literal(file_path, cwd, os.environ if env is None else env)
-        if a is None and _unplaced_save(file_path):
-            from . import saves     # a real path the guard cannot resolve: S-SAVE-UNKNOWN, as saves.py says
-            return saves.judge(saves.Change((saves.Target("", op if op in saves.OPS else "write", True),)), Verdict(), audit, HOOK)
         if is_save(a, roots):
-            # The save policy (user ruling 2026-10-13): a save changed through Edit/Write or a patch is backed up
-            # first (portable.check); saves.judge decides it with every other save the call changes.
-            from . import saves
-            actual = targets.physical(file_path, cwd, "cmd", env_, literal=True)
-            return saves.judge(saves.Change((saves.Target(actual or "", op if op in saves.OPS else "write", True),)), Verdict(),
-                               audit, HOOK)
+            return Verdict()        # no rule decides on a save (4.1): the save vault keeps every version
         papyrus = a is not None and papyrus_zone(a, roots)
         install = a is not None and in_install_area(a, roots)
     else:

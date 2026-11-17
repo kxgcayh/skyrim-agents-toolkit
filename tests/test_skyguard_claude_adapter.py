@@ -211,18 +211,6 @@ def test_command_type(ti, want):
     assert claude.extract(json.dumps({"tool_name": "Bash", "tool_input": ti}))["command_type"] == want
 
 
-def test_run_passes_the_shell_dialect(tmp_path):
-    """Wiring proof: a python heredoc that only MENTIONS a ReSaver write is allowed when the engine is told the
-    dialect is bash, but asks under the unknown dialect (bash AND PowerShell, where the PowerShell reading cannot
-    parse it and the R4 text fallback applies). run.py must therefore be passing shell."""
-    cmd = "python - <<'EOF'\nprint('resaver-cli.sh reset-havok x.ess --apply')\nEOF"
-    sys.path.insert(0, str(REPO / "tools"))
-    from skyguard import shell_rules
-    assert shell_rules.resaver_apply(cmd, "") and not shell_rules.resaver_apply(cmd, "bash")
-    r = _run("protect-bash", json.dumps({"tool_name": "Bash", "tool_input": {"command": cmd}}), tmp_path)
-    assert r.returncode == 0 and json.loads(r.stdout) == {}
-
-
 def test_run_reports_a_malformed_paths_file_by_key(tmp_path):
     root = tmp_path / "Skyrim"
     (root / ".claude").mkdir(parents=True)
@@ -379,12 +367,28 @@ def test_to_request_carries_cwd_raw(cwd):
 def test_run_judges_monitor_in_the_unknown_dialect(tmp_path):
     """Merge of Plans 4+5: Plan 4's to_request hard-coded shell="bash". Monitor names no dialect, so the engine must
     get "" (bash AND PowerShell, R5): the same python heredoc that is allowed as Bash asks as Monitor."""
-    cmd = "python - <<'EOF'\nprint('resaver-cli.sh reset-havok x.ess --apply')\nEOF"
+    cmd = "cat <<'EOF'\nreg delete \"HKLM" + chr(92) + "SOFTWARE" + chr(92) + "Bethesda Softworks" + chr(92) + "Skyrim VR\" /f\nEOF"
     p = claude.extract(json.dumps({"tool_name": "Monitor", "tool_input": {"command": cmd}}))
     assert claude.to_request(p, "shell").shell is None
     bash = _run("protect-bash", json.dumps({"tool_name": "Bash", "tool_input": {"command": cmd}}), tmp_path)
     mon = _run("protect-bash", json.dumps({"tool_name": "Monitor", "tool_input": {"command": cmd}}), tmp_path)
     assert json.loads(bash.stdout) == {}
-    # The save policy (2026-10-13): the ReSaver --apply the PowerShell reading sees names a save it cannot place (no
-    # cwd), so it cannot be backed up first -- refused (it used to ask).
+    # To bash the registry delete is here-document text; the PowerShell reading sees a command (S-REGISTRY).
     assert json.loads(mon.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+# ---- restored in 4.1 (kept behaviour; the reads of the retired save plan are taken out)
+def test_run_passes_the_shell_dialect(tmp_path):
+    """Wiring proof: here-document text that holds a Bethesda registry delete is allowed when the engine is told the
+    dialect is bash, but refused under the unknown dialect (bash AND PowerShell: the PowerShell reading runs it).
+    run.py must therefore be passing shell."""
+    bs = chr(92)
+    cmd = "cat <<'EOF'\nreg delete \"HKLM" + bs + "SOFTWARE" + bs + "Bethesda Softworks" + bs + "Skyrim VR\" /f\nEOF"
+    sys.path.insert(0, str(REPO / "tools"))
+    from skyguard import audit as audit_mod, paths, shell_rules
+    roots = paths.roots(str(tmp_path), "", {})
+    unknown = shell_rules.decide(cmd, roots, audit_mod.Audit(str(tmp_path)), shell=None, env={})
+    bash = shell_rules.decide(cmd, roots, audit_mod.Audit(str(tmp_path)), shell="bash", env={})
+    assert unknown.decision == "deny" and bash.decision == "allow"
+    r = _run("protect-bash", json.dumps({"tool_name": "Bash", "tool_input": {"command": cmd}}), tmp_path)
+    assert r.returncode == 0 and json.loads(r.stdout) == {}

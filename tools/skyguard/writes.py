@@ -75,7 +75,7 @@ import unicodedata
 from pathlib import Path
 from typing import List, Mapping, NamedTuple, Optional, Tuple
 
-from . import paths, shellparse, targets
+from . import shellparse, targets
 from .deletes import _cp_target_option, _plain_operands, interpreter_code, python_nodes, robocopy_positionals, substituted
 from .grep import _compile
 from .shellparse import ps_param
@@ -381,10 +381,6 @@ def _plain_operands_valued(argv, valued) -> List[str]:
     return out
 
 
-def _remote_copy_operands(e) -> List[str]:
-    return _plain_operands_valued(e.argv, _SCP_VALUED if e.program == "scp" else _RSYNC_VALUED)
-
-
 def _perl_code_given(argv) -> bool:
     return any(w in ("-e", "-E") for w in argv)
 
@@ -446,8 +442,8 @@ _READ_ONLY_IMPORTS = frozenset((
     "enum", "fnmatch", "fractions", "functools", "glob", "hashlib", "html", "itertools", "json", "locale", "math",
     "os", "os.path", "pathlib", "platform", "pprint", "random", "re", "statistics", "string", "struct",
     "sys", "textwrap", "time", "typing", "unicodedata", "xml.etree", "xml.etree.ElementTree"))
-_STAR_NAMES = {"os": ("remove", "unlink", "rename", "renames", "replace", "truncate"),
-               "shutil": ("move", "copy", "copy2", "copyfile", "copytree"), "send2trash": ("send2trash",)}
+# `from <module> import *` names: a hand-kept list below the change tables (#26 round 8 review: an earlier list
+# missed io.FileIO, gzip/tarfile/zipfile classes, os.link, shutil.unpack_archive).
 _READ_OPEN = re.compile(
     r"""(?<![.\w])open\(\s*(?:[rRbBuU]{0,2}"[^"\n]*"|[rRbBuU]{0,2}'[^'\n]*'|[\w.\[\]]+)\s*"""
     r"""(?:,\s*(?:mode\s*=\s*)?['"](?:r|rb|rt|br|tr)['"])?\s*"""
@@ -599,7 +595,7 @@ def _python_write_targets(code: str) -> List[str]:
             items = first.elts if isinstance(first, (ast.List, ast.Tuple, ast.Set)) else [first] if first is not None else []
             words = [w for w in (literal(i) or path_argument(i) for i in items) if w]
             if words:
-                out += [_CopyWord(w, moved=True, removed=True) for w in words]   # read for saves; deletes.py has the rest
+                out += [_CopyWord(w, moved=True, removed=True) for w in words]   # deletes.py has the rest
                 continue
         keyword = "path" if name == "os.truncate" else "file"
         argument = node.args[0] if node.args else next((k.value for k in node.keywords if k.arg == keyword), None)
@@ -608,6 +604,18 @@ def _python_write_targets(code: str) -> List[str]:
                 name in ("open", "io.open", "builtins.open") and writing(node, 1)):
             out.append(value)
     return out
+
+
+# What `from <module> import *` brings in that the literal reader above reads as a write, a move or a delete of its
+# literal argument. `nt` and `posix` are the modules os re-exports.
+_STAR_NAMES = {
+    "bz2": ("BZ2File",), "gzip": ("GzipFile",), "io": ("FileIO", "open"), "lzma": ("LZMAFile",),
+    "os": ("link", "open", "remove", "removedirs", "rename", "renames", "replace", "rmdir", "symlink", "truncate",
+           "unlink"),
+    "send2trash": ("send2trash",),
+    "shutil": ("copy", "copy2", "copyfile", "copytree", "move", "rmtree", "unpack_archive"),
+    "tarfile": ("TarFile",), "zipfile": ("ZipFile",),
+}
 
 
 def text_write_targets(code: str, *, python_literals: bool = False) -> List[str]:
@@ -628,13 +636,6 @@ def _script_reads_stdin(e, command: str) -> bool:
         return False
     seen, program = shellparse.python_options(e.argv)      # `python -X utf8 <<EOF` names no script
     return "i" not in seen and "PYTHONINSPECT" not in command and program != "stdin"
-
-
-def _unplaced_save(word: str) -> bool:
-    """A literal save path in the settings area the guard cannot resolve (an 8.3 name, a glob character in a folder).
-    A run-time value (`$S/a.ess`) is not one: it says nothing about where it lands (saves.py KNOWN LIMITS)."""
-    low = word.replace("\\", "/").lower()
-    return low.endswith(SAVE_EXTS) and not re.search(r"[$`%]", word) and bool(re.search(r"/my games/|/saves/", low))
 
 
 def write_targets(e) -> List[str]:
@@ -814,10 +815,6 @@ class Scan(NamedTuple):
     deny: str                               # basename of a plugin a write primitive targets ("" for none)
     advice: Tuple[Tuple[str, str], ...]     # (rule id, file phrase) in rule order, one per rule
     move_root: str = ""                     # S-MOVE-ROOT: basename of a protected folder a move takes away
-    # The save policy (saves.py): (resolved path, op) for each save in the settings folder a write, copy onto, move
-    # or rename CHANGES -- op "write" (written or replaced) or "move" (taken from where it is). Not a decision here:
-    # saves.judge decides the call on every save it changes, together.
-    save_targets: Tuple[Tuple[str, str], ...] = ()
     sed_crlf: str = ""                      # S-SED-CRLF: basename of a file sed -i rewrites without -b
 
 
@@ -829,96 +826,6 @@ _CONFIG_SAVES = re.compile(r"/documents/my games/skyrim[^/]*/saves$")
 def is_save(abs_path: Optional[str], roots) -> bool:
     """A save (or its SKSE co-save) in the settings folder, where the game reads it."""
     return bool(abs_path) and abs_path.lower().endswith(SAVE_EXTS) and targets.zone(abs_path, roots) == "config"
-
-
-def is_save_folder(abs_path: Optional[str], roots) -> bool:
-    """A Saves folder in the settings area: a bulk copy into it can replace any save there."""
-    if not abs_path or targets.zone(abs_path, roots) != "config":
-        return False
-    # Below the settings folder only (sLocalSavePath can name a folder below Saves): a parent folder of the settings
-    # folder that happens to be called Saves says nothing.
-    below = _rel(abs_path, roots.config_dirs)
-    if below is None:
-        m = re.search(r"/my games/skyrim[^/]*/(.*)$", abs_path.rstrip("/").lower())
-        below = m.group(1).split("/") if m else []
-    return "saves" in below
-
-
-def is_settings_folder(abs_path: Optional[str], roots) -> bool:
-    """The settings folder itself (the parent of Saves): a tree restored into it replaces same-named saves."""
-    if not abs_path or targets.zone(abs_path, roots) != "config":
-        return False
-    return _rel(abs_path, roots.config_dirs) == [] or bool(re.search(r"/my games/skyrim[^/]*$", abs_path.rstrip("/").lower()))
-
-
-def _settings_hold_saves(physical: str) -> bool:
-    """Is there a save for a tree restored into this settings folder to replace? With none, nothing is at risk, and a
-    wildcard approval could name nothing to approve. A folder that cannot be listed counts as holding some."""
-    if not physical:
-        return True
-    failed = []
-    for _folder, _dirs, names in os.walk(physical.rstrip("/\\") + "/Saves", onerror=failed.append):   # sLocalSavePath can
-        if any(n.lower().endswith(SAVE_EXTS) for n in names):                                            # name a folder below
-            return True
-    return any(not isinstance(e, FileNotFoundError) for e in failed)
-
-
-def _keeps_source_folders(e) -> bool:
-    """`rsync -R a/b/c dest/` and `cp --parents a/b/c dest/` write dest/a/b/c, so a name with a folder in it does not
-    land where it looks. A plain top-level name has no folder to keep."""
-    if e.program == "rsync":
-        relative = any(w == "--relative" or re.fullmatch(r"-[A-Za-z]*R[A-Za-z]*", w) for w in e.argv)
-    else:
-        relative = e.program == "cp" and any(re.fullmatch(r"--pa(?:r(?:e(?:n(?:ts?)?)?)?)?", w) for w in e.argv)
-    if not relative:
-        return False
-    sources = [s for _, words in copy_targets(e) for s in words]
-    return any("/" in s.replace("\\", "/") and (_name(s).lower().endswith(SAVE_EXTS) or _may_bring_saves(s)) for s in sources)
-
-
-def _may_bring_saves(source: str) -> bool:
-    """A copy source that can hold saves: a folder, a wildcard that could match one. A named other file cannot."""
-    name = _name(source)
-    if re.search(r"[*?\[{]", name):
-        import fnmatch
-        return any(fnmatch.fnmatchcase("x" + ext, name.lower()) or fnmatch.fnmatchcase("save" + ext, name.lower())
-                   for ext in SAVE_EXTS) or not re.search(r"\.[a-z0-9]+$", name.lower())
-    return _looks_like_dir(source)
-
-
-def bulk_destinations(e) -> List[str]:
-    """Folders this exec fills with files it does not name: an archive extraction, or a tree copy (release review
-    2026-11-02: `tar -xf x -C Saves`, `rsync -a bk/ Saves/` and `robocopy bk Saves` changed saves with no save plan)."""
-    p, argv = e.program, e.argv
-    if p == "tar" and (any(w in ("--extract", "--get") or re.fullmatch(r"-[a-zA-Z]*x[a-zA-Z]*", w) for w in argv)
-                       or re.fullmatch(r"[a-zA-Z]*x[a-zA-Z]*", argv[0] if argv else "")):
-        return (_opt_values(argv, ("--directory",), ("-C",)) or ["."])[:1]
-    if p == "unzip":
-        return (_opt_values(argv, (), ("-d",)) or ["."])[:1]
-    if p in ("7z", "7za", "7zr", "7z.exe") and argv and argv[0].lower() in ("x", "e"):
-        out = [w[2:] for w in argv if w.startswith("-o") and len(w) > 2]
-        return out[:1] or ["."]
-    if p == "expand-archive":
-        return (list(ps_param(e, "destinationpath", 1, before=(("path", "literalpath"),))) or ["."])[:1]
-    if p in ("rsync", "scp"):
-        return _remote_copy_operands(e)[-1:]
-    if p == "robocopy":
-        pos = robocopy_positionals(argv)
-        return [pos[1]] if len(pos) == 2 else []
-    return []
-
-
-def _save_only_writes(e) -> List[str]:
-    """Programs that replace a file by name and are judged elsewhere, read here only for the save policy."""
-    p, argv = e.program, e.argv
-    if p == "shred":
-        return _plain_operands_valued(argv, ("-n", "--iterations", "-s", "--size", "--random-source"))
-    if p == "install" and not any(w in ("-d", "--directory") for w in argv):
-        return _plain_operands_valued(argv, ("-m", "--mode", "-o", "--owner", "-g", "--group", "-t",
-                                             "--target-directory"))[-1:]
-    if p == "ln":
-        return _plain_operands(argv)[-1:]
-    return []
 
 
 def is_protected_folder(abs_path: Optional[str], roots) -> bool:
@@ -1048,7 +955,6 @@ def scan(command: str, parsed, roots, cwd: str = "", env: Optional[Mapping[str, 
     env = os.environ if env is None else env
     plugin: List[str] = []
     moved: List[str] = []
-    saves: List[Tuple[str, str]] = []
     crlf: List[str] = []
     notes = {k: [] for k in ADVICE_ORDER}
 
@@ -1069,8 +975,7 @@ def scan(command: str, parsed, roots, cwd: str = "", env: Optional[Mapping[str, 
             # S-SED-WINPATH (Task 9): sed -i on an install/config/MO2 file whose replacement holds a backslash path.
             # It REPLACES the S-WRITE-INSTALL note for that file (one note per write, not two).
             if is_save(a, roots):
-                saves.append((targets.physical_operand(e, w, cwd, env) or "", "write"))
-                continue
+                continue                    # a save: no rule and no note (4.1: the save vault keeps every version)
             # S-SED-CRLF (P8-SED): a game file by name, or any file in the install / config / MO2 area.
             in_zone = targets.zone(a, roots) in SED_ZONES if a is not None else False
             if text_mode and w in sed_files and (kind or in_zone):
@@ -1088,63 +993,9 @@ def scan(command: str, parsed, roots, cwd: str = "", env: Optional[Mapping[str, 
             a = targets.resolve_operand(e, w, cwd, env)
             if is_protected_folder(a, roots):
                 moved.append(posixpath.basename(a.rstrip("/")) or a)
-            elif is_save(a, roots):
-                saves.append((targets.physical_operand(e, w, cwd, env) or "", "move"))
-        saves.extend((targets.physical_operand(e, w, cwd, env) or "", "write") for w in _save_only_writes(e)
-                     if is_save(targets.resolve_operand(e, w, cwd, env), roots))
-
-        def bulk_into_saves(word, below=""):
-            """A wildcard change of that Saves folder: the typed approval, like any bulk change (saves.judge)."""
-            physical = targets.physical_operand(e, word, cwd, env)
-            saves.append((physical.rstrip("/\\") + below + "/*" if physical else "", "write"))
-
-        for dst in bulk_destinations(e):
-            a_bulk = targets.resolve_operand(e, dst, cwd, env)
-            if e.program in ("rsync", "scp") and is_save(a_bulk, roots):
-                saves.append((targets.physical_operand(e, dst, cwd, env) or "", "write"))     # one named save, as cp
-            elif is_save_folder(a_bulk, roots):
-                named = _remote_copy_operands(e)[:-1] if e.program in ("rsync", "scp") else []
-                if named and all(s.lower().endswith(SAVE_EXTS) for s in named):
-                    physical = targets.physical_operand(e, dst, cwd, env) or ""
-                    saves.extend((paths.physical_abs(physical.rstrip("/\\") + "/" + _name(s)) if physical else "", "write")
-                                 for s in named)
-                else:
-                    bulk_into_saves(dst)
-            elif is_settings_folder(a_bulk, roots) and (
-                    e.program not in ("rsync", "scp") or any(_may_bring_saves(s) for s in _remote_copy_operands(e)[:-1])) and (
-                    _settings_hold_saves(targets.physical_operand(e, dst, cwd, env))):
-                bulk_into_saves(dst, "/Saves")
         for dst, srcs in copy_targets(e):
             # The destination as written AND where it resolves (`cp a.ini x.ini` run inside Data/SKSE/Plugins).
             a_dst = targets.resolve_operand(e, dst, cwd, env)
-            # A save replaced: the destination itself, or a folder destination that takes a save's name.
-            if is_save(a_dst, roots):
-                saves.append((targets.physical_operand(e, dst, cwd, env) or "", "write"))
-                continue
-            if is_settings_folder(a_dst, roots) and _keeps_source_folders(e) and _settings_hold_saves(
-                    targets.physical_operand(e, dst, cwd, env)):
-                bulk_into_saves(dst, "/Saves")
-                continue
-            if is_save_folder(a_dst, roots) and (not srcs or any(_may_bring_saves(s) for s in srcs
-                                                                 if not s.lower().endswith(SAVE_EXTS))):
-                bulk_into_saves(dst)
-                continue
-            if is_settings_folder(a_dst, roots) and any(_may_bring_saves(s) for s in srcs) and _settings_hold_saves(
-                    targets.physical_operand(e, dst, cwd, env)):
-                bulk_into_saves(dst, "/Saves")
-                continue
-            if a_dst is None and _unplaced_save(dst):
-                saves.append(("", "write"))        # a real path the guard cannot resolve: S-SAVE-UNKNOWN, as saves.py says
-                continue
-            if a_dst is not None and _looks_like_dir(dst):
-                save_dests = [a_dst.rstrip("/") + "/" + _name(s) for s in srcs
-                              if s.lower().endswith(SAVE_EXTS)]
-                save_dests = [p for p in save_dests if is_save(p, roots)]
-                if save_dests:
-                    physical_dst = targets.physical_operand(e, dst, cwd, env)
-                    saves.extend((paths.physical_abs(physical_dst.rstrip("/\\") + "/" + _name(p))
-                                  if physical_dst else "", "write") for p in save_dests)
-                    continue
             kind = file_class(dst, a_dst or "")
             if kind == "plugin" and any(s.lower() in NULL_TARGETS for s in srcs):
                 plugin.append(_name(dst))                           # cp /dev/null X.esp truncates it: a write
@@ -1185,8 +1036,8 @@ def scan(command: str, parsed, roots, cwd: str = "", env: Optional[Mapping[str, 
     # routes red team: a file written by name in interpreter code (`python -c "open('X.esp','wb')"`, node
     # writeFileSync) or by a .NET call in PowerShell text (WebClient.DownloadFile, FileStream, [IO.File]::Open).
     # Only literal names. fix-limits 9: each is resolved where the code runs (the exec's cwd, after any cd before it)
-    # and judged exactly as a shell write to that place is: a plugin's raw write anywhere, a save, a file class by
-    # where it lands (an SKSE INI), any other file in the install area. It was judged by its name alone.
+    # and judged exactly as a shell write to that place is: a plugin's raw write anywhere, a file class by where it
+    # lands (an SKSE INI), any other file in the install area. It was judged by its name alone. A save: nothing.
     lit = [(None, w) for w in text_write_targets_ps(command)]
     for e in parsed.execs:
         code = interpreter_code(e)
@@ -1203,26 +1054,15 @@ def scan(command: str, parsed, roots, cwd: str = "", env: Optional[Mapping[str, 
         a = targets.resolve_literal(word, base, env)                    # a literal: nothing in it expands
         kind = file_class(word, a or "")
         copied = isinstance(word, _CopyWord)
-        if copied and word.removed and not is_save(a, roots):
+        if copied and word.removed:
             continue
-        actual_base = cwd if e is None else (targets.physical_cwd(e, cwd, env) or "")
         if kind == "plugin" and copied:
             if not word.moved and a is not None and game_loads(a, roots):
                 notes["S-COPY-PLUGIN"].append(_name(word))       # as `cp`: advice in the load path, silent elsewhere
         elif kind == "plugin":
             plugin.append(_name(word))
         elif is_save(a, roots):
-            saves.append((targets.physical(word, actual_base, "cmd", env, literal=True) or "", "write"))
-        elif copied and not word.moved and is_save_folder(a, roots) and word.source.lower().endswith(SAVE_EXTS) and not word.tree:
-            physical = targets.physical(word, actual_base, "cmd", env, literal=True)
-            saves.append((paths.physical_abs(physical.rstrip("/\\") + "/" + _name(word.source)) if physical else "", "write"))
-        elif copied and not word.moved and (is_save_folder(a, roots) or (
-                word.tree and is_settings_folder(a, roots) and _settings_hold_saves(
-                    targets.physical(word, actual_base, "cmd", env, literal=True)))) and (
-                word.tree or _may_bring_saves(word.source)):
-            physical = targets.physical(word, actual_base, "cmd", env, literal=True)
-            below = "/Saves" if is_settings_folder(a, roots) else ""
-            saves.append((physical.rstrip("/\\") + below + "/*" if physical else "", "write"))
+            continue                        # a save written by name in code: no rule and no note (the save vault)
         elif kind:
             notes[RULE_OF_CLASS[kind]].append(_name(word))
         elif a is not None and in_install_area(a, roots):
@@ -1237,8 +1077,7 @@ def scan(command: str, parsed, roots, cwd: str = "", env: Optional[Mapping[str, 
                 plugin.append(_name(word))
             else:
                 notes[RULE_OF_CLASS[kind]].append(_name(word))
-    extra = dict(move_root=_phrase(moved) if moved else "", save_targets=tuple(dict.fromkeys(saves)),
-                 sed_crlf=_phrase(crlf) if crlf else "")
+    extra = dict(move_root=_phrase(moved) if moved else "", sed_crlf=_phrase(crlf) if crlf else "")
     if plugin:
         return Scan(_phrase(plugin), (), **extra)
     return Scan("", tuple((r, _phrase(notes[r])) for r in ADVICE_ORDER if notes[r]), **extra)

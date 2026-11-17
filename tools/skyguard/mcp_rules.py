@@ -14,13 +14,9 @@ reset of a 700+ plugin order. Compared on whitespace-split lower-case words, so 
 `smp reset <anything>` is a different (unmeasured) command and passes. A console line may hold several commands
 (`;` or a newline): each is judged.
 
-DEVBENCH SAVES (the save policy, user ruling 2026-10-13). The `game` tool is told to save (`action: save`, `name`), or
-the console is given `save <name>` (DevBench routes a console save through the same path), and `<config dir>/Saves/
-<name>.ess` EXISTS: the save would be overwritten. judge() reports it as an S-DEVBENCH-SAVE hit and adds every such hit
-to `found`; saves.py then backs that pair up and allows the call (or asks the user for more than two). A NEW name
-passes. This is the only filesystem read in these rules. When the save folder cannot be found (no declared config dir
-has a Saves folder), or the name is missing or is not a plain file name, the save cannot be backed up and
-S-DEVBENCH-SAVE DENIES (not safe by default).
+DEVBENCH SAVES: not judged since 4.1 (user ruling 2026-11-10). A DevBench save over an existing save was backed up
+first, and refused when the save could not be told; now tools/save_vault.py keeps every version of every save, and
+these rules read no save name and no folder.
 
 KNOWN LIMITS (recorded in the pricing ledger, not handled):
   - `curl ... -d @body.json`, `--data-binary @-` and a body held in a variable that is not a same-command literal:
@@ -28,11 +24,10 @@ KNOWN LIMITS (recorded in the pricing ledger, not handled):
   - interpreter code (python requests, node fetch) that posts to the console is not read. A first version denied code
     that held both the endpoint and `smp reset`; priced over history it hit 3 items, all scripts written to TEST this
     rule (strings, not calls), and none a real call, so it was dropped (approval fatigue outweighs an unseen shape);
-  - the `papyrus` tool: `Game.SaveGame` and the ExecuteCommand-style functions in _CONSOLE_FUNCTIONS are read
-    (rt-fix-b); any other function that saves or runs a console line is not, and console `bat` files can do either
-    thing without being named here;
+  - the `papyrus` tool: every string in its arguments is read for a deny-listed console line; a function that runs
+    a console line it builds itself is not, and console `bat` files can run one without it being named here;
   - `replay` (and any tool that plays back a stored recording or input script): the recording's contents are not in
-    the call, so the console lines or saves it replays are not judged; a deny-listed line is caught only when it is
+    the call, so the console lines it replays are not judged; a deny-listed line is caught only when it is
     written into the call itself (a scenario step is, since its steps travel in the call);
   - a URL held in a variable that is not a same-command literal.
 """
@@ -69,7 +64,6 @@ _KEY_TEXT = r'"%s"\s*:\s*"((?:[^"\\]|\\.)*)"'
 # `smp reset` with nothing after it, as it reads in a body whose structure the guard cannot parse: it is followed by a
 # quote (plain, escaped or doubled), a bracket, a separator or the end.
 _TEXT_BARE_RESET = re.compile(r"""\bsmp\s+reset\s*(?:["'`)}\\\];,&|<>]|$)""", re.IGNORECASE)
-_BAD_NAME = re.compile(r'[/\\:*?"<>|\x00-\x1f]')
 
 Hit = Tuple[str, dict]            # (rule id, message fields)
 
@@ -100,17 +94,6 @@ def deny_op(command: str) -> str:
             if tuple(words) == denied:
                 return " ".join(denied)
     return ""
-
-
-SAVE_COMMANDS = ("save", "savegame")
-
-
-def _console_save_names(command: str):
-    """Every console save statement's name, including an empty name for a bare `save`."""
-    for stmt in _statements(command):
-        words = stmt.split()
-        if words and words[0].lower() in SAVE_COMMANDS:
-            yield " ".join(words[1:])
 
 
 def _strings(obj, depth: int = 0):
@@ -149,19 +132,6 @@ def _steps(args, depth: int = 0):
             yield "game", step
 
 
-def _clean_name(name) -> Optional[str]:
-    """A save's file stem, or None when it is not a plain name (empty, a path, a reserved character)."""
-    if not isinstance(name, str):
-        return None
-    n = name.strip().rstrip(" .")                 # Windows drops trailing dots and spaces: `Existing.` IS Existing
-    if n.lower().endswith(".ess"):
-        n = n[:-4].rstrip(" .")
-    # `.` and `..` need no case of their own: the trailing-dot strip above leaves them empty.
-    if not n or _BAD_NAME.search(n) or re.search(r"~[0-9]", n):
-        return None                               # an 8.3 alias (EXISTI~1) names a file only the filesystem knows
-    return n
-
-
 def _documents(env) -> list:
     """Where `Documents` may be: under USERPROFILE / HOME, and a OneDrive-redirected Documents (OneDrive,
     OneDriveConsumer, OneDriveCommercial). Environment only: nothing here asks the OS."""
@@ -184,90 +154,24 @@ def saves_folder(roots, env) -> Optional[str]:
     return next((c for c in cands if os.path.isdir(c)), None)
 
 
-def save_exists(name: str, roots, env=None, memo: Optional[dict] = None) -> Optional[bool]:
-    """True when the first existing Saves folder holds `<name>.ess` (case-insensitive, as Windows); False when it
-    does not; None when there is no Saves folder to read. `memo` keeps the folder and its listing for one scan (a
-    Saves folder holds thousands of files)."""
-    memo = {} if memo is None else memo
-    folder = saves_folder(roots, os.environ if env is None else env)
-    if folder is None:
-        return None
-    if folder not in memo:
-        try:
-            memo[folder] = frozenset(n.casefold() for n in os.listdir(folder))
-        except OSError:
-            memo[folder] = None
-    if memo[folder] is None:
-        return None
-    return (name + ".ess").casefold() in memo[folder]
 
 
-def _save_hit(name, roots, env=None, memo=None, found=None) -> Hit:
-    """The hit for a save named `name` (raw, may be unusable), or an empty hit when it is a new save. Each non-empty
-    hit is also added to `found` as (hit, clean name or None), so saves.py sees EVERY save a call writes."""
-    hit = _save_hit_of(name, roots, env, memo)
-    if found is not None and hit[0]:
-        found.append((hit, _clean_name(name)))
-    return hit
-
-
-def _save_hit_of(name, roots, env=None, memo=None) -> Hit:
-    clean = _clean_name(name)
-    if clean is None:
-        return ("S-DEVBENCH-SAVE", {"op": "Cannot tell which save this overwrites."})
-    exists = save_exists(clean, roots, env, memo)
-    if exists is False:
-        return ("", {})
-    if exists is None:
-        return ("S-DEVBENCH-SAVE", {"op": f"Cannot tell if save {clean} exists."})
-    return ("S-DEVBENCH-SAVE", {"op": f"Overwrites save {clean}."})
-
-
-_CONSOLE_FUNCTIONS = ("executecommand", "executeconsole", "executeconsolecommand", "runconsolecommand")
-
-
-def judge(tool: str, args, roots, memo: Optional[dict] = None, env=None, depth: int = 0,
-          found: Optional[list] = None) -> Optional[Hit]:
-    """The decision for one DevBench tool call, as (rule id, fields), or None for allow. The first deny wins over
-    any ask. Any string anywhere in the call that the console would run as a deny-listed command denies (rt-fix-b:
-    a list or an unknown key, a scenario step, a papyrus ExecuteCommand argument)."""
-    tool = tool.lower()
+def judge(tool: str, args, roots, memo: Optional[dict] = None, env=None, depth: int = 0) -> Optional[Hit]:
+    """The decision for one DevBench tool call, as (rule id, fields), or None for allow. Any string anywhere in the
+    call that the console would run as a deny-listed command denies (rt-fix-b: a list or an unknown key, a scenario
+    step, a papyrus ExecuteCommand argument). `roots`, `memo` and `env` are unused since 4.1 (no save is read)."""
     for s in _strings(args):
         op = deny_op(s)
         if op:
             return ("S-DEVBENCH-CRASH", {"op": op})
     if not isinstance(args, dict):
         return None
-    ask: Optional[Hit] = None
-    lines = []                                    # console lines this call runs
-    if tool == "console":
-        cmd = args.get("command")
-        lines = list(_strings(cmd)) if cmd is not None else list(_strings(args))
-    elif tool == "papyrus" and isinstance(args.get("function"), str):
-        fn = args["function"].lower()
-        if fn in _CONSOLE_FUNCTIONS:
-            lines = list(_strings(args.get("args")))
-        elif fn == "savegame":                    # Game.SaveGame(name) writes the same file a console save does
-            a = args.get("args")
-            hit = _save_hit(a[0] if isinstance(a, list) and a else None, roots, env, memo, found)
-            ask = hit if hit[0] else None
-    elif tool == "game":
-        action = args.get("action")
-        if isinstance(action, str) and action.strip().lower() == "save":
-            hit = _save_hit(args.get("name"), roots, env, memo, found)
-            ask = hit if hit[0] else None
-    for line in lines:
-        for name in _console_save_names(line):
-            hit = _save_hit(name, roots, env, memo, found)
-            if ask is None and hit[0]:
-                ask = hit
     if depth < 8:
         for stool, sargs in _steps(args):
-            hit = judge(stool, sargs, roots, memo, env, depth + 1, found)
-            if hit and hit[0] == "S-DEVBENCH-CRASH":
+            hit = judge(stool, sargs, roots, memo, env, depth + 1)
+            if hit:
                 return hit
-            ask = ask or hit
-    return ask
+    return None
 
 
 # ------------------------------------------------------------------------------------------------------ MCP route
@@ -303,17 +207,13 @@ def decide(name: str, args, audit, roots=None, env=None) -> Verdict:
     parts = name.split("__")
     if not is_devbench(name):
         return Verdict()
-    found: list = []
-    hit = judge(parts[-1], args, roots, None, env, found=found)
-    if hit is not None and hit[0] != "S-DEVBENCH-SAVE":
+    hit = judge(parts[-1], args, roots, None, env)
+    if hit is not None:
         rid, fields = hit
         reason = rules.message(rid, **fields)
         audit.rule(HOOK, rid, rules.RULES[rid]["decision"], reason)
         return Verdict(rules.RULES[rid]["decision"], reason)
-    if not found:
-        return Verdict()
-    from . import saves                         # the save policy decides every save the call writes, together
-    return saves.judge(saves.devbench_change(found, roots, env), Verdict(), audit, HOOK)
+    return Verdict()        # a DevBench save over an existing save: no rule decides on it (4.1, the save vault)
 
 
 # ----------------------------------------------------------------------------------------------- curl / CLI route
@@ -447,14 +347,13 @@ def _cli_call(e, text: str) -> list:
     return []
 
 
-def scan_shell(command: str, parsed, roots, env=None, found: Optional[list] = None) -> Optional[Hit]:
-    """The first deny, else the first ask, among the DevBench calls a shell command makes. Not safe by default
+def scan_shell(command: str, parsed, roots, env=None) -> Optional[Hit]:
+    """The first deny among the DevBench calls a shell command makes. Not safe by default
     (R4): where the parse failed or a program is opaque, a deny-listed command next to the console endpoint in the
     TEXT denies. Interpreter code is NOT read (see KNOWN LIMITS)."""
     low = unquote(command).lower()
     if not any(w in low for w in _SHELL_WORDS) and not ("api" in low and "tool" in low):
         return None
-    ask: Optional[Hit] = None
     opaque = False
     memo: dict = {}
     for e in parsed.execs:
@@ -468,13 +367,10 @@ def scan_shell(command: str, parsed, roots, env=None, found: Optional[list] = No
         elif e.program == "devbench-cli":
             calls = _cli_call(e, command)
         for tool, args in calls:
-            hit = judge(tool, args, roots, memo, env, found=found)
-            if hit is None:
-                continue
-            if hit[0] == "S-DEVBENCH-CRASH":
+            hit = judge(tool, args, roots, memo, env)
+            if hit is not None:             # judge() returns only the crash refusal since 4.1 (no save ask)
                 return hit
-            ask = ask or hit
     textual = not parsed.ok or opaque or bool(_DOTNET_WEB.search(command))
     if textual and _TEXT_RESET.search(command) and _TEXT_ENDPOINT.search(_norm_text(command)):
         return ("S-DEVBENCH-CRASH", {"op": "smp reset"})
-    return ask
+    return None

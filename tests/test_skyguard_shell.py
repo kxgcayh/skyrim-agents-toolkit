@@ -264,17 +264,11 @@ NEW_RESAVER = ("Blocked: ReSaver reset-havok --apply writes s.ess, which the gua
                "Give the save as a full path.")
 
 
-def test_rule16_resaver_apply_on_a_save_it_cannot_place_is_refused(tmp_path):
-    cmd = "bash tools/resaver-cli.sh reset-havok s.ess --apply"
-    v = run(cmd, tmp_path)
-    assert (v.decision, v.reason, v.context) == ("deny", NEW_RESAVER, "")
-    assert run(cmd.replace(" --apply", ""), tmp_path)[:3] == ("allow", "", "")
-
-
-def test_rule16_refusal_drops_earlier_advice(tmp_path):
-    v = run("echo x >> plugins.txt; bash tools/resaver-cli.sh reset-havok s.ess --apply", tmp_path)
-    assert v.decision == "deny" and v.context == ""
-    assert v.reason == NEW_RESAVER
+def test_a_refusal_drops_earlier_advice(tmp_path):
+    advice = run("echo x >> plugins.txt", tmp_path)
+    assert advice.decision == "allow" and advice.context                     # the note the refusal below drops
+    v = run(f'echo x >> plugins.txt; rm -rf "{GAME}/Data"', tmp_path)
+    assert v.decision == "deny" and v.context == "" and v.reason.startswith("Blocked:")
 
 
 def _t4_rows():
@@ -301,31 +295,6 @@ def test_resaver_rows(tmp_path, row):
 # name. These are the shapes that still do: a program the parser cannot prove (a command substitution), and a find
 # whose `{}` it does not narrow (`-path`). Mutations of those clauses name these tests.
 _OPAQUE_R = "R=$(echo tools/resaver-cli.sh); $R "
-
-
-@pytest.mark.parametrize("tail,want", [
-    ("reset-havok s.ess --apply", ("reset-havok", "s.ess")),     # opaque program: the text rule asks
-    ("reset-havok s.ess", None),                                 # no --apply: nothing written
-    ("info save-reset-havok --apply", None),                     # the op word only as a suffix of another word
-    ("info reset-havok.ess --apply", None),                      # the op word only inside a file name
-], ids=["opaque-apply", "opaque-dry", "opaque-op-suffix", "opaque-op-in-filename"])
-def test_resaver_text_rule_on_an_opaque_program(tail, want):
-    assert shell_rules.resaver_apply(_OPAQUE_R + tail, "bash") == want
-
-
-def test_resaver_save_named_by_the_find_segment():
-    cmd = 'find Saves -path "*/Quick.ess" -exec bash tools/resaver-cli.sh reset-havok {} --apply \\;'
-    assert shell_rules.resaver_apply(cmd, "bash") == ("reset-havok", "Quick.ess")
-
-
-def test_resaver_without_a_save_name_is_refused(tmp_path):
-    v = run("bash tools/resaver-cli.sh reset-havok --apply", tmp_path)
-    assert v.decision == "deny" and "reset-havok --apply writes a save it does not name," in v.reason
-
-
-def test_resaver_save_is_reduced_to_its_basename(tmp_path):
-    v = run("bash tools/resaver-cli.sh reset-havok 'C:/My Saves/Save*12.ess' --apply", tmp_path)
-    assert v.decision == "deny" and "reset-havok --apply writes Save*12.ess," in v.reason
 
 
 def test_rule17_external_tool_output_into_game(tmp_path):
@@ -383,30 +352,6 @@ def test_corpus_has_rows_in_both_layouts():
     assert sum(c[0].startswith("shell-unicode-") for c in CORPUS) >= 30
 
 
-@pytest.mark.parametrize("cid,layout,cmd,decision,text", CORPUS, ids=[c[0] for c in CORPUS])
-def test_port_matches_recorded_bash_verdict(tmp_path, monkeypatch, cid, layout, cmd, decision, text):
-    # Every row was recorded from the bash hooks under Git Bash on Windows, where `/c/...` is drive C:. A POSIX host
-    # reads it natively since 4ebdd1c, so pin the recording host (CI run 39145224156: dialect-msys-1/9 flipped).
-    monkeypatch.setattr(paths, "POSIX_HOST", False)
-    r = paths.roots("/x/install", "", LAYOUT_ENV[layout])
-    v = shell_rules.decide(cmd, r, audit.Audit(str(tmp_path)), shell="bash")      # every row is a Bash tool payload
-    if v.decision == "allow" and v.context:
-        got = ("advise", v.context)
-    elif v.decision == "allow":
-        got = ("allow", "")
-    else:
-        got = (v.decision, v.reason)
-    if cid in SUPERSEDED:
-        pytest.skip("deliberately re-specified by an intended row (tests/guard_corpus/intended.jsonl)")
-    # A rule a later Plan 5 task REWROTE or REMOVED keeps its frozen row's decision, not its text.
-    frozen = json.loads((REPO / "tests" / "guard_corpus" / "legacy_rules.json").read_text(encoding="utf-8"))
-    rewritten = [t for t, rid in frozen.items() if rid in rules.REMOVED or not rules.RULES[rid]["legacy"]]
-    if text and any(text == t.replace("{c}", cmd) for t in rewritten):
-        assert got[0] == decision
-    else:
-        assert got == (decision, text)
-
-
 # Next to a NON-ASCII letter, GNU grep in a UTF-8 locale sees no word boundary while the port (re.ASCII) sees one. The
 # port used to be stricter than bash on these; Task 8 (R11) removed the plugin-reference note, a READ is silent, and
 # Task 9 settled the last one, so the port now agrees with bash on all of them.
@@ -449,11 +394,11 @@ def test_every_message_constant_equals_the_bash_text():
     assert consts == set(expected) | set(plan5), consts ^ (set(expected) | set(plan5))
 
 
-def test_ask_path_writes_the_ask_audit_line(tmp_path):
-    cmd = "bash tools/resaver-cli.sh reset-havok s.ess --apply"
-    run(cmd, tmp_path)
+def test_a_refusal_writes_its_audit_line(tmp_path):
+    v = run(f'rm -rf "{GAME}/Data"', tmp_path)
+    assert v.decision == "deny"
     log = (tmp_path / ".claude/backups/AUDIT_LOG.txt").read_text(encoding="utf-8")
-    assert "protect-bash DENY: " + NEW_RESAVER.split("\n")[0] in log
+    assert "protect-bash DENY: " + v.reason.split("\n")[0] in log
 
 
 def test_rule_trace_records_the_rule_id(tmp_path):
@@ -466,7 +411,32 @@ def test_rule_trace_records_the_rule_id(tmp_path):
     assert a.fired == [("S-WRITE-LOADORDER", "advise")]
     a = audit.Audit(str(tmp_path))
     shell_rules.decide("bash tools/resaver-cli.sh reset-havok s.ess --apply", r, a)
-    assert a.fired == [("S-RESAVER-APPLY", "deny")]
+    assert a.fired == []                         # 4.1: no rule decides on a save (the save vault keeps every version)
     a = audit.Audit(str(tmp_path))
     shell_rules.decide("", r, a)
     assert a.fired == [("S-INERT-NOCMD", "deny")]
+
+
+# ---- restored in 4.1 (kept behaviour; the reads of the retired save plan are taken out)
+@pytest.mark.parametrize("cid,layout,cmd,decision,text", CORPUS, ids=[c[0] for c in CORPUS])
+def test_port_matches_recorded_bash_verdict(tmp_path, monkeypatch, cid, layout, cmd, decision, text):
+    # Every row was recorded from the bash hooks under Git Bash on Windows, where `/c/...` is drive C:. A POSIX host
+    # reads it natively since 4ebdd1c, so pin the recording host (CI run 39145224156: dialect-msys-1/9 flipped).
+    monkeypatch.setattr(paths, "POSIX_HOST", False)
+    r = paths.roots("/x/install", "", LAYOUT_ENV[layout])
+    v = shell_rules.decide(cmd, r, audit.Audit(str(tmp_path)), shell="bash")      # every row is a Bash tool payload
+    if v.decision == "allow" and v.context:
+        got = ("advise", v.context)
+    elif v.decision == "allow":
+        got = ("allow", "")
+    else:
+        got = (v.decision, v.reason)
+    if cid in SUPERSEDED:
+        pytest.skip("deliberately re-specified by an intended row (tests/guard_corpus/intended.jsonl)")
+    # A rule a later Plan 5 task REWROTE or REMOVED keeps its frozen row's decision, not its text.
+    frozen = json.loads((REPO / "tests" / "guard_corpus" / "legacy_rules.json").read_text(encoding="utf-8"))
+    rewritten = [t for t, rid in frozen.items() if rid in rules.REMOVED or not rules.RULES[rid]["legacy"]]
+    if text and any(text == t.replace("{c}", cmd) for t in rewritten):
+        assert got[0] == decision
+    else:
+        assert got == (decision, text)

@@ -1,6 +1,6 @@
 ---
 name: triage-and-conflicts
-description: Which plugin actually wins a record (skyrim-winner, full load order via xEdit), Papyrus log triage, CrashLogger crash-dump triage, which SKSE plugin DLLs loaded (skse-load-status), what a mod archive would change before install (archive-triage), a recorded manual install (mod-install), keeping logs a relaunch would overwrite (mirror-launch-logs), ESP cross-reference snapshots around bulk edits, and how these tools pick a folder when more than one Skyrim install exists. Use for override/conflict questions, Papyrus.N.log or crash-log analysis, and before any bulk ESP operation.
+description: Which plugin actually wins a record (skyrim-winner, full load order via xEdit), Papyrus log triage, CrashLogger crash-dump triage, which SKSE plugin DLLs loaded (skse-load-status), what a mod archive would change before install (archive-triage), a recorded manual install (mod-install), keeping logs a relaunch would overwrite (mirror-launch-logs), ESP cross-reference snapshots around bulk edits, what LOOT would say about the active order (loot-advisor, read-only), and how these tools pick a folder when more than one Skyrim install exists. Use for override/conflict questions, Papyrus.N.log or crash-log analysis, and before any bulk ESP operation.
 ---
 
 # Triage and conflicts
@@ -112,6 +112,36 @@ python tools/mod-sizes.py bsheartland             # mod name OR a plugin in its 
 Read-only headless form of the MO2ModSizeAnalyzer plugin, which needs MO2's `mobase` and Qt. Size counts
 what is on disk, not how much content a mod adds: a generated output folder or a hair pack can outrank a
 quest mod. Folders come from `SKYRIM_MO2_MODS` and `SKYRIM_LOADORDER_DIR`.
+
+## postmortem, plugin-check, missing-textures — for the agent, read-only (v4.1.0)
+
+```bash
+python tools/postmortem.py [--json]                 # the last session: crash (this session or older), Papyrus, SKSE
+python tools/plugin-check.py [--json]               # missing/unreadable plugins, masters missing, inactive, out of order
+python tools/missing-textures.py MESH... | --under 'meshes/armor/**/*.nif'   # needs the House Carl gateway
+```
+
+`postmortem` is the first look after a crash or a bad session: it combines the three tools above for the newest
+logs. `plugin-check` is a check before acting on plugins, not a player warning (Wrye Bash and the mod manager already
+show missing masters). `missing-textures` asks House Carl which texture-set paths the meshes embed and whether a
+loose file or active BSA provides each; an incomplete archive read exits 2, never "none missing". On an install whose
+House Carl integration predates the v4.1.0 issue-#11 fix, base BSAs can be left out without that flag: re-run setup
+first. All three exit 0 nothing found, 1 findings, 2 could not check.
+
+## loot-advisor — what LOOT would say, without changing anything (v4.1.0)
+
+```bash
+python tools/loot_advisor.py [--json] [--offline]   # LOOT's order + masterlist messages for the ACTIVE plugins
+```
+
+It asks libloot (LOOT's own library; wheels ship for Python 3.10-3.13 on Windows x64, elsewhere
+`python tools/libloot/build.py build`) for the order LOOT would sort the active plugins into, the fewest plugins
+that order moves, and the masterlist's messages: warnings, dirty plugins (ITM / deleted-reference counts and the
+cleaner to use), requirements that are missing and incompatibilities that are both active. The masterlist is the
+newest LOOT publishes for this libloot, fetched at run time; a failed fetch uses the last copy and says so. It never
+writes plugins.txt, loadorder.txt or LOOT's files. A move is advice: Wrye Bash or the mod manager owns the order,
+and on a kept save read `## My preferences` in KNOWLEDGEBASE.local.md before reordering anything. Exit 0 nothing
+to add, 1 findings, 2 could not check. Details: docs/loot.md.
 
 ## mirror-launch-logs — keep the logs the next launch would overwrite
 

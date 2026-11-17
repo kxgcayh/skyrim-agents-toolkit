@@ -25,14 +25,21 @@ xEdit validation. The upstream server is an optional, separately installed depen
 
 The optional Windows file lock is off by default. Its limits and the hook coverage are described below. Earlier release announcements are in [CHANGELOG.md](CHANGELOG.md).
 
+## New in 4.1: every version of every save, kept
+
+- **The save vault** keeps every settled version of every game save (with its co-save) and every settings INI,
+  outside the game folder, whatever changed it: you, the game, the agent or a script. Nothing asks first, and the
+  save rules that read commands are gone. `python tools/save_vault.py status` and `restore`; see
+  [docs/save-vault.md](docs/save-vault.md). Each session says whether it is running and starts it when it is not.
+
 ## New in v4: Codex support, one guard engine, and backed-up game saves
 
 - **Codex CLI on Windows**, alongside Claude Code: the same instructions, skills and guards. Approve the hooks with
   `/hooks` (see *Using with Codex* below). Other agents can wire the guards into themselves with [ADAPTING.md](ADAPTING.md).
 - **One guard engine in Python** (`tools/skyguard/`) behind both agents' hooks. A Claude Code guard that cannot run
   refuses rather than allows; on Codex a hook that crashes, is killed or times out fails open (see the CHANGELOG's known limits). `bash tools/hook-canary.sh` and `bash tools/skydoctor` show what is live.
-- **Game saves are backed up, not asked about:** a change to one or two of them first copies both files of each,
-  verified and kept forever; more than two need the approval line you type (`python tools/agent-harness.py check --preview` prints it).
+- **Game saves are backed up, not asked about:** in 4.0 a change to one or two of them first copied both files of
+  each; 4.1 replaces that with the save vault above.
 - **An optional file lock** for the vanilla masters and archives (Windows, off by default), described below.
 - **New tools:** `mod-install` and `archive-triage` for manual installs, `housekeep` for agent output, headless
   VR and `bench-vr` for DevBench, and the optional House Carl gateway (`docs/housecarl.md`).
@@ -109,21 +116,7 @@ before this toolkit.
 - **2,000+ lines of Skyrim modding knowledge** -- Papyrus quirks, version-specific differences, xEdit pitfalls, engine bugs, NIF/animation authoring, VR hit-detection, and more (including VR-specific sections). Loaded into every Claude session automatically.
 - **NIF authoring & animation** -- Author self-animating meshes (self-spinning, telescoping, keyframed motion) with PyNifly, edit LE geometry with PyFFI, and verify everything with a headless render before you load the game.
 - **Render-verification loop** -- Headless Blender renders any NIF to a PNG so fixes are confirmed in chat; NifSkope and PyNifly act as independent render/parse gates so bad files are caught in tooling.
-- **Safety hooks** -- Claude is refused outright on the things that are never correct (writing a plugin or archive as
-  raw text -- through the edit tools **and** through the shell -- deleting inside the game, config or Mod Organizer
-  folders or moving files out of them, moving the install, `Data`, the settings folder or `Saves` away, deleting
-  Bethesda registry keys, running decoded text as commands, DevBench's `smp reset`), and is warned -- without
-  interrupting you -- on the things that are consequential but legitimate. Files it edits are backed up first, with a
-  full audit trail. Only five rules ask *you* to decide: a git command that would throw away uncommitted changes in a
-  protected folder, a `lock disable` that turns the vanilla-file lock off for good, an in-place snapshot restore
-  (`snapshot restore --in-place`), which writes over live files, a program the guard cannot name (a variable such as
-  `$R`) given one of your saves, and such a program -- or an `eval` of code a variable holds -- naming another
-  protected path (the install, `Data`, the settings or MO2 folders, a plugin or archive). Any other change to your
-  saves does not ask: one or two saves (a save and its co-save count as one) are backed up first, verified, and kept
-  forever; more than two, or a wildcard, is refused until you type the `SAVE_ACCESS_APPROVAL` line that
-  `python tools/agent-harness.py check --preview` prints for that exact command (the refusal points there). Run
-  `bash tools/hook-canary.sh` any time to confirm the hooks are alive and actually receiving their input -- they once
-  were not, and nothing looked wrong.
+- **Safety hooks** -- Claude is refused outright on the things that are never correct (writing a plugin or archive as raw text -- through the edit tools **and** through the shell -- deleting inside the game, config or Mod Organizer folders or moving files out of them, moving the install, `Data`, the settings folder or `Saves` away, deleting Bethesda registry keys, running decoded text as commands, DevBench's `smp reset`), and is warned -- without interrupting you -- on the things that are consequential but legitimate. Files it edits are backed up first, with a full audit trail. Only four rules ask *you* to decide: a git command that would throw away uncommitted changes in a protected folder, a `lock disable` that turns the vanilla-file lock off for good, an in-place snapshot restore (`snapshot restore --in-place`), which writes over live files, and a program the guard cannot name (a variable such as `$R`) -- or an `eval` of code a variable holds -- naming a protected path (the install, `Data`, the settings or MO2 folders, a plugin or archive). A change to a single save does not ask and no rule refuses it: the save vault keeps every version of every save, whatever changed it ([docs/save-vault.md](docs/save-vault.md)). Deleting or moving a whole `Saves` folder, or the vault itself, is still refused, and a save you locked stays locked. Run `bash tools/hook-canary.sh` any time to confirm the hooks are alive and actually receiving their input -- they once were not, and nothing looked wrong.
 - **Confidence system** -- Claude rates its confidence (0-100%) and lists its assumptions before proposing any change. No guessing, no "this should work."
 - **ESP editing via Spriggit** -- Serialize any ESP to human-readable YAML, edit it directly, deserialize back. Claude's native file editing works on YAML out of the box — no FFI layer, no scripting, and changes diff cleanly in git.
 - **ESP analysis via xeditlib** -- Programmatic inspection, diffing, and bulk queries across records. The hard Delphi FFI work is already done. ([xeditlib on GitHub](https://github.com/kxgcayh/xeditlib))
@@ -229,7 +222,7 @@ The toolkit's tested Python range is **3.10–3.13**. The hooks run under Git Ba
    `winget install --id OpenJS.NodeJS.LTS --exact --version 24.19.0 --no-upgrade`
 
 DevBench is an optional SKSE mod installed through your mod manager. Its documented minimum is **1.11.0**;
-the newest release the docs were read against is **1.28.0** (2026-10-11, the recorded API/docs reference).
+the newest release the docs were read against is **1.32.0** (2026-10-25, the recorded API/docs reference).
 It has been read against the upstream changelog and tool descriptions, not runtime-tested here. One behaviour
 changed in 1.25.0: a Papyrus `call` with an omitted optional argument is refused (400) unless the argument is passed or
 `fillNeutral:true` is sent. The VR Address Library metadata reference is
@@ -387,7 +380,7 @@ After setup and any required hook approval, the supported agents run these check
 | Protection | What It Does |
 |-----------|-------------|
 | **Command guard** | Blocks deleting inside the install, the config folder or Mod Organizer's `mods`/`overwrite` (a Recycle-Bin delete included), deleting everything in a folder it cannot place, moving the install, `Data`, the settings folder or `Saves` away, running decoded text (`base64 -d` piped to a shell), deleting Bethesda registry keys, raw-text shell writes to ESP/ESM/ESL/BSA/BA2 (`>`, `tee`, `Set-Content`, `Out-File`, ...), `sed -i` without `-b` on a file in the install, config or MO2 folder (it rewrites CRLF line endings to LF; `sed -i -b` is fine), and DevBench `smp reset`. Runs on the Bash and PowerShell tools. **Advises** on other file operations in game directories -- a note to Claude, not a prompt to you. |
-| **File guard** | Blocks direct writes to ESP/ESM/ESL/BSA/BA2 files through the edit tools. **Advises** on INIs, load-order files and scripts. A write onto one or two saves in `Saves/` is backed up first, then runs; more than two need your typed approval. |
+| **File guard** | Blocks direct writes to ESP/ESM/ESL/BSA/BA2 files through the edit tools. **Advises** on INIs, load-order files and scripts. A save is not judged: the save vault keeps every version ([docs/save-vault.md](docs/save-vault.md)). |
 | **Auto-backup** | Copies a file to `.claude/backups/` before the edit tools (or Codex `apply_patch`) change it, with full audit log. A file a script writes through the shell is not backed up. |
 | **Confidence system** | Claude must rate confidence 0-100% and list assumptions before any change. |
 | **Investigation-first** | Claude checks the knowledgebase and web-searches before touching anything. |
@@ -603,10 +596,13 @@ are not classified; this gap also exists in v3.9.1. The guard does not provide a
 
 ---
 
-## Save sentinel, save locks and `.protect-saves`
+## Save vault, save sentinel, save locks and `.protect-saves`
 
-- **Save sentinel (Claude Code, every post-call hook).** It reports any `.ess`/`.skse` changed with no backup first, whatever changed
-  it, including a script the pre-call rules cannot read. A save changed while the game ran, or in a session that ended since the last
+- **Save vault (every agent, 4.1).** Keeps every settled version of every save pair and settings INI; nothing is ever deleted from it.
+  [docs/save-vault.md](docs/save-vault.md) has where it lives, how to restore, and its limits (a version that lasts under about 35 s
+  may not be kept; it protects only while its watcher runs).
+- **Save sentinel (Claude Code, every post-call hook).** It reports any `.ess`/`.skse` changed or removed, whatever changed
+  it, and points at the vault to get the earlier version back. A save changed while the game ran, or in a session that ended since the last
   look (by its SKSE and Papyrus logs), is reported to the agent only. Codex has no post-call hook, so it gets no such report.
 - **Save locks (optional, Windows, off unless you choose them).** `bash tools/skyguard.sh save-lock on|off|status|unlock`. While on,
   Windows refuses any delete, overwrite, rename or recycle of a locked save, from any program running as you, the game included:
@@ -616,7 +612,7 @@ are not classified; this gap also exists in v3.9.1. The guard does not provide a
   An unlock lasts an hour. The locks do not hold a process running as administrator, and a script can still delete the switch file
   itself (the sentinel reports that). The locks outlast the toolkit: run `save-lock off` before removing it. If a locked folder is gone
   for good, `save-lock off --forget-missing`. An agent that hits "access denied" on a save must tell you, never work around it.
-- **`.protect-saves`.** An empty file with this name makes a kept folder of saves count as a save location for the guard, the sentinel
+- **`.protect-saves`.** An empty file with this name makes a kept folder of saves count as a save location for the vault, the sentinel
   and the locks.
 
 ## Session charter and ledger
@@ -663,8 +659,8 @@ you run it yourself if you agree. Deleting the Bethesda registry keys (`reg dele
   **unmeasured**, and keystrokes that only finish a command typed earlier are not put back together. Treat it
   as a possible gap.
 - **MCP tools other than DevBench's**: logged in `.claude/backups/codex-unhooked-tools.log`, not guarded. DevBench's own tools
-  (any server whose name contains `devbench`) get the same judge as on Claude: `smp reset` is refused, and a save over an
-  existing save is backed up first, then runs (more than two saves at once need your typed approval).
+  (any server whose name contains `devbench`) get the same judge as on Claude: `smp reset` is refused. A DevBench save is
+  not judged (the save vault keeps every version).
 - **A shell call's own working directory** (`workdir`): read when the hook payload carries one, so relative
   paths land there; whether Codex puts `workdir` in the payload is **unmeasured**. Use absolute paths for
   anything in the game folder.
@@ -829,7 +825,9 @@ caught two of its own guards asserting nothing.
 
 ## License
 
-MIT -- see [LICENSE](LICENSE).
+MIT -- see [LICENSE](LICENSE). One exception: `tools/libloot/` carries libloot, the LOOT Team's library, as compiled
+wheels plus its complete source, under its own GPL-3.0-or-later license (`tools/libloot/NOTICE.md`, `tools/libloot/COPYING`).
+Only `tools/loot_advisor.py` uses it.
 
 ## Credits
 
@@ -843,6 +841,7 @@ MIT -- see [LICENSE](LICENSE).
 - [Blender](https://www.blender.org/) and [NifSkope](https://github.com/hexabits/nifskope) (v2.0.dev9, the maintained hexabits fork) -- mesh repair and independent render verification
 - [FallrimTools / ReSaver](https://www.nexusmods.com/skyrimspecialedition/mods/5031) -- save-file (.ess) parsing library driven headlessly by the ReSaver CLI
 - [ReSaver++ / ReSaver Plus](https://github.com/Tonycubed2/ResaverPP) by Tonycubed2 (Apache-2.0) -- the C++ port of Mark Fairchild's ReSaver behind the opt-in native ReSaver backend; built locally from a pinned commit plus the toolkit's patches (`tools/resaver-plus/NOTICE.md`), with LZ4 (Yann Collet) and miniz (Rich Geldreich) linked into its CLI
+- [libloot](https://github.com/loot/libloot) by the LOOT Team (GPL-3.0-or-later) -- the library behind LOOT; `tools/loot_advisor.py` asks it for LOOT's order and masterlist messages, read-only
 - [DevBench](https://www.nexusmods.com/skyrimspecialedition/mods/181326) by alandtse ([source](https://github.com/alandtse/devbench)) -- the live in-game REST/MCP channel the `devbench-cli.sh` wrapper drives
 - [@aaronputty](https://github.com/aaronputty) ([fork](https://github.com/aaronputty/putty-skyrim-claude-toolkit)) -- the MO2 path-detection insight that shaped v3.4, and the devcontainer + `docs/container-vs-windows.md` foundation for v3.5
 - [Claude Code](https://claude.ai/code) by Anthropic

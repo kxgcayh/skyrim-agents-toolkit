@@ -139,16 +139,6 @@ def _save_targets(tool, command):
     return [(t.path, t.op) for t in v.saves.change.targets] if v.saves is not None else []
 
 
-def test_a_powershell_save_overwrite_is_seen_on_a_posix_host(posix):
-    got = _save_targets("PowerShell", "Set-Content '{}/Saves/Existing.ess' x".format(CFG))
-    assert got == [(CFG + "/Saves/Existing.ess", "write")]
-
-
-def test_a_python_save_overwrite_through_bash_is_seen_on_a_posix_host(posix):
-    cmd = "python -c \"open('{}/Saves/Existing.ess','wb').write(b'x')\"".format(CFG)
-    assert _save_targets("Bash", cmd) == [(CFG + "/Saves/Existing.ess", "write")]
-
-
 def test_a_powershell_delete_in_the_install_is_denied_on_a_posix_host(posix):
     assert _claude("PowerShell", "Remove-Item -Recurse '{}/Data'".format(GAME)) == ("deny", {"S-DEL-INSTALL"})
 
@@ -189,3 +179,14 @@ def test_an_apply_patch_delete_by_absolute_posix_path_is_denied_on_a_posix_host(
     audit = Audit(GAME)
     v = engine.pre_tool(codex.to_request(raw, "linux"), GAME, _roots, audit)
     assert (v.decision, {rid for rid, _ in audit.fired}) == ("deny", {"S-DEL-INSTALL"})
+
+
+# ---- restored in 4.1 (kept behaviour; the reads of the retired save plan are taken out)
+def test_a_powershell_plugin_overwrite_is_seen_on_a_posix_host(posix):
+    """The guard SEES a PowerShell write under a POSIX install (it was shown on a save until 4.1)."""
+    assert _claude("PowerShell", "Set-Content '{}/Data/Mine.esp' x".format(GAME)) == ("deny", {"S-WRITE-PLUGIN"})
+
+
+def test_a_powershell_install_write_is_placed_on_a_posix_host(posix):
+    """Where it LANDS decides this note (a plugin is refused by name alone), so the POSIX root must be known."""
+    assert _claude("PowerShell", "Set-Content '{}/Data/notes.txt' x".format(GAME)) == ("allow", {"S-WRITE-INSTALL"})

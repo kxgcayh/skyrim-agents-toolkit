@@ -43,7 +43,8 @@ def test_posix_path_constructor_resets_to_a_later_absolute_part(monkeypatch, par
 def test_unproved_native_cli_flags_are_writes(arg):
     command = "resaverpp-cli x.ess " + arg
     assert shell_rules.resaver_native_direct(command, shellparse.parse(command, "cmd")) == "resaverpp-cli.exe"
-    assert decide(command, "cmd").decision == "deny"
+    v = decide(command, "cmd")
+    assert v.decision == "allow" and "resaverpp-cli.exe" in v.context     # a note since 4.1, not a refusal
 
 
 @pytest.mark.parametrize("command", ["resaverpp-cli x.ess --top 20", "resaverpp-cli --json info x.ess"])
@@ -217,23 +218,11 @@ def test_repeated_equal_location_alternatives_do_not_exhaust_the_bound():
     assert decide(command).decision == "allow"
 
 
-@pytest.mark.parametrize("arg", ["%OUT%", "!OUT!", "$OUT", "`pick`"])
-def test_unproved_adapter_output_cannot_preserve_only_the_input(arg):
-    calls = shell_rules.resaver_write_calls("resaver-cli.sh clean x.ess " + arg + " --apply", "cmd")
-    assert calls and calls[0][1] == []
-
-
 @pytest.mark.parametrize("arg", ["%FLAGS%", "!FLAGS!"])
 def test_unparsed_native_fallback_keeps_unknown_flags_conservative(arg):
     command = "resaverpp-cli x.ess " + arg
     parsed = shellparse.Parsed((), False, "synthetic parse failure")
     assert shell_rules.resaver_native_direct(command, parsed) == "resaverpp-cli.exe"
-
-
-@pytest.mark.parametrize("arg", ["%OP%", "!OP!"])
-def test_adapter_dynamic_operation_keeps_the_text_fallback(arg):
-    command = "resaver-cli.sh " + arg + " x.ess --apply & echo clean"
-    assert shell_rules.resaver_target(command, "cmd") == ("clean", "x.ess")
 
 
 def test_repeated_fed_construct_scope_is_read_once(monkeypatch):

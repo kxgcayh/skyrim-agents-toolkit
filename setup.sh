@@ -44,6 +44,8 @@ usage() {
     echo "  --refresh-docs  rebuild a configured CLAUDE.md / AGENTS.md from the committed template (git checkouts; backed up first)"
     echo "  --workspace <dir>  the folder where every new file goes (default: skyrim-workspace next to the toolkit folder)"
     echo "  --no-workspace  record no workspace folder"
+    echo "  --save-vault-task     start the save vault's watcher at Windows sign-in (asked when neither flag is given)"
+    echo "  --no-save-vault-task  do not register it (each agent session still starts the watcher)"
 }
 AGENT_ARG="auto"
 GAME_ARG=""
@@ -53,6 +55,7 @@ WANT_SURFER=""
 WANT_REFRESH_DOCS=""
 WORKSPACE_ARG=""
 WANT_NO_WORKSPACE=""
+WANT_VAULT_TASK=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --agent)
@@ -79,6 +82,8 @@ while [ $# -gt 0 ]; do
             WORKSPACE_ARG="$2"; shift 2 ;;
         --workspace=*) WORKSPACE_ARG="${1#--workspace=}"; shift ;;
         --no-workspace) WANT_NO_WORKSPACE=1; shift ;;
+        --save-vault-task) WANT_VAULT_TASK=yes; shift ;;
+        --no-save-vault-task) WANT_VAULT_TASK=no; shift ;;
         -h|--help) usage; exit 0 ;;
         *) echo "setup.sh: unknown option '$1'. Nothing was changed." >&2; usage >&2; exit 2 ;;
     esac
@@ -634,6 +639,7 @@ LOADORDER_DIR="${SKYRIM_LOADORDER_DIR:-$LOCALAPPDATA_DIR/$SKYRIM_FOLDER}"
 # user's mods, and the profile -- not Documents -- is where the INIs and load order live. Getting
 # this wrong means every path we write into CLAUDE.md points somewhere real but nearly empty.
 MO2_INSTANCE=""; MO2_MODS=""; MO2_PROFILE=""; MO2_PROFILE_DIR=""; MO2_OVERWRITE=""
+PROFILE_SAVES=()   # every MO2 profile folder that keeps its own saves (LocalSaves), selected or not (#23)
 
 ini_get() { # $1=file $2=section $3=key  -> value, QSettings-unescaped, forward-slashed
     awk -v sec="[$2]" -v key="$3" '
@@ -653,8 +659,10 @@ find_mo2_instance() {
     # Global instances live one folder deep under %LOCALAPPDATA%\ModOrganizer\<InstanceName>\.
     # A portable instance keeps its ini in the MO2 install folder -- point MO2_INSTANCE_INI at it.
     # Also probe the game root's siblings: a Nolvus/Wabbajack-style install parks the portable MO2
-    # next to the game folder (<instance>/MO2/ModOrganizer.ini beside <instance>/STOCK GAME/).
-    for ini in "${MO2_INSTANCE_INI:-}" "$LOCALAPPDATA_DIR/ModOrganizer"/*/ModOrganizer.ini \
+    # next to the game folder (<instance>/MO2/ModOrganizer.ini beside <instance>/STOCK GAME/). And probe the game
+    # root's PARENT: a Wabbajack list keeps its portable MO2 at the list root, one folder above `Stock Game` (#23).
+    # The gamePath comparison below still ties every candidate to this game folder.
+    for ini in "${MO2_INSTANCE_INI:-}" "$LOCALAPPDATA_DIR/ModOrganizer"/*/ModOrganizer.ini "$GAME_DIR"/../ModOrganizer.ini \
                "$GAME_DIR"/../*/ModOrganizer.ini; do
         [ -f "$ini" ] || continue
         gp="$(ini_get "$ini" General gamePath)"
@@ -705,6 +713,16 @@ if MO2_INI="$(find_mo2_instance)"; then
     if [ -f "$MO2_PROFILE_DIR/SkyrimPrefs.ini" ] || [ -f "$MO2_PROFILE_DIR/skyrimprefs.ini" ]; then
         CONFIG_DIR="$MO2_PROFILE_DIR"
     fi
+    # Profile-local saves (#23): with LocalSaves=true in a profile's settings.ini, MO2 keeps that profile's saves in
+    # <profile>/saves. Every such profile is declared, not only the selected one, so the save vault watches
+    # the saves of the list's other profiles too. A saves/ folder alone also counts: it holds saves either way.
+    for pd in "$MO2_PROFILES"/*/; do
+        pd="${pd%/}"
+        [ -d "$pd" ] || continue
+        if [ "$(ini_get "$pd/settings.ini" General LocalSaves | tr 'A-Z' 'a-z')" = true ] || [ -d "$pd/saves" ]; then
+            PROFILE_SAVES+=("$pd")
+        fi
+    done
 fi
 
 # --- Paths a 3.x CLAUDE.md held (tools/migrate-3x.py wrote them as data) ---
@@ -1062,6 +1080,9 @@ fi
     printf 'SKYRIM_MO2_OVERWRITE=%s\n' "$(sq "$MO2_OVERWRITE")"
     # The workspace folder (docs/workspace.md): where every new file goes. No guarded root; '' = none recorded.
     printf 'SKYRIM_WORKSPACE_DIR=%s\n' "$(sq "$WORKSPACE_DIR")"
+    # One line per MO2 profile that keeps its own saves (none on a stock install). Its own key: a shell sourcing this
+    # file keeps only the last line of a repeated key, so SKYRIM_CONFIG_DIR stays one value.
+    for pd in "${PROFILE_SAVES[@]+"${PROFILE_SAVES[@]}"}"; do printf 'SKYRIM_PROFILE_SAVES=%s\n' "$(sq "$pd")"; done
     # What setup found, so a re-run can tell a path edited by hand from one it wrote itself.
     printf '%s' "$DETECTED_LINES"
     # The interpreter the hooks were configured with ('' when no Python was found).
@@ -1569,6 +1590,49 @@ else
     fi
 fi
 
+# --- The save vault (4.1): every version of every save and settings INI is kept, whatever changed it ---
+# Each Claude Code / Codex session start says whether the vault's watcher runs and starts it when it does not
+# (tools/skyguard/run.py), and every agent's guarded tool call does the same (tools/skyguard/vault_watch.py: OpenCode
+# and generic adapters have no session start). The logon task starts it at sign-in instead, so versions are also
+# kept while no agent session is open. Registered only when asked for: the flag, or a yes at a real terminal. save_vault.py itself
+# refuses to register a task under a test harness.
+VAULT_TASK_RC=""
+echo ""
+echo "Save vault: every version of every save and settings INI is kept outside the game folder; nothing asks first."
+echo "  State and history: python tools/save_vault.py status [SAVE]    Restore: python tools/save_vault.py restore SAVE"
+if [ -z "$SL_WINDOWS" ]; then
+    if [ "$WANT_VAULT_TASK" = yes ]; then
+        echo "  !! --save-vault-task: the sign-in task needs Windows. Not registered."
+        VAULT_TASK_RC=3
+    fi
+    echo "  Its watcher is started by each Claude Code or Codex session and by any agent's first guarded tool call"
+    echo "  (or run: python tools/save_vault.py watch)."
+else
+    if [ -z "$WANT_VAULT_TASK" ] && [ -t 0 ]; then
+        echo "  Its watcher is started by each Claude Code or Codex session and by any agent's first guarded tool call."
+        echo "  A sign-in task starts it with Windows instead, so saves are also kept while no agent session is open."
+        echo "  No administrator rights are needed; remove it any time with python tools/save_vault.py uninstall-task."
+        read -r -p "Start the save vault at sign-in? (Y/n) " VT_ANSWER || VT_ANSWER="n"
+        case "$VT_ANSWER" in n|N|no|NO|No) WANT_VAULT_TASK=no ;; *) WANT_VAULT_TASK=yes ;; esac
+    fi
+    if [ "$WANT_VAULT_TASK" = yes ]; then
+        if [ -z "$PY_FOUND" ]; then
+            VAULT_TASK_RC=2
+            echo "  !! SIGN-IN TASK NOT REGISTERED: it needs Python 3.10+. Install it and re-run: bash setup.sh --save-vault-task"
+        else
+            MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' $PY_FOUND -B "$PY_ROOT/tools/save_vault.py" --project "$PY_ROOT" \
+                install-task && VAULT_TASK_RC=0 || VAULT_TASK_RC=$?
+            if [ "$VAULT_TASK_RC" != 0 ]; then
+                echo "  !! SIGN-IN TASK NOT REGISTERED (exit $VAULT_TASK_RC, above). The watcher still starts with each agent session."
+            else
+                echo "  Sign-in task registered and started (SkyrimSaveVault). Remove: python tools/save_vault.py uninstall-task"
+            fi
+        fi
+    else
+        echo "  Sign-in task: not registered. python tools/save_vault.py install-task (or bash setup.sh --save-vault-task) adds it."
+    fi
+fi
+
 # --- Which agent ends up configured, said plainly ---
 CLAUDE_STATE="not configured"
 if [ -f "$TOOLKIT_DIR/CLAUDE.md" ] && ! grep -q "$DOC_PLACEHOLDERS" "$TOOLKIT_DIR/CLAUDE.md"; then CLAUDE_STATE="configured"; fi
@@ -1648,11 +1712,11 @@ echo "  skyrim-paths.env                 -- The paths the safety hooks guard (ma
 echo "  .claude/settings.json            -- Hook configuration"
 echo "  .claude/hooks/protect-bash.sh    -- Guards dangerous commands"
 echo "  .claude/hooks/protect-files.sh   -- Guards file edits"
-echo "  .claude/hooks/protect-mcp.sh     -- Guards DevBench (smp reset denied, verified save-pair backups, bulk approval)"
+echo "  .claude/hooks/protect-mcp.sh     -- Guards DevBench (smp reset denied)"
 echo "  .claude/hooks/backup-before-edit.sh -- Auto-backups (Edit/Write/NotebookEdit) with audit trail"
 echo "  .claude/hooks/snapshot-before-tool.sh -- Snapshots .psc/.pex before non-read-only shell commands"
 echo "  .claude/hooks/session-kb-guard.sh -- Snapshots KNOWLEDGEBASE/CLAUDE.md/AGENTS.md once per session"
-echo "  .claude/hooks/save-sentinel.sh   -- After each call: reports saves changed with no backup first"
+echo "  .claude/hooks/save-sentinel.sh   -- After each call: reports changed saves (and locks new ones when locking is on)"
 echo "  tools/                           -- Helper scripts (AutoMod wrapper, esp-verify, NIF tools, nexus.sh, resaver-cli.sh)"
 echo "  .claude/backups/                 -- Backup storage"
 echo ""
@@ -1660,10 +1724,10 @@ echo "Configured safety hooks, once your agent loads them, can:"
 echo "  - Advise on ordinary game-file edits"
 echo "  - Block recognized raw writes to ESP/ESM/ESL/BSA/BA2"
 echo "  - Back up edit-tool changes; ordinary shell/script writes are not backed up by the edit hook"
-echo "  - Preserve one or two saves with verified permanent backups before recognized mutations"
+echo "  - Keep every version of every save and config INI (the save vault; tools/save_vault.py status)"
 echo "  - Snapshot Papyrus files before non-read-only shell commands"
-echo "  - Require bound human approval for bulk save access; Codex refuses calls needing confirmation"
-echo "  - Ask before discarding protected uncommitted changes or replacing live files during restore"
+echo "  - Refuse deleting or moving a whole Saves folder, the vault or a backup store"
+echo "  - Ask before discarding protected uncommitted changes or replacing live files during restore (Codex refuses calls needing confirmation)"
 echo "Verify actual coverage with: bash tools/hook-canary.sh"
 echo ""
 echo "--------------------------------------------"
@@ -1784,5 +1848,8 @@ if git -C "$TOOLKIT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
         grep -qE '\{\{(GAME_ROOT|CONFIG_DIR|PYTHON_PATH|BASH_PATH|CODEX_ROOT|DEVCONTAINER_)' "$TOOLKIT_DIR/$f" && continue
         git -C "$TOOLKIT_DIR" update-index --skip-worktree "$f" 2>/dev/null || true
     done
+fi
+if [ "$WANT_VAULT_TASK" = yes ] && [ -n "$VAULT_TASK_RC" ] && [ "$VAULT_TASK_RC" != 0 ]; then
+    SETUP_RC=1
 fi
 exit "$SETUP_RC"

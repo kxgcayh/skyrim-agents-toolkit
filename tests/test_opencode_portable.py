@@ -67,7 +67,7 @@ def after(tool, args, call="c"):
             "output": {"output": "done"}}
 
 
-def test_shipped_plugin_preserves_pairs_refuses_plugins_and_correlates_unknowns(tmp_path):
+def test_shipped_plugin_allows_a_save_write_refuses_plugins_and_correlates_unknowns(tmp_path):
     root, _ = run_plugin(tmp_path, [])
     saves = tmp_path / "config/Saves"
     saves.mkdir(parents=True)
@@ -81,18 +81,14 @@ def test_shipped_plugin_preserves_pairs_refuses_plugins_and_correlates_unknowns(
         steps += [before("future-agent-tool", {}, str(number)), after("future-agent-tool", {}, str(number))]
     _, result = run_plugin(tmp_path, steps)
     assert "error" not in result[0], result
-    assert "Save backup verified" in result[1]["output"]["output"]
+    assert "Save backup" not in result[1]["output"]["output"]          # 4.1: no hook backs a save up (the vault)
     assert "validation did not run" in result[1]["output"]["output"]
     assert "error" in result[2], result
     notes = [row["output"]["output"] for row in result[4::2]]
     assert ["WARN AND ALLOW" in note for note in notes] == [True, True, False, True, False]
     from modding_harness.telemetry import Telemetry
-    from skyguard import save_store
     assert Telemetry(root).report("s")["correlated_calls"] == 6
-    transactions = list((root / ".modding-agent-harness/backups/saves/transactions").glob("*.json"))
-    assert len(transactions) == 1
-    record = save_store.store(root).load(transactions[0].stem)
-    assert len(record["groups"][0]["members"]) == 2
+    assert not list((root / ".modding-agent-harness/backups/saves/transactions").glob("*.json"))
 
 
 def test_missing_adapter_refuses_known_tools_and_unknown_receipt_failure_warns(tmp_path):
@@ -130,21 +126,6 @@ def test_profile_known_devbench_tools_refuse_failed_transport(tmp_path, failure)
             assert "error" not in pre
             assert "WARN AND ALLOW" in post["output"]["output"]
             assert "coverage receipt unavailable" in post["output"]["output"]
-
-
-def test_healthy_devbench_transport_preserves_the_save_pair(tmp_path):
-    root, _ = run_plugin(tmp_path, [])
-    folder = tmp_path / "config/Saves"
-    folder.mkdir(parents=True)
-    (root / "skyrim-paths.env").write_text("SKYRIM_CONFIG_DIR='" + folder.parent.as_posix() + "'\n")
-    for suffix in (".ess", ".skse"):
-        (folder / ("Existing" + suffix)).write_bytes(suffix.encode())
-    _, results = run_plugin(tmp_path, [before("mcp__devbench-vr__console", {"command": "save Existing"})])
-    assert "error" not in results[0], results
-    records = list((root / ".modding-agent-harness/backups/saves/transactions").glob("*.json"))
-    assert len(records) == 1
-    manifest = json.loads(records[0].read_text())
-    assert len(manifest["groups"][0]["members"]) == 2
 
 
 def test_system_context_reinjects_preferences_after_each_transform(tmp_path):

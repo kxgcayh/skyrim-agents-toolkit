@@ -72,6 +72,7 @@ any agent can read one directly. Read the skill BEFORE the work:
 | use the Linux devcontainer | `docs/container-vs-windows.md` |
 | understand why the guards behave as they do | `docs/safety-philosophy.md` |
 | review, debug or build a check | `docs/verify-from-the-outside.md` |
+| work on this toolkit: CI gates releases, never local work | `docs/ci-workflow.md` |
 | adapt an unsupported agent, or Python, Git or Node is missing or broken | `ADAPTING.md`, skill `toolkit-setup` |
 
 ## PyFFI / PyNifly (NIF geometry + animation authoring)
@@ -221,8 +222,6 @@ the working directory the agent reports.
 - `sed -i` without `-b` on install/MO2 files
 - DevBench `smp reset` (crashes big load orders), by MCP, `curl` or `devbench-cli.sh`
 - Decoded text run as commands (`base64 -d | bash`), which the guard cannot read
-- **More than two saves at once** or by wildcard, until the user types the `SAVE_ACCESS_APPROVAL`
-  line `check --preview` prints
 - A command the guard cannot read: empty or not text ("GUARD INERT"), or unparseable while it contains
   a deletion and names a protected folder -- it refuses rather than shrugs
 
@@ -236,20 +235,21 @@ the working directory the agent reports.
   file directly in the game folder (its exe and dlls, `openvr_api.dll`, loader INIs)
 - A decompiler writing its output into the install; an in-place sed with a backslash path, on a file in the install
 - AutoMod write commands without `--dry-run`
-- Changing one or two saves (a save and its `.skse` are one): both are backed up, verified, first;
-  a failed backup refuses
 
 Naming a plugin or INI in a read-only command is silent: notes fire on the program that writes.
 
-### ASKS THE USER -- five rules
-- git that throws away uncommitted changes in a protected folder (`checkout -- x`, `restore`, `reset --hard`)
-- a command whose unnamed program names a save, held until you approve it
+### ASKS THE USER -- four rules
+- git discarding uncommitted changes in a protected folder (`checkout -- x`, `restore`, `reset --hard`)
 - an unnamed program, an eval of a variable, or awk system() given a protected path
 - `lock disable` (the file lock off for good)
 - `snapshot restore --in-place` or `restore-from-backup.sh --restore` (writes over live files)
 
 Few prompts by design: a guard that prompts on routine work gets approved by reflex
 (`docs/safety-philosophy.md`). **Check the guards are alive: `bash tools/hook-canary.sh`.**
+
+### Saves: no rule; the save vault keeps every version
+`python tools/save_vault.py status <SAVE>` lists kept versions; `restore` (dry run without `--apply`).
+**Session line says NOT RUNNING: tell the user.** A whole `Saves` folder stays refused. `docs/save-vault.md`.
 Coverage and gaps: `docs/guard-coverage.md`.
 
 ### The file lock and the guards' own state
@@ -390,8 +390,8 @@ Generated into `AGENTS.md` only; everything above is shared. Other agents: this 
   folders is refused; edits inside the game get advice. Files an `apply_patch` changes or deletes are
   backed up to `.claude/backups/` first, and `.psc`/`.pex` are snapshotted before shell commands.
   A file written by a script you run is not backed up.
-- **DevBench MCP** (server name contains `devbench`): `smp reset` is refused; a save over an existing
-  save is backed up first, then runs.
+- **DevBench MCP** (server name contains `devbench`): `smp reset` is refused. A save is not judged: the save
+  vault keeps every version (`docs/save-vault.md`).
 - **Not checked:** commands the user types with `!` in the Codex TUI (they bypass hooks), and other MCP
   tools (only logged).
 - **Skills** are in `.agents/skills/<name>/SKILL.md`: read the file when `core.md` points at it by name.

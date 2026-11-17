@@ -1,0 +1,1380 @@
+"""Save vault (tools/save_vault.py): every settled version of every save pair is kept, verified, forever.
+
+Temp folders only: every Vault here is built from explicit folders, so no test reads the real profile's saves.
+The game is simulated by writing X.ess.tmp and replacing X.ess, the order the vault must not disturb.
+Twins: the `sv-*` block in tests/test_mutations.py, one per guarded clause.
+"""
+from __future__ import annotations
+
+import ast
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+import pytest
+
+from conftest import REPO
+
+sys.path.insert(0, str(REPO / "tools"))
+import save_vault  # noqa: E402
+from save_vault import EXTS, PAIR_GRACE_S, SETTLE_S, Vault  # noqa: E402
+
+WINDOWS = os.name == "nt"
+
+
+class Clock:
+    def __init__(self):
+        self.t = time.time() + 10_000          # well after any file this test writes
+
+    def __call__(self):
+        return self.t
+
+    def tick(self, s):
+        self.t += s
+
+
+def write_pair(folder, stem, ess=b"E" * 300, skse=b"S" * 50, age=None):
+    paths = []
+    for ext, data in ((".ess", ess), (".skse", skse)):
+        if data is None:
+            continue
+        p = folder / (stem + ext)
+        p.write_bytes(data)
+        if age is not None:
+            t = time.time() - age
+            os.utime(p, (t, t))
+        paths.append(p)
+    return paths
+
+
+def game_save(folder, stem, ess, skse=b"S2" * 25):
+    """The game's order: write the temporary file, then replace the save with it."""
+    for ext, data in ((".ess", ess), (".skse", skse)):
+        tmp = folder / (stem + ext + ".tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, folder / (stem + ext))
+
+
+@pytest.fixture
+def bed(tmp_path):
+    saves = tmp_path / "My Games" / "Saves"
+    saves.mkdir(parents=True)
+    clock = Clock()
+    state = {"busy": False}
+    vault = Vault(tmp_path / "vault", [saves], is_busy=lambda: state["busy"], clock=clock, reserve_gb=0)
+    return {"saves": saves, "vault": vault, "clock": clock, "state": state, "root": tmp_path / "vault"}
+
+
+def versions(vault, stem):
+    return vault.versions(stem)
+
+
+def test_a_settled_pair_is_kept_with_both_members(bed):
+    write_pair(bed["saves"], "Save1", age=3600)
+    out = bed["vault"].sweep()
+    assert len(out["captured"]) == 1
+    e = out["captured"][0]
+    assert e["ess"]["size"] == 300 and e["skse"]["size"] == 50 and e["note"] == ""
+    assert bed["vault"].verify()["bad"] == []
+
+
+def test_one_version_holds_both_members(bed):
+    write_pair(bed["saves"], "Save1", age=3600)
+    bed["vault"].sweep()
+    [e] = versions(bed["vault"], "Save1")
+    tx = bed["vault"].store.inspect(e["transaction"])
+    assert sorted(Path(r["path"]).suffix for r in tx["groups"][0]["members"]) == [".ess", ".skse"]
+
+
+def test_a_pair_still_being_written_is_not_captured(bed):
+    write_pair(bed["saves"], "Save1", age=3600)
+    v = bed["vault"]
+    v.sweep()                                               # first version kept
+    p = bed["saves"] / "Save1.ess"
+    p.write_bytes(b"F" * 300)
+    t = bed["clock"]() - 1                                  # just written, by the vault's clock
+    os.utime(p, (t, t))
+    assert v.sweep()["captured"] == []
+    bed["clock"].tick(SETTLE_S + 1)
+    assert len(v.sweep()["captured"]) == 1
+
+
+def test_tmp_files_are_never_captured(bed):
+    write_pair(bed["saves"], "Save1", age=3600)
+    for name in ("Save1.ess.tmp", "Other.ess.tmp"):
+        (bed["saves"] / name).write_bytes(b"partial")
+        os.utime(bed["saves"] / name, (bed["clock"]() - 1, bed["clock"]() - 1))      # being written now
+    pairs, _, _ = bed["vault"].scan()
+    key = next(k for k, p in pairs.items() if p["stem"] == "Save1")
+    assert not bed["vault"].due(key, pairs[key], bed["clock"](), bed["vault"].kept())   # never queued
+    out = bed["vault"].sweep()
+    assert out["captured"] == []                            # Save1 is mid-write; Other.ess.tmp is no save
+    assert not any(e["stem"].lower().startswith("other") for e in bed["vault"].events())
+
+
+def test_unchanged_pair_is_not_kept_twice(bed):
+    write_pair(bed["saves"], "Save1", age=3600)
+    bed["vault"].sweep()
+    bed["clock"].tick(100)
+    assert bed["vault"].sweep()["captured"] == []
+    assert len(versions(bed["vault"], "Save1")) == 1
+    pairs, _, _ = bed["vault"].scan()
+    key = next(iter(pairs))
+    assert not bed["vault"].due(key, pairs[key], bed["clock"](), bed["vault"].kept())   # skipped before any link
+
+
+def test_every_version_of_an_overwritten_slot_is_kept(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Quicksave0", ess=b"1" * 300, age=3600)
+    v.sweep()
+    for n in (b"2", b"3"):
+        game_save(s, "Quicksave0", n * 300)
+        for p in s.glob("Quicksave0.*"):
+            os.utime(p, (c() - 100, c() - 100))
+        v.sweep()                                           # sees the change; its settle clock starts
+        c.tick(SETTLE_S + 1)
+        v.sweep()
+    kept = versions(v, "Quicksave0")
+    assert len(kept) == 3
+    assert len({e["ess"]["sha256"] for e in kept}) == 3
+
+
+def test_a_missing_cosave_is_recorded_not_an_error(bed):
+    write_pair(bed["saves"], "Save2", skse=None, age=3600)
+    out = bed["vault"].sweep()
+    assert out["errors"] == [] and len(out["captured"]) == 1
+    assert out["captured"][0]["skse"] is None and out["captured"][0]["note"] == "co-save missing"
+
+
+def test_a_late_cosave_joins_its_pair(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    p = s / "Save3.ess"
+    p.write_bytes(b"E" * 300)
+    os.utime(p, (c() - (SETTLE_S + 5), c() - (SETTLE_S + 5)))     # settled, but younger than the partner grace
+    assert v.sweep()["captured"] == []
+    q = s / "Save3.skse"
+    q.write_bytes(b"S" * 50)
+    os.utime(q, (c() - (SETTLE_S + 5), c() - (SETTLE_S + 5)))
+    v.sweep()                                               # sees the partner arrive
+    c.tick(SETTLE_S + 1)
+    [e] = v.sweep()["captured"]
+    assert e["skse"] is not None and e["ess"] is not None
+
+
+def test_one_failed_listing_is_not_a_vanish(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    paths = write_pair(s, "Save4", age=3600)
+    v.sweep()
+    for p in paths:
+        p.unlink()
+    c.tick(15)
+    assert v.sweep()["vanished"] == []
+    c.tick(15)
+    [e] = v.sweep()["vanished"]
+    assert e["stem"] == "Save4" and e["last"] == versions(v, "Save4")[-1]["id"]
+
+
+def test_a_removed_pair_is_recorded_vanished_once(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    for p in write_pair(s, "Save5", age=3600):
+        pass
+    v.sweep()
+    for p in s.glob("Save5.*"):
+        p.unlink()
+    for _ in range(5):
+        c.tick(15)
+        v.sweep()
+    assert sum(1 for e in v.events() if e.get("event") == "vanished") == 1
+
+
+def test_unreadable_folder_is_not_vanished(bed, tmp_path):
+    s, c = bed["saves"], bed["clock"]
+    write_pair(s, "Save6", age=3600)
+    bed["vault"].sweep()
+    moved = tmp_path / "elsewhere"
+    s.rename(moved)                                         # the folder itself is gone (drive unplugged, renamed)
+    for _ in range(4):
+        c.tick(15)
+        bed["vault"].sweep()
+    assert not any(e.get("event") == "vanished" for e in bed["vault"].events())
+
+
+def test_the_game_can_replace_a_save_while_the_vault_reads_it(bed, monkeypatch):
+    """The vault reads only its own staging link: with that link held OPEN, the game's tmp->replace of the live save
+    succeeds, and the kept version is the one that had settled, byte for byte."""
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Quicksave1", ess=b"OLD" * 100, age=3600)
+    real = save_vault.durable.digest
+    fired = {}
+
+    def digest_while_holding_the_link_open(path, deadline=None):
+        if "staging-links" in str(path) and str(path).lower().endswith(".ess") and not fired:
+            with open(path, "rb") as held:
+                held.read(10)
+                game_save(s, "Quicksave1", b"NEW" * 100)    # raises if a handle blocked the replace
+                fired["x"] = True
+        return real(path, deadline)
+
+    monkeypatch.setattr(save_vault.durable, "digest", digest_while_holding_the_link_open)
+    [e] = v.sweep()["captured"]
+    assert fired and (s / "Quicksave1.ess").read_bytes() == b"NEW" * 100
+    blob = v.store.root / "blobs" / e["ess"]["sha256"]
+    assert blob.read_bytes() == b"OLD" * 100
+
+
+def test_a_save_during_the_stores_own_copy_still_keeps_the_settled_version(bed, monkeypatch):
+    """On POSIX the game's replace moves the link's change time mid-copy; the store's recheck fails once and the
+    retry, on the SAME links, keeps the settled bytes (re-linking would take the next version and lose this one).
+    On Windows st_ctime is the creation time, so the recheck passes and only the outcome is checked."""
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Quicksave2", ess=b"OLD" * 100, age=3600)
+    real = save_vault.durable.copy_verified
+    fired = {}
+
+    def copy_then_game_saves(source, target, deadline=None):
+        info = real(source, target, deadline)
+        if "staging-links" in str(source) and "store" in str(target) and not fired:
+            fired["x"] = True
+            game_save(s, "Quicksave2", b"NEW" * 100)
+        return info
+
+    monkeypatch.setattr(save_vault.durable, "copy_verified", copy_then_game_saves)
+    [e] = v.sweep()["captured"]
+    assert fired
+    assert (v.store.root / "blobs" / e["ess"]["sha256"]).read_bytes() == b"OLD" * 100
+
+
+def test_the_capture_never_reads_a_live_save(bed, monkeypatch):
+    """Every read the capture makes is of its own staging link, never of the file in Saves (an open live save makes
+    the game's replace fail, measured 2026-11-10)."""
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save40", age=3600)
+    read = []
+    for name in ("digest", "copy_verified"):
+        real = getattr(save_vault.durable, name)
+
+        def spy(path, *a, _real=real, **k):
+            read.append(str(path))
+            return _real(path, *a, **k)
+        monkeypatch.setattr(save_vault.durable, name, spy)
+    assert len(v.sweep()["captured"]) == 1
+    live = os.path.normcase(str(s))
+    assert read and not [p for p in read if os.path.normcase(p).startswith(live)]
+
+
+def test_staging_links_are_removed(bed):
+    write_pair(bed["saves"], "Save7", age=3600)
+    bed["vault"].sweep()
+    assert list((bed["root"] / "staging-links").iterdir()) == []
+
+
+def test_events_survive_a_second_capture(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Save8", age=3600)
+    v.sweep()
+    first = [e["id"] for e in v.events()]
+    game_save(s, "Save8", b"Z" * 300)
+    for p in s.glob("Save8.*"):
+        os.utime(p, (c() - 100, c() - 100))
+    v.sweep()
+    c.tick(SETTLE_S + 1)
+    v.sweep()
+    ids = [e["id"] for e in v.events()]
+    assert ids[:len(first)] == first and len(ids) == len(first) + 1
+
+
+def test_a_lost_state_file_costs_no_recapture(bed):
+    write_pair(bed["saves"], "Save9", age=3600)
+    bed["vault"].sweep()
+    (bed["root"] / "status" / "state.json").unlink()
+    again = Vault(bed["root"], [bed["saves"]], is_busy=lambda: False, clock=bed["clock"], reserve_gb=0)
+    assert again.sweep()["captured"] == []
+
+
+def test_only_one_pair_per_pass_while_the_game_runs(bed):
+    for n in range(4):
+        write_pair(bed["saves"], "Save%d" % (20 + n), ess=bytes([65 + n]) * 300, age=3600)
+    bed["state"]["busy"] = True
+    out = bed["vault"].sweep()
+    assert len(out["captured"]) == 1 and out["pending"] == 3
+    bed["state"]["busy"] = False
+    assert len(bed["vault"].sweep()["captured"]) == 3
+
+
+def test_busy_counts_unknown_as_running(monkeypatch):
+    def boom(*a, **k):
+        raise OSError("no tasklist")
+    monkeypatch.setattr(save_vault.subprocess, "run", boom)
+    assert save_vault.busy() is True
+
+
+def test_restore_without_apply_writes_nothing(bed):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save10", age=3600)
+    v.sweep()
+    for p in s.glob("Save10.*"):
+        p.unlink()
+    before = sorted(os.listdir(s))
+    plan = v.restore("Save10")
+    assert plan["mode"] == "put-back" and plan["apply"] is False and sorted(os.listdir(s)) == before
+
+
+def test_a_vanished_pair_is_put_back_byte_for_byte(bed):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save11", ess=b"Q" * 300, skse=b"R" * 50, age=3600)
+    v.sweep()
+    for p in s.glob("Save11.*"):
+        p.unlink()
+    v.restore("Save11", apply=True)
+    assert (s / "Save11.ess").read_bytes() == b"Q" * 300 and (s / "Save11.skse").read_bytes() == b"R" * 50
+
+
+def test_a_present_pair_is_never_overwritten_without_replace(bed):
+    write_pair(bed["saves"], "Save12", age=3600)
+    bed["vault"].sweep()
+    with pytest.raises(FileExistsError):
+        bed["vault"].restore("Save12", apply=True)
+
+
+def test_replace_vaults_the_current_pair_first(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Save13", ess=b"A" * 300, age=3600)
+    v.sweep()
+    old = versions(v, "Save13")[-1]["id"]
+    (s / "Save13.ess").write_bytes(b"B" * 300)               # changed, not yet seen by any sweep
+    v.restore("Save13", event_id=old, replace=True, apply=True)
+    assert (s / "Save13.ess").read_bytes() == b"A" * 300
+    assert any(e["ess"]["size"] == 300 and e["id"] != old for e in versions(v, "Save13"))
+    blobs = {e["ess"]["sha256"] for e in versions(v, "Save13")}
+    import hashlib
+    assert hashlib.sha256(b"B" * 300).hexdigest() in blobs   # the overwritten version was kept first
+
+
+def test_restore_into_the_live_folder_is_refused_while_the_game_runs(bed):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save14", age=3600)
+    v.sweep()
+    for p in s.glob("Save14.*"):
+        p.unlink()
+    bed["state"]["busy"] = True
+    with pytest.raises(save_vault.PreservationFailed):
+        v.restore("Save14", apply=True)
+
+
+def test_restore_as_a_new_name_never_clobbers(bed):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save15", age=3600)
+    v.sweep()
+    v.restore("Save15", as_stem="Save15-restored", apply=True)
+    assert (s / "Save15-restored.ess").exists()
+    with pytest.raises(FileExistsError):
+        v.restore("Save15", as_stem="Save15-restored", apply=True)
+
+
+def test_a_blob_that_does_not_verify_is_named(bed):
+    write_pair(bed["saves"], "Save16", age=3600)
+    v = bed["vault"]
+    v.sweep()
+    [e] = versions(v, "Save16")
+    blob = v.store.root / "blobs" / e["ess"]["sha256"]
+    os.chmod(blob, 0o666)
+    blob.write_bytes(b"corrupt")
+    out = v.verify()
+    assert [tx for tx, _ in out["bad"]] == [e["transaction"]]
+
+
+def test_an_existing_blob_is_never_replaced(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Save17", ess=b"K" * 300, age=3600)
+    write_pair(s, "Save18", ess=b"K" * 300, age=3600)        # identical bytes: one blob
+    v.sweep()
+    blobs = list((v.store.root / "blobs").iterdir())
+    stamp = {b.name: b.stat().st_mtime_ns for b in blobs}
+    assert len(blobs) == 2                                   # one shared .ess blob + one shared .skse blob
+    c.tick(1)
+    write_pair(s, "Save19", ess=b"K" * 300, age=3600)
+    v.sweep()
+    assert {b.name: b.stat().st_mtime_ns for b in (v.store.root / "blobs").iterdir()} == stamp
+
+
+def test_legacy_import_is_idempotent_and_skips_empty_records(bed, tmp_path):
+    old = tmp_path / "legacy"
+    old.mkdir()
+    (old / "Save1.ess").write_bytes(b"L" * 300)
+    import hashlib
+    sha = hashlib.sha256(b"L" * 300).hexdigest()
+    orig = str(bed["saves"] / "Save1.ess")
+    recs = [{"id": "20261013-000000-aaaaaa-0", "time": "2026-10-13T00:00:00", "originals": [orig, orig[:-4] + ".skse"],
+             "ess": {"original": orig, "backup": str(old / "Save1.ess"), "sha256": sha, "size": 300},
+             "note": "co-save missing"},
+            {"id": "20261013-000001-bbbbbb-0", "originals": [orig], "note": "no file existed (nothing to back up)"}]
+    m = tmp_path / "manifest.jsonl"
+    m.write_text("\n".join(json.dumps(r) for r in recs) + "\n", encoding="utf-8")
+    first = bed["vault"].import_legacy(m)
+    assert (first["imported"], first["skipped"], first["failed"]) == (1, 1, [])
+    assert bed["vault"].import_legacy(m) == {"imported": 0, "skipped": 0, "failed": []}
+    assert (old / "Save1.ess").read_bytes() == b"L" * 300
+
+
+def test_legacy_hash_mismatch_is_refused(bed, tmp_path):
+    old = tmp_path / "legacy"
+    old.mkdir()
+    (old / "Save1.ess").write_bytes(b"L" * 300)
+    orig = str(bed["saves"] / "Save1.ess")
+    rec = {"id": "x-0", "originals": [orig], "ess": {"original": orig, "backup": str(old / "Save1.ess"),
+                                                       "sha256": "0" * 64, "size": 300}}
+    m = tmp_path / "manifest.jsonl"
+    m.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    out = bed["vault"].import_legacy(m)
+    assert out["imported"] == 0 and len(out["failed"]) == 1
+
+
+def test_stale_heartbeat_reports_watcher_down(bed):
+    write_pair(bed["saves"], "Save30", age=3600)
+    bed["vault"].sweep()
+    beat = json.loads((bed["root"] / "status" / "heartbeat.json").read_text())
+    alive, _ = save_vault.watcher_status(bed["root"], now=beat["last_sweep"] + 10)
+    dead, line = save_vault.watcher_status(bed["root"], now=beat["last_sweep"] + save_vault.STALE_S + 1)
+    assert alive is True and dead is False and "NOT RUNNING" in line
+    missing, _ = save_vault.watcher_status(bed["root"].parent / "nowhere")
+    assert missing is False
+
+
+def test_a_second_watcher_exits(bed):
+    root = bed["root"]
+    from modding_harness.locking import exclusive
+    with exclusive(root / "status" / "watch.lock", 0):
+        assert save_vault.watch(lambda: bed["vault"], stop=lambda: True) == 0
+
+
+def test_the_vault_never_deletes_what_it_stored():
+    """Outside its own staging links, save_vault.py has no unlink/rmtree/remove: nothing it stored can go."""
+    tree = ast.parse((REPO / "tools" / "save_vault.py").read_text(encoding="utf-8"))
+    offenders = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in (
+                "unlink", "rmtree", "remove", "rmdir", "removedirs"):
+            offenders.append(ast.unparse(node))
+    # the only removals: its own staging links and parts, and in a restore's rollback the file that restore itself
+    # just wrote, or (after a successful replace) the set-aside member already kept as a vault version
+    allowed = {"link.unlink()", "part.unlink(missing_ok=True)", "os.unlink(target)", "os.unlink(aside)"}
+    assert set(offenders) <= allowed, offenders
+
+
+def test_the_vault_store_must_be_outside_the_save_folders(tmp_path):
+    saves = tmp_path / "Saves"
+    saves.mkdir()
+    with pytest.raises(ValueError):
+        Vault(saves / "vault", [saves], is_busy=lambda: False, reserve_gb=0)
+
+
+def test_discovery_reads_save_dirs_and_the_override(tmp_path):
+    a, b = tmp_path / "A", tmp_path / "B"
+    a.mkdir()
+    b.mkdir()
+    assert save_vault.discover(tmp_path, env={"SAVE_VAULT_FOLDERS": str(a) + os.pathsep + str(b)}) == [a, b]
+    found = save_vault.discover(tmp_path, env={"SKYRIM_SAVE_DIRS": str(a), "SKYGUARD_NO_KNOWN_FOLDERS": "1",
+                                               "USERPROFILE": str(tmp_path / "nohome"), "HOME": str(tmp_path / "nohome")})
+    assert a in found and b not in found
+
+
+def test_a_marked_folder_is_watched(tmp_path):
+    kept = tmp_path / "_CLAUDE_OUTPUT" / "baseline"
+    kept.mkdir(parents=True)
+    (kept / ".protect-saves").write_text("")
+    found = save_vault.discover(tmp_path, env={"SKYGUARD_NO_KNOWN_FOLDERS": "1", "USERPROFILE": str(tmp_path / "x"),
+                                               "HOME": str(tmp_path / "x")})
+    assert kept in found
+
+
+# ---- review 2026-11-10 (BLOCK on d4cdc0e): one test per finding
+
+def test_a_changed_pair_waits_one_settle_period(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Save50", ess=b"A" * 300, age=3600)
+    v.sweep()
+    (s / "Save50.ess").write_bytes(b"B" * 300)
+    os.utime(s / "Save50.ess", (c() - 3600, c() - 3600))       # an old mtime: only the settle clock can hold it
+    assert v.sweep()["captured"] == []
+    c.tick(SETTLE_S + 1)
+    assert len(v.sweep()["captured"]) == 1
+
+
+def test_a_young_file_waits_even_on_first_sight(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    for p in write_pair(s, "Save51"):
+        os.utime(p, (c() - 2, c() - 2))
+    assert v.sweep()["captured"] == []
+
+
+def _patch_live_links(bed, monkeypatch, fake):
+    """Replace os.link for links FROM the saves folder only. The store publishes with os.link on POSIX
+    (durable.publish_new: link, then unlink the .part), and save_vault.os is the one os module, so a blanket patch
+    broke or counted the store's own publish: CI 43158003086, Linux only (Windows publishes by rename)."""
+    real_link = save_vault.os.link
+    saves = os.path.normcase(str(bed["saves"])) + os.sep
+
+    def link(src, dst, *a, **k):
+        if os.path.normcase(str(src)).startswith(saves):
+            return fake(src, dst)
+        return real_link(src, dst, *a, **k)
+    monkeypatch.setattr(save_vault.os, "link", link)
+
+
+def test_a_locked_save_is_kept_by_copy(bed, monkeypatch):
+    """os.link fails on a locked save (deny WA); the copy's own mtime is new, so the live file's stat decides."""
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save52", age=3600)
+
+    def no_link(*a, **k):
+        raise PermissionError(5, "Access is denied")
+    _patch_live_links(bed, monkeypatch, no_link)
+    out = v.sweep()
+    assert len(out["captured"]) == 1, out                 # the sweep's own errors, if any, say why (Linux CI)
+    [e] = out["captured"]
+    assert e["ess"]["size"] == 300 and list((bed["root"] / "staging-links").iterdir()) == []
+
+
+def test_another_volume_waits_while_the_game_runs(bed, monkeypatch):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save53", age=3600)
+
+    def no_link(*a, **k):
+        raise OSError(17, "cross-device")
+    _patch_live_links(bed, monkeypatch, no_link)
+    monkeypatch.setattr(Vault, "_same_volume", lambda self, path: False)
+    bed["state"]["busy"] = True
+    out = v.sweep()
+    assert out["captured"] == [] and out["deferred"] == 1 and out["errors"] == []
+    bed["state"]["busy"] = False
+    out = v.sweep()
+    assert len(out["captured"]) == 1, out
+
+
+def test_one_pair_that_cannot_be_kept_does_not_starve_the_rest(bed, monkeypatch):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Old", ess=b"O" * 300, age=7200)
+    write_pair(s, "New", ess=b"N" * 300, age=3600)              # newest first in the queue
+    real = Vault.capture
+
+    def capture(self, key, pair):
+        return None if pair["stem"] == "New" else real(self, key, pair)
+    monkeypatch.setattr(Vault, "capture", capture)
+    bed["state"]["busy"] = True
+    out = v.sweep()
+    assert [e["stem"] for e in out["captured"]] == ["Old"]
+    for _ in range(save_vault.FAIL_REPORT):
+        c.tick(15)
+        v.sweep()
+    alive, line = save_vault.watcher_status(bed["root"], now=c())
+    assert alive is False and "New" in line                      # a pair that keeps failing is reported
+
+
+def test_a_leftover_tmp_does_not_block_its_pair_forever(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Save54", age=3600)
+    tmp = s / "Save54.ess.tmp"
+    tmp.write_bytes(b"crashed save")
+    os.utime(tmp, (c() - save_vault.TMP_LIVE_S - 60, c() - save_vault.TMP_LIVE_S - 60))
+    out = v.sweep()
+    assert len(out["captured"]) == 1 and out["stale_tmp"] == [str(tmp)]
+
+
+def _legacy(tmp_path, saves, stem, data, rid):
+    import hashlib
+    old = tmp_path / ("legacy-" + stem)
+    old.mkdir()
+    (old / (stem + ".ess")).write_bytes(data)
+    orig = str(saves / (stem + ".ess"))
+    rec = {"id": rid, "time": "2026-10-13T00:00:00", "originals": [orig, orig[:-4] + ".skse"],
+           "ess": {"original": orig, "backup": str(old / (stem + ".ess")), "sha256": hashlib.sha256(data).hexdigest(),
+                   "size": len(data)}, "note": "co-save missing"}
+    m = tmp_path / ("manifest-" + stem + ".jsonl")
+    m.write_text(json.dumps(rec) + "\n", encoding="utf-8")
+    return m
+
+
+def test_legacy_backups_can_be_listed_and_restored(bed, tmp_path):
+    m = _legacy(tmp_path, bed["saves"], "Save55", b"L" * 300, "20261013-000000-cccccc-0")
+    bed["vault"].import_legacy(m)
+    [e] = bed["vault"].versions("Save55")
+    assert e["legacy"] is True
+    bed["vault"].restore("Save55", apply=True)
+    assert (bed["saves"] / "Save55.ess").read_bytes() == b"L" * 300
+
+
+def test_legacy_import_stays_idempotent_beside_a_running_watcher(bed, tmp_path):
+    m = _legacy(tmp_path, bed["saves"], "Save56", b"W" * 300, "20261013-000000-dddddd-0")
+    watcher = bed["vault"]                                       # holds its state in memory
+    cli = Vault(bed["root"], [bed["saves"]], is_busy=lambda: False, clock=bed["clock"], reserve_gb=0)
+    assert cli.import_legacy(m)["imported"] == 1
+    write_pair(bed["saves"], "Save57", age=3600)
+    watcher.sweep()                                              # writes its own (older) state
+    again = Vault(bed["root"], [bed["saves"]], is_busy=lambda: False, clock=bed["clock"], reserve_gb=0)
+    assert again.import_legacy(m)["imported"] == 0
+    assert sum(1 for e in again.events() if e.get("event") == "import") == 1
+
+
+def test_two_processes_keep_one_version_once(bed):
+    write_pair(bed["saves"], "Save58", age=3600)
+    other = Vault(bed["root"], [bed["saves"]], is_busy=lambda: False, clock=bed["clock"], reserve_gb=0)
+    pairs, _, _ = other.scan()
+    stale_view = other.kept()                                    # taken before the first process keeps it
+    bed["vault"].sweep()
+    key = next(iter(pairs))
+    assert other.due(key, pairs[key], bed["clock"](), stale_view)
+    assert other.capture(key, pairs[key]) is None               # the capture re-checks under the lock
+    assert len(bed["vault"].versions("Save58")) == 1
+
+
+def test_replace_keeps_the_current_pair_even_with_a_tmp_beside_it(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Save59", ess=b"A" * 300, age=3600)
+    v.sweep()
+    old = v.versions("Save59")[-1]["id"]
+    (s / "Save59.ess").write_bytes(b"C" * 300)
+    os.utime(s / "Save59.ess", (c() - 3600, c() - 3600))
+    (s / "Save59.ess.tmp").write_bytes(b"x")
+    os.utime(s / "Save59.ess.tmp", (c() - 1, c() - 1))
+    v.restore("Save59", event_id=old, replace=True, apply=True)
+    import hashlib
+    assert hashlib.sha256(b"C" * 300).hexdigest() in {e["ess"]["sha256"] for e in v.versions("Save59")}
+
+
+def test_now_does_not_shorten_the_wait_while_the_game_runs(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    for p in write_pair(s, "Save60"):
+        os.utime(p, (c() - 5, c() - 5))                          # 5 s old: --now alone would take it
+    bed["state"]["busy"] = True
+    assert v.sweep(force=True)["captured"] == []
+    bed["state"]["busy"] = False
+    assert len(v.sweep(force=True)["captured"]) == 1
+
+
+def _by_the_harness():
+    """True when the CALLER is the test launcher's audit hook (tests/harness_isolation.py resolves every os.link and
+    os.stat path to keep writes inside the fixture). MEASURED 2026-11-11: under the launcher every resolve of a live
+    save name came from there and none from the vault; without it there are none. Those calls are the test
+    harness's, not the vault's, so the spies below do not count them."""
+    frame = sys._getframe(2)                 # a frame walk reads no file (traceback would os.stat: recursion)
+    while frame is not None:
+        if frame.f_code.co_filename.endswith("harness_isolation.py"):
+            return True
+        frame = frame.f_back
+    return False
+
+
+def test_scanning_never_opens_a_live_save_by_name(bed, monkeypatch):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save61", age=3600)
+    opened = []
+    for name in ("stat", "lstat"):
+        real = getattr(save_vault.os, name)
+
+        def spy(path, *a, _real=real, **k):
+            if not _by_the_harness():
+                opened.append(str(path))
+            return _real(path, *a, **k)
+        monkeypatch.setattr(save_vault.os, name, spy)
+    real_isfile = save_vault.os.path.isfile
+    monkeypatch.setattr(save_vault.os.path, "isfile",
+                        lambda p: (_by_the_harness() or opened.append(str(p))) and False or real_isfile(p))
+    assert len(v.sweep()["captured"]) == 1
+    live = os.path.normcase(str(s))
+    assert not [p for p in opened if os.path.normcase(p).startswith(live) and p.lower().endswith(EXTS)]
+
+
+def test_a_vault_watching_nothing_is_not_reported_running(tmp_path):
+    v = Vault(tmp_path / "vault", [], is_busy=lambda: False, reserve_gb=0)
+    v.sweep()
+    alive, line = save_vault.watcher_status(tmp_path / "vault")
+    assert alive is False and "NO SAVE FOLDER" in line
+
+
+def test_a_version_without_a_cosave_never_orphans_the_present_one(bed):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save62", skse=None, age=3600)
+    v.sweep()
+    (s / "Save62.skse").write_bytes(b"S" * 50)
+    with pytest.raises(FileExistsError):
+        v.restore("Save62", replace=True)                        # the dry run already says no
+
+
+def test_restore_as_refuses_paths_and_a_running_game(bed):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save63", age=3600)
+    v.sweep()
+    with pytest.raises(ValueError):
+        v.restore("Save63", as_stem="../escape", apply=True)
+    bed["state"]["busy"] = True
+    with pytest.raises(save_vault.PreservationFailed):
+        v.restore("Save63", as_stem="Save63-b", apply=True)
+
+
+def test_links_left_by_a_crash_are_cleared_at_watcher_start(bed):
+    stray = bed["root"] / "staging-links" / "dead-Save64.ess"
+    stray.write_bytes(b"x")
+    bed["vault"].clean_staging()
+    assert not stray.exists()
+
+
+def test_a_lost_index_is_rebuilt_from_the_events(bed):
+    write_pair(bed["saves"], "Save65", age=3600)
+    bed["vault"].sweep()
+    (bed["root"] / "status" / "kept.json").unlink()
+    again = Vault(bed["root"], [bed["saves"]], is_busy=lambda: False, clock=bed["clock"], reserve_gb=0)
+    assert again.sweep()["captured"] == [] and len(again.versions("Save65")) == 1
+
+
+def test_now_still_waits_out_a_write_in_progress(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    for p in write_pair(s, "Save66"):
+        os.utime(p, (c() - 0.5, c() - 0.5))
+    assert v.sweep(force=True)["captured"] == []
+
+
+def test_the_watcher_clears_stray_links_when_it_starts(bed):
+    stray = bed["root"] / "staging-links" / "dead-Save67.ess"
+    stray.write_bytes(b"x")
+    save_vault.watch(lambda: bed["vault"], stop=lambda: True)
+    assert not stray.exists()
+
+
+def test_an_old_tmp_file_is_never_kept_as_a_save(bed):
+    s, c = bed["saves"], bed["clock"]
+    junk = s / "Other.ess.tmp"
+    junk.write_bytes(b"left over")
+    os.utime(junk, (c() - 3600, c() - 3600))
+    bed["vault"].sweep()
+    assert not [e for e in bed["vault"].events() if e.get("stem", "").lower().startswith("other")]
+
+
+# ---- re-review 2026-11-10 (BLOCK on 0c7a8dd) and the INI vault
+
+def test_the_capture_resolves_no_live_save_name(bed, monkeypatch):
+    """The store is handed the staging link, so its path resolution (a handle on the name) never touches the save;
+    the one remaining open of a live name is os.link, once per member."""
+    import pathlib
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save70", age=3600)
+    resolved, linked = [], []
+    real_resolve = pathlib.Path.resolve
+    monkeypatch.setattr(pathlib.Path, "resolve", lambda self, *a, **k: (
+        _by_the_harness() or resolved.append(str(self))) and False or real_resolve(self, *a, **k))
+    real_link = save_vault.os.link
+    _patch_live_links(bed, monkeypatch, lambda src, dst: linked.append(str(src)) or real_link(src, dst))
+    assert len(v.sweep()["captured"]) == 1
+    live = [str(s / "Save70.ess"), str(s / "Save70.skse")]
+    assert not [r for r in resolved if os.path.normcase(r) in map(os.path.normcase, live)]
+    assert sorted(map(os.path.normcase, linked)) == sorted(map(os.path.normcase, live))
+
+
+def test_a_pair_the_game_starts_saving_is_skipped_before_linking(bed, monkeypatch):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Save71", age=3600)
+    pairs, _, _ = v.scan()
+    tmp = s / "Save71.ess.tmp"
+    tmp.write_bytes(b"writing")
+    os.utime(tmp, (c() - 1, c() - 1))
+    linked = []
+    monkeypatch.setattr(save_vault.os, "link", lambda *a: linked.append(a))
+    key = next(iter(pairs))
+    assert v.capture(key, pairs[key]) is None and linked == []
+
+
+def test_another_volume_is_copied_never_linked(bed, monkeypatch):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save72", age=3600)
+    monkeypatch.setattr(Vault, "_same_volume", lambda self, folder: False)
+    linked = []
+    _patch_live_links(bed, monkeypatch, lambda *a: linked.append(a))
+    out = v.sweep()
+    assert len(out["captured"]) == 1 and linked == [], out
+
+
+def test_deferred_pairs_do_not_starve_a_same_volume_folder(tmp_path):
+    far, near = tmp_path / "Far" / "Saves", tmp_path / "Near" / "Saves"
+    far.mkdir(parents=True)
+    near.mkdir(parents=True)
+    for n in range(save_vault.BUSY_TRIES + 1):
+        write_pair(far, "Far%d" % n, ess=bytes([70 + n]) * 300, age=100 + n)      # newest: first in the queue
+    write_pair(near, "Near", ess=b"N" * 300, age=7200)
+    v = Vault(tmp_path / "vault", [far, near], is_busy=lambda: True, clock=Clock(), reserve_gb=0)
+    v._same_volume = lambda folder: os.path.normcase(str(near)) == os.path.normcase(str(folder))
+    out = v.sweep()
+    assert [e["stem"] for e in out["captured"]] == ["Near"] and out["deferred"] == save_vault.BUSY_TRIES + 1
+
+
+def test_a_failure_count_clears_once_the_pair_is_kept_elsewhere_or_gone(bed, monkeypatch):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Bad", ess=b"B" * 300, age=7200)
+    write_pair(s, "Gone", ess=b"G" * 300, age=7200)
+    real = Vault.capture
+    monkeypatch.setattr(Vault, "capture", lambda self, key, pair, ignore_tmp=False: None)
+    for _ in range(save_vault.FAIL_REPORT):
+        c.tick(15)
+        v.sweep()
+    assert save_vault.watcher_status(bed["root"], now=c())[0] is False
+    monkeypatch.setattr(Vault, "capture", real)
+    other = Vault(bed["root"], [s], is_busy=lambda: False, clock=c, reserve_gb=0)
+    other.sweep(only="Bad")                                      # kept by another process
+    for p in s.glob("Gone.*"):
+        p.unlink()                                               # and the other one is deleted
+    monkeypatch.setattr(Vault, "capture", lambda self, key, pair, ignore_tmp=False: None)
+    c.tick(15)
+    v.sweep()
+    assert save_vault.watcher_status(bed["root"], now=c())[0] is True
+
+
+def test_an_unreadable_folder_is_reported(bed, tmp_path):
+    other = tmp_path / "Other" / "Saves"
+    other.mkdir(parents=True)
+    v = Vault(tmp_path / "vault2", [bed["saves"], other], is_busy=lambda: False, clock=bed["clock"], reserve_gb=0)
+    other.rmdir()
+    v.sweep()
+    alive, line = save_vault.watcher_status(tmp_path / "vault2", now=bed["clock"]())
+    assert alive is False and "folder unreadable" in line
+
+
+def test_restore_checks_the_game_before_looking_at_the_saves(bed, monkeypatch):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save73", age=3600)
+    v.sweep()
+    bed["state"]["busy"] = True
+
+    def looked(*a, **k):
+        raise AssertionError("listed the save folder before the game check")
+    monkeypatch.setattr(Vault, "_listed", staticmethod(looked))
+    with pytest.raises(save_vault.PreservationFailed):
+        v.restore("Save73", replace=True, apply=True)
+
+
+def test_replace_refuses_when_the_current_pair_could_not_be_kept(bed, monkeypatch):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Save74", ess=b"A" * 300, age=3600)
+    v.sweep()
+    old = v.versions("Save74")[-1]["id"]
+    (s / "Save74.ess").write_bytes(b"D" * 300)
+    os.utime(s / "Save74.ess", (c() - 3600, c() - 3600))
+    monkeypatch.setattr(Vault, "capture", lambda self, key, pair, ignore_tmp=False: None)
+    with pytest.raises(save_vault.PreservationFailed):
+        v.restore("Save74", event_id=old, replace=True, apply=True)
+    assert (s / "Save74.ess").read_bytes() == b"D" * 300           # nothing replaced
+
+
+def test_copy_to_writes_plain_names(bed, tmp_path):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save75", ess=b"T" * 300, age=3600)
+    v.sweep()
+    out = tmp_path / "out"
+    v.restore("Save75", to=str(out), apply=True)
+    assert (out / "Save75.ess").read_bytes() == b"T" * 300 and (out / "Save75.skse").exists()
+
+
+def test_legacy_import_waits_for_the_game(bed, tmp_path):
+    m = tmp_path / "manifest.jsonl"
+    m.write_text("", encoding="utf-8")
+    bed["state"]["busy"] = True
+    with pytest.raises(save_vault.PreservationFailed):
+        bed["vault"].import_legacy(m)
+
+
+def test_a_save_replaced_between_scan_and_link_is_not_kept_under_the_old_signature(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Save76", ess=b"1" * 300, age=3600)
+    pairs, _, _ = v.scan()
+    key = next(iter(pairs))
+    game_save(s, "Save76", b"2" * 300)                          # replaced after the listing; its .tmp is gone again
+    assert v.capture(key, pairs[key]) is None
+    assert v.versions("Save76") == []
+
+
+def test_a_heartbeat_with_no_folders_is_not_ok(tmp_path):
+    v = Vault(tmp_path / "vault", [], is_busy=lambda: False, reserve_gb=0)
+    v.heartbeat(True, 0)
+    assert json.loads((tmp_path / "vault" / "status" / "heartbeat.json").read_text())["ok"] is False
+
+
+def test_busy_counts_an_empty_process_list_as_running(monkeypatch):
+    class R:
+        stdout = ""
+    monkeypatch.setattr(save_vault.subprocess, "run", lambda *a, **k: R())
+    assert save_vault.busy() is True
+
+
+def test_the_logon_task_names_its_user_and_escapes_paths():
+    xml = save_vault.task_xml("C:/P&Q/pythonw.exe", "C:/a<b>/save_vault.py", '--project "C:/x&y" ', "DOM\\me")
+    assert xml.count("<UserId>DOM\\me</UserId>") == 2
+    assert "P&amp;Q" in xml and "a&lt;b&gt;" in xml and "x&amp;y" in xml and "P&Q" not in xml
+
+
+@pytest.mark.parametrize("marker", ["PYTEST_CURRENT_TEST", "HARNESS_FIXTURE_ROOT"])
+def test_no_logon_task_is_registered_under_a_test_harness(monkeypatch, tmp_path, marker):
+    """setup.sh and the CLI are run by hundreds of tests; none may leave a real scheduled task on the machine."""
+    ran = []
+    monkeypatch.setenv("SAVE_VAULT_DIR", str(tmp_path / "vault"))     # a broken guard still writes nothing real
+    monkeypatch.setattr(save_vault.subprocess, "run", lambda *a, **k: ran.append(a) or pytest.fail("ran schtasks"))
+    for k in ("PYTEST_CURRENT_TEST", "HARNESS_FIXTURE_ROOT"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv(marker, "1")
+    with pytest.raises(SystemExit, match="refused under a test harness"):
+        save_vault.install_task('--project "x" ')
+    assert ran == []
+
+
+def test_a_stopped_watcher_line_says_how_to_start_it(tmp_path):
+    alive, line = save_vault.watcher_status(tmp_path / "none")
+    assert alive is False and "python tools/save_vault.py watch" in line and "schtasks /Run /TN SkyrimSaveVault" in line
+
+
+def test_a_rebuilt_index_remembers_a_vanished_pair(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Save77", age=3600)
+    v.sweep()
+    for p in s.glob("Save77.*"):
+        p.unlink()
+    for _ in range(save_vault.VANISH_MISSES):
+        c.tick(15)
+        v.sweep()
+    (bed["root"] / "status" / "kept.json").unlink()
+    again = Vault(bed["root"], [s], is_busy=lambda: False, clock=c, reserve_gb=0)
+    assert any(p.get("gone") for p in again.kept()["pairs"].values())
+
+
+def test_a_returning_pair_is_no_longer_gone(bed):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    paths = write_pair(s, "Save78", age=3600)
+    data = [p.read_bytes() for p in paths]
+    v.sweep()
+    for p in paths:
+        p.unlink()
+    for _ in range(save_vault.VANISH_MISSES):
+        c.tick(15)
+        v.sweep()
+    for p, d in zip(paths, data):
+        p.write_bytes(d)
+        os.utime(p, (c() - 3600, c() - 3600))
+    c.tick(15)
+    v.sweep()
+    assert not any(p.get("gone") for p in v.kept()["pairs"].values())
+
+
+def test_every_version_of_an_ini_is_kept_and_can_be_put_back(tmp_path):
+    cfg = tmp_path / "My Games" / "Skyrim VR"
+    cfg.mkdir(parents=True)
+    c = Clock()
+    v = Vault(tmp_path / "ini-vault", [cfg], is_busy=lambda: False, clock=c, reserve_gb=0, exts=save_vault.INI_EXTS)
+    ini = cfg / "SkyrimPrefs.ini"
+    ini.write_text("[Display]\nfGamma=1.0\n")
+    os.utime(ini, (c() - 3600, c() - 3600))
+    v.sweep()
+    ini.write_text("[Display]\nfGamma=1.5\n")
+    os.utime(ini, (c() - 1800, c() - 1800))                      # a later write: a later mtime
+    v.sweep()
+    c.tick(SETTLE_S + 1)
+    v.sweep()
+    kept = v.versions("SkyrimPrefs")
+    assert len(kept) == 2 and kept[0]["note"] == ""
+    ini.unlink()
+    v.restore("SkyrimPrefs", event_id=kept[0]["id"], apply=True)
+    assert "fGamma=1.0" in ini.read_text()
+
+
+def test_one_watcher_sweeps_both_vaults(bed, tmp_path, monkeypatch):
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / "Skyrim.ini").write_text("x")
+    os.utime(cfg / "Skyrim.ini", (bed["clock"]() - 3600, bed["clock"]() - 3600))
+    write_pair(bed["saves"], "Save79", age=3600)
+    ini = Vault(tmp_path / "ini-vault", [cfg], is_busy=lambda: False, clock=bed["clock"], reserve_gb=0,
+                exts=save_vault.INI_EXTS)
+    monkeypatch.setattr(save_vault.time, "sleep", lambda s: None)
+    calls = iter([False, True])
+    save_vault.watch(lambda: bed["vault"], lambda: next(calls), lambda: ini)
+    assert bed["vault"].versions("Save79") and ini.versions("Skyrim")
+
+
+# ---- review round 3 (BLOCK on 35374ac)
+
+def test_replace_keeps_the_current_pair_even_from_a_vault_that_does_not_watch_its_folder(bed, tmp_path):
+    s, c = bed["saves"], bed["clock"]
+    write_pair(s, "Save80", ess=b"A" * 300, age=3600)
+    bed["vault"].sweep()
+    old = bed["vault"].versions("Save80")[-1]["id"]
+    (s / "Save80.ess").write_bytes(b"E" * 300)
+    os.utime(s / "Save80.ess", (c() - 3600, c() - 3600))
+    elsewhere = tmp_path / "Elsewhere"
+    elsewhere.mkdir()
+    cli = Vault(bed["root"], [elsewhere], is_busy=lambda: False, clock=c, reserve_gb=0)   # restore without --folder
+    cli.restore("Save80", event_id=old, replace=True, apply=True)
+    import hashlib
+    assert hashlib.sha256(b"E" * 300).hexdigest() in {e["ess"]["sha256"] for e in cli.versions("Save80")}
+
+
+def test_replace_refuses_when_the_present_pair_cannot_be_read(bed):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save81", age=3600)
+    v.sweep()
+    old = v.versions("Save81")[-1]["id"]
+    for p in s.glob("Save81.*"):
+        p.unlink()
+    (s / "Save81.ess").mkdir()                                   # present by name, not a file the scan can keep
+    with pytest.raises(save_vault.PreservationFailed):
+        v.restore("Save81", event_id=old, replace=True, apply=True)
+
+
+def test_a_vault_that_fails_to_start_does_not_stop_the_other(bed, monkeypatch):
+    write_pair(bed["saves"], "Save82", age=3600)
+    monkeypatch.setattr(save_vault.time, "sleep", lambda s: None)
+    calls = iter([False, True])
+
+    def broken():
+        raise OSError("Documents unreachable")
+    save_vault.watch(lambda: bed["vault"], lambda: next(calls), broken)
+    assert bed["vault"].versions("Save82")
+
+
+def test_a_second_watcher_on_the_ini_vault_alone_also_blocks(bed, tmp_path):
+    ini_root = tmp_path / "ini-vault"
+    ini = Vault(ini_root, [], is_busy=lambda: False, reserve_gb=0, exts=save_vault.INI_EXTS)
+    write_pair(bed["saves"], "Save83", age=3600)
+    from modding_harness.locking import exclusive
+    calls = iter([False, True])                                  # one pass at most, should the lock be ignored
+    with exclusive(ini_root / "status" / "watch.lock", 0):
+        save_vault.watch(lambda: bed["vault"], lambda: next(calls), lambda: ini)
+    assert bed["vault"].versions("Save83") == []                 # it exited before sweeping anything
+
+
+def test_other_volume_pairs_cost_one_game_check_per_pass(tmp_path):
+    far = tmp_path / "Far" / "Saves"
+    far.mkdir(parents=True)
+    for n in range(10):
+        write_pair(far, "Far%d" % n, ess=bytes([65 + n]) * 300, age=3600 + n)
+    calls = []
+    v = Vault(tmp_path / "vault", [far], is_busy=lambda: calls.append(1) or True, clock=Clock(), reserve_gb=0)
+    v._same_volume = lambda folder: False
+    out = v.sweep()
+    assert out["deferred"] == 10 and len(calls) <= 2
+
+
+def test_a_restore_that_fails_on_the_second_file_changes_neither(bed, monkeypatch):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save84", ess=b"A" * 300, skse=b"a" * 50, age=3600)
+    v.sweep()
+    old = v.versions("Save84")[-1]["id"]
+    for p in s.glob("Save84.*"):
+        p.unlink()
+    real = save_vault.durable.copy_verified
+
+    def fail_on_skse(src, dst, deadline=None):
+        if str(dst).endswith(".skse") or ".vault-" in str(dst) and src.name == v.versions("Save84")[-1]["skse"]["sha256"]:
+            raise OSError(28, "No space left")
+        return real(src, dst, deadline)
+    monkeypatch.setattr(save_vault.durable, "copy_verified", fail_on_skse)
+    with pytest.raises(OSError):
+        v.restore("Save84", event_id=old, apply=True)
+    assert not (s / "Save84.ess").exists() and not list(s.glob(".vault-*"))
+
+
+def test_a_publish_that_fails_midway_leaves_nothing_behind(bed, monkeypatch):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save85", age=3600)
+    v.sweep()
+    for p in s.glob("Save85.*"):
+        p.unlink()
+    real = save_vault.durable.publish_new
+
+    def second_fails(part, target):
+        if str(target).endswith(".skse"):
+            raise OSError(5, "Access is denied")
+        return real(part, target)
+    monkeypatch.setattr(save_vault.durable, "publish_new", second_fails)
+    with pytest.raises(OSError):
+        v.restore("Save85", apply=True)
+    assert not list(s.glob("Save85*")) and not list(s.glob(".vault-*"))
+
+
+def test_a_replace_that_fails_midway_puts_the_current_pair_back(bed, monkeypatch):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Save91", ess=b"1" * 300, skse=b"1" * 50, age=3600)
+    v.sweep()
+    old = v.versions("Save91")[-1]["id"]
+    for p, d in ((s / "Save91.ess", b"2" * 300), (s / "Save91.skse", b"2" * 50)):
+        p.write_bytes(d)
+        os.utime(p, (c() - 3600, c() - 3600))
+    real = save_vault.durable.publish_new
+
+    def second_fails(part, target):
+        if str(target).endswith(".skse"):
+            raise OSError(5, "Access is denied")
+        return real(part, target)
+    monkeypatch.setattr(save_vault.durable, "publish_new", second_fails)
+    with pytest.raises(OSError):
+        v.restore("Save91", event_id=old, replace=True, apply=True)
+    assert (s / "Save91.ess").read_bytes() == b"2" * 300 and (s / "Save91.skse").read_bytes() == b"2" * 50
+    assert not list(s.glob(".vault-*"))
+
+
+def test_to_a_save_folder_waits_for_the_game(bed):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save92", age=3600)
+    v.sweep()
+    bed["state"]["busy"] = True
+    with pytest.raises(save_vault.PreservationFailed):
+        v.restore("Save92", to=str(s), apply=True)
+
+
+def test_a_vault_that_recovers_on_refresh_takes_its_lock(bed, tmp_path, monkeypatch):
+    ini_root = tmp_path / "ini-vault"
+    tries = {"n": 0}
+
+    def flaky():
+        tries["n"] += 1
+        if tries["n"] == 1:
+            raise OSError("Documents unreachable")
+        return Vault(ini_root, [], is_busy=lambda: False, reserve_gb=0, exts=save_vault.INI_EXTS)
+    monkeypatch.setattr(save_vault, "FOLDER_REFRESH_S", -1)
+    monkeypatch.setattr(save_vault.time, "sleep", lambda s: None)
+    seen = {}
+
+    def stop():
+        if tries["n"] >= 2:
+            from modding_harness.locking import exclusive
+            try:
+                with exclusive(ini_root / "status" / "watch.lock", 0):
+                    seen["free"] = True
+            except TimeoutError:
+                seen["free"] = False
+            return True
+        return False
+    save_vault.watch(lambda: bed["vault"], stop, flaky)
+    assert seen == {"free": False}
+
+
+def test_a_corrupt_stored_copy_is_never_restored(bed):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save86", age=3600)
+    v.sweep()
+    e = v.versions("Save86")[-1]
+    blob = v.store.root / "blobs" / e["ess"]["sha256"]
+    os.chmod(blob, 0o666)
+    blob.write_bytes(b"x" * 300)
+    for p in s.glob("Save86.*"):
+        p.unlink()
+    with pytest.raises(save_vault.PreservationFailed):
+        v.restore("Save86", apply=True)
+    assert not (s / "Save86.ess").exists()
+
+
+def test_copy_to_never_overwrites(bed, tmp_path):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save87", age=3600)
+    v.sweep()
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "Save87.skse").write_bytes(b"mine")
+    with pytest.raises(FileExistsError):
+        v.restore("Save87", to=str(out))
+    assert (out / "Save87.skse").read_bytes() == b"mine"
+
+
+def test_legacy_import_stops_when_the_game_starts(bed, tmp_path):
+    m1 = _legacy(tmp_path, bed["saves"], "Save88", b"P" * 300, "20261013-000000-eeeeee-0")
+    m2 = _legacy(tmp_path, bed["saves"], "Save89", b"Q" * 300, "20261013-000000-ffffff-0")
+    both = tmp_path / "both.jsonl"
+    both.write_text(m1.read_text() + m2.read_text(), encoding="utf-8")
+    answers = iter([False, False, True])                         # start check, record 1, record 2
+    v = Vault(bed["root"], [bed["saves"]], is_busy=lambda: next(answers), clock=bed["clock"], reserve_gb=0)
+    with pytest.raises(save_vault.PreservationFailed):
+        v.import_legacy(both)
+    assert [e["legacy_id"] for e in v.events() if e.get("event") == "import"] == ["20261013-000000-eeeeee-0"]
+
+
+def test_config_discovery_finds_the_edition_folders(tmp_path):
+    docs = tmp_path / "Docs"
+    (docs / "My Games" / "Skyrim VR").mkdir(parents=True)
+    (docs / "My Games" / "Oblivion").mkdir(parents=True)
+    found = save_vault.discover_config(tmp_path, env={"SKYGUARD_NO_KNOWN_FOLDERS": "1", "USERPROFILE": str(tmp_path),
+                                                      "HOME": str(tmp_path), "SKYRIM_DOCUMENTS": str(docs),
+                                                      "SKYRIM_CONFIG_DIR": str(docs / "My Games" / "Skyrim VR")})
+    assert docs / "My Games" / "Skyrim VR" in found and docs / "My Games" / "Oblivion" not in found
+
+
+def test_another_volume_waits_if_the_game_starts_during_the_pass(bed, monkeypatch):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save90", age=3600)
+    pairs, _, _ = v.scan()
+    key = next(iter(pairs))
+    monkeypatch.setattr(Vault, "_same_volume", lambda self, folder: False)
+    v._busy = False                                              # the pass began with the game closed
+    bed["state"]["busy"] = True                                  # and it started before the copy
+    with pytest.raises(save_vault.Deferred):
+        v.capture(key, pairs[key])
+
+
+# ---- 4.1 release review fixes
+
+def test_a_same_size_same_time_rewrite_is_left_beside_the_save_never_deleted(bed):
+    """restore --replace removes the set-aside current pair only when its BYTES are the kept version's."""
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save60", ess=b"A" * 300, age=3600)
+    v.sweep()
+    first = versions(v, "Save60")[-1]["id"]
+    st = os.stat(s / "Save60.ess")
+    (s / "Save60.ess").write_bytes(b"C" * 300)                # same size ...
+    os.utime(s / "Save60.ess", ns=(st.st_atime_ns, st.st_mtime_ns))   # ... and its old time put back
+    out = v.restore("Save60", event_id=first, replace=True, apply=True)
+    assert (s / "Save60.ess").read_bytes() == b"A" * 300
+    left = [p for p in s.iterdir() if p.name.startswith(".vault-old-")]
+    assert [p.read_bytes() for p in left] == [b"C" * 300], left
+    assert out["result"]["kept_aside"] == [str(left[0])]
+    kinds = [e.get("event") for e in v.events()]
+    assert "restore-kept-aside" in kinds and kinds.index("restore-begin") < kinds.index("restored")
+
+
+def test_a_byte_identical_current_pair_is_removed_after_replace(bed):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save61", ess=b"A" * 300, age=3600)
+    v.sweep()
+    first = versions(v, "Save61")[-1]["id"]
+    (s / "Save61.ess").write_bytes(b"B" * 300)
+    v.sweep()                                                 # B is kept now
+    v.restore("Save61", event_id=first, replace=True, apply=True)
+    assert (s / "Save61.ess").read_bytes() == b"A" * 300
+    assert not [p for p in s.iterdir() if p.name.startswith(".vault-old-")]
+
+
+def test_an_unreadable_or_z_suffixed_time_does_not_break_status(bed, monkeypatch):
+    assert save_vault.parse_time("2026-01-01T00:00:00Z") == save_vault.parse_time("2026-01-01T00:00:00+00:00")
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save62", age=3600)
+    v.sweep()
+    real, good = v.events, versions(v, "Save62")[-1]
+    bad = dict(good, id="bad", time="nope")
+    monkeypatch.setattr(v, "events", lambda: list(real()) + [bad])
+    assert [e["id"] for e in v.versions("Save62")] == ["bad", good["id"]]   # sorts first instead of raising
+    assert v.choose("Save62", event_id=good["id"])["id"] == good["id"]
+
+
+def test_the_tmp_check_opens_no_handle_on_the_tmp(bed, monkeypatch):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save63", age=3600)
+    (s / "Save63.ess.tmp").write_bytes(b"x")
+    real = os.stat
+
+    def stat(path, *a, **k):
+        assert not str(path).endswith(".tmp"), "a handle was opened on the game's .tmp"
+        return real(path, *a, **k)
+    pair = {"folder": str(s), "stem": "Save63"}
+    bed["clock"].t = time.time()
+    # The spy is live only around the vault's own calls: the test's unlink below is resolved by CI's isolation
+    # audit hook (an os.stat on the .tmp that is not the vault's).
+    with monkeypatch.context() as m:
+        m.setattr(save_vault.os, "stat", stat)
+        assert v._writing_now(pair) is True
+    (s / "Save63.ess.tmp").unlink()
+    with monkeypatch.context() as m:
+        m.setattr(save_vault.os, "stat", stat)
+        assert v._writing_now(pair) is False
+
+
+def test_the_staging_link_name_does_not_carry_the_save_name(bed, monkeypatch):
+    s, v = bed["saves"], bed["vault"]
+    stem = "Save64_" + "416476656E7475726572" * 6
+    write_pair(s, stem, age=3600)
+    seen, real = [], os.link
+
+    def link(src, dst, *a, **k):
+        if Path(dst).parent.name == "staging-links":   # the store's own publishes are named by hash, not checked here
+            seen.append(Path(dst).name)
+        return real(src, dst, *a, **k)
+    monkeypatch.setattr(save_vault.os, "link", link)
+    v.sweep()
+    assert seen and all(len(n) <= 40 and stem not in n for n in seen), seen
+
+
+def test_a_link_that_fails_while_the_game_runs_waits_instead_of_reading_the_live_save(bed, monkeypatch):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save65", age=3600)
+
+    def link(src, dst, *a, **k):
+        raise OSError("no links here")
+    monkeypatch.setattr(save_vault.os, "link", link)
+    monkeypatch.setattr(save_vault.durable, "copy_verified",
+                        lambda *a, **k: pytest.fail("read the live save while the game runs"))
+    bed["state"]["busy"] = True
+    out = v.sweep()
+    assert out["captured"] == [] and out["deferred"] == 1
+
+
+def test_a_one_off_sweep_writes_no_heartbeat(bed):
+    write_pair(bed["saves"], "Save66", age=3600)
+    bed["vault"].sweep(beat=False)
+    assert not (bed["root"] / "status" / "heartbeat.json").exists()
+
+
+def test_a_long_pass_refreshes_the_heartbeat_as_it_goes(bed, monkeypatch):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    for i in range(3):
+        write_pair(s, "Save67_{}".format(i), age=3600)
+    real, beats = v.capture, []
+
+    def slow(*a, **k):
+        c.tick(save_vault.BEAT_S + 1)
+        return real(*a, **k)
+    monkeypatch.setattr(v, "capture", slow)
+    real_beat = v.heartbeat
+    monkeypatch.setattr(v, "heartbeat", lambda *a, **k: (beats.append(a), real_beat(*a, **k)))
+    v.sweep()
+    assert len(beats) >= 3                                     # during the pass, not only at its end
+
+
+def test_the_default_reserve_is_the_stores_own():
+    from modding_harness import preservation
+    assert save_vault.DEFAULT_RESERVE_GB * 1024 ** 3 == preservation.DEFAULT_RESERVE
+
+
+def test_a_link_that_keeps_failing_while_the_game_runs_is_reported(bed, monkeypatch):
+    """Confirmation review: a deferred link must not stay silent for a whole session."""
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    write_pair(s, "Save68", age=3600)
+
+    def link(src, dst, *a, **k):
+        raise OSError("no links here")
+    monkeypatch.setattr(save_vault.os, "link", link)
+    bed["state"]["busy"] = True
+    out = None
+    for _ in range(save_vault.FAIL_REPORT):
+        out = v.sweep()
+        c.tick(save_vault.POLL_S)
+    assert out["failing"] == ["Save68"], out
+    beat = json.loads((bed["root"] / "status" / "heartbeat.json").read_text())
+    assert beat["ok"] is False and any("link failed" in n for n in beat["notes"])
+
+
+def test_a_long_pass_keeps_an_earlier_failure_visible(bed, monkeypatch):
+    s, v, c = bed["saves"], bed["vault"], bed["clock"]
+    for i in range(2):
+        write_pair(s, "Save69_{}".format(i), age=3600)
+    v.state["fails"]["x|Broken"] = save_vault.FAIL_REPORT
+    real, beats = v.capture, []
+
+    def slow(*a, **k):
+        c.tick(save_vault.BEAT_S + 1)
+        return real(*a, **k)
+    monkeypatch.setattr(v, "capture", slow)
+    real_beat = v.heartbeat
+    monkeypatch.setattr(v, "heartbeat", lambda *a, **k: (beats.append(a), real_beat(*a, **k)))
+    v.sweep()
+    assert beats and beats[0][0] is False and "Broken" in beats[0][2]
+
+
+def test_a_null_or_numeric_event_time_does_not_break_status(bed, monkeypatch):
+    s, v = bed["saves"], bed["vault"]
+    write_pair(s, "Save70", age=3600)
+    v.sweep()
+    real, good = v.events, versions(v, "Save70")[-1]
+    monkeypatch.setattr(v, "events", lambda: list(real()) + [dict(good, id="n", time=None), dict(good, id="i", time=5)])
+    assert {e["id"] for e in v.versions("Save70")} == {"n", "i", good["id"]}

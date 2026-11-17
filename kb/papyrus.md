@@ -20,7 +20,7 @@ Part of the Skyrim modding knowledgebase; index: `KNOWLEDGEBASE.md`. Covers Papy
 - For other objects (Topic Infos, Perks, persistent refs): `OnInit` fires at first load into the session
 - All properties and variables are reset to default values before `OnInit` fires
 - A quest script has no `OnLoad` event, and `OnLoad` on an ObjectReference means its 3D loaded, not that a save did — use `RegisterForSingleUpdate`/`OnUpdate` or `OnGameReload` for reload detection
-- SKSE's `ActiveMagicEffect.psc` declares the Actor events, including `OnRaceSwitchComplete`, so an ability's effect script can react to vampire turn, cure and Vampire Lord transform (all race swaps) without a ReferenceAlias script
+- `ActiveMagicEffect.psc` declares the Actor events (vanilla, not an SKSE addition), including `OnRaceSwitchComplete`, so an ability's effect script can react to vampire turn, cure and Vampire Lord transform (all race swaps) without a ReferenceAlias script
 - `OnInit` does NOT fire again after save/load (quest must be reset)
 
 **Persistence and Save/Load:**
