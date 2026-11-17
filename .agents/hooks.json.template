@@ -1,4 +1,13 @@
 {
+  "skyguard-session": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "python3 \"{{TOOLKIT_ROOT}}/.agents/hooks/agy-guard.py\"",
+        "timeout": 120
+      }
+    ]
+  },
   "skyguard-shell": {
     "PreToolUse": [
       {

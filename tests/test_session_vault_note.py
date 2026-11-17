@@ -137,6 +137,7 @@ class _Std:
 @pytest.mark.parametrize("agent,role,payload", [
     ("claude", "session-kb-guard", {"session_id": "s1", "source": "startup"}),
     ("codex", "session-start", {"hook_event_name": "SessionStart", "source": "startup"}),
+    ("neutral", "session-start", {"hookEventName": "SessionStart", "conversationId": "s1"}),
 ])
 def test_both_session_starts_show_the_vault_line(tmp_path, monkeypatch, agent, role, payload):
     monkeypatch.setattr(run, "_vault_note", lambda project: "VAULT-LINE for {}\n".format(project))

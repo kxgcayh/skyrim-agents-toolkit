@@ -8,8 +8,8 @@ only if you can *prove* a hook of yours blocks.
 `python` in this file means a Python 3.10 or newer interpreter. On Linux and macOS that is usually `python3`; on
 Windows, `py -3` or `python`. Use whichever one starts on this machine.
 
-**Which entry to call.** Your adapter calls `python tools/skyguard/run.py neutral pre-tool` (the contract in
-section 4; the template in section 6 calls it for you). `python tools/agent-harness.py check` reads the shared
+**Which entry to call.** Your adapter calls `python tools/skyguard/run.py neutral pre-tool` for tool execution gating (the contract in
+section 4; the template in section 6 calls it for you) and `python tools/skyguard/run.py neutral session-start` at session start. `python tools/agent-harness.py check` reads the shared
 Action v1 format instead: use it for a read-only policy preview and the save recovery commands below. Upgrading an
 install that has its own pre-tool hook handlers is covered in
 [docs/upgrading-native-hooks.md](docs/upgrading-native-hooks.md).
@@ -178,6 +178,14 @@ guard checked nothing. Only after both checks pass may you read the verdict line
 user to run the command themselves, unless you proved your agent pauses and shows a prompt (then fill `render_ask`);
 `allow` -> let it run, passing `context` as advice if you can.
 
+### Session start contract
+
+Role `session-start` (`python tools/skyguard/run.py neutral session-start --root R --root-win R --project R`):
+
+- **Input (stdin):** optional JSON object with session metadata (e.g. `{"conversationId": "...", "source": "..."}`).
+- **Answer (stdout):** the line `SKYGUARD-OK`, followed by the session banner text (save-vault status line and watcher startup, KB guard snapshot line, user preferences from `KNOWLEDGEBASE.local.md`, and disk housekeeping notices).
+
+
 ## 5. What is known about the two supported agents
 
 Copy their *mechanism*, not their wording. Every row is cited.
@@ -336,6 +344,7 @@ List every gap in the report. These are the ones the toolkit already knows about
 - The MCP judge reads every string in a DevBench call, whatever the tool, for a refused console command (`smp reset`); a `replay` of a stored recording runs lines that are not in the call, so they are not judged; a DevBench save is not judged since 4.1 (the save vault keeps every version) | [src: tools/skyguard/mcp_rules.py::for s in _strings(args):]
 - Ops that take a backup are exactly `update`, `delete` and `move_from` | [src: tools/skyguard/engine.py::_BACKUP_OPS = ("update", "delete", "move_from")]
 - The engine's own telemetry role for the neutral entry is `neutral-pre-tool` | [src: tools/skyguard/neutral.py::TELEMETRY_ROLE = "neutral-pre-tool"]
+- The neutral entry supports session-start (stdin JSON payload, SKYGUARD-OK marker followed by the session banner) | [src: tools/skyguard/run.py::if a.role == "session-start":]
 - The health tooling (`hook-canary`, `skydoctor`) reads an adapted agent's heartbeats from the folder its adapter's `AGENT_NAME` slot names, and measures no transcript coverage for it | [src: tools/skyguard/health.py::def adapted_agents] [src: tools/skyguard/health.py::an adapted agent has no transcript reader] [src: tools/skyguard/doctor.py::def _layer3_adapted]
 - The conformance tool refuses `--command` without `--port`, because a custom command is not the file whose identity it hashes | [src: tools/adapter_conformance.py::--command needs --port]
 - A report's status is derived by the validator and never read from the report | [src: tools/adapter_conformance.py::The ONLY place a status string is produced]

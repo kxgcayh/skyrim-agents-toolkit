@@ -406,10 +406,24 @@ def _add(acc: List[str], value: str) -> None:
         acc.append(rx)
 
 
+def _real(value: str) -> str:
+    """The link-free spelling of an absolute folder, or "" when it is the same or cannot be read. A hook takes its
+    root from its logical $PWD (a symlinked parent), while the payload cwd may be the physical folder, or the
+    reverse: both spellings must be protected (2026-11-17 parity check)."""
+    try:
+        if not value or not os.path.isabs(value):
+            return ""
+        r = os.path.realpath(value).replace("\\", "/")
+    except (OSError, ValueError):
+        return ""
+    return r if norm_abs(r) != norm_abs(value) else ""
+
+
 def _add_dir(acc: List[str], value: str) -> None:
-    d = norm_abs(value) if value else None
-    if d and d not in acc:
-        acc.append(d)
+    for v in (value, _real(value)):
+        d = norm_abs(v) if v else None
+        if d and d not in acc:
+            acc.append(d)
 
 
 EnvLike = Union[PathsConfig, Mapping[str, str]]

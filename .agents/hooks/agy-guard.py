@@ -150,11 +150,43 @@ def _to_agy(verdict: dict) -> dict:
     # neutral: allow / deny / ask
     # AGY:     allow / deny / ask / force_ask
     if decision == "allow":
-        return {"decision": "allow"}
+        out = {"decision": "allow"}
+        if reason:
+            out["reason"] = reason
+        return out
     if decision == "deny":
         return {"decision": "deny", "reason": reason}
     # ask -> ask (AGY respects the user's "always allow" cache; force_ask ignores it)
     return {"decision": "ask", "reason": reason}
+
+
+def _run_session_start(payload: dict) -> str:
+    """Run run.py neutral session-start and return the session banner text."""
+    raw = json.dumps(payload, ensure_ascii=False)
+    try:
+        result = subprocess.run(
+            [PYTHON, RUNPY, "neutral", "session-start",
+             "--root", PROJECT, "--project", PROJECT],
+            input=raw.encode("utf-8"),
+            capture_output=True,
+            timeout=115,
+        )
+    except Exception as e:
+        return f"SKYGUARD: session-start failed: {e}"
+
+    stdout = result.stdout.decode("utf-8", errors="replace").strip()
+    if result.returncode != 0 or "SKYGUARD-OK" not in stdout.splitlines():
+        err = " ".join(result.stderr.decode("utf-8", errors="replace").split())[:300]
+        return f"SKYGUARD: session-start failed (exit {result.returncode}){': ' + err if err else ''}"
+    if stdout.startswith("SKYGUARD-OK\n"):
+        return stdout[len("SKYGUARD-OK\n"):].strip()
+    elif stdout == "SKYGUARD-OK":
+        return ""
+    lines = stdout.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip() == "SKYGUARD-OK":
+            return "\n".join(lines[i + 1:]).strip()
+    return stdout
 
 
 def main() -> None:
@@ -164,6 +196,12 @@ def main() -> None:
         # Empty payload: guard inert, deny to be safe
         out = {"decision": "deny",
                "reason": "GUARD INERT: AGY guard received no payload. Refusing."}
+        print(json.dumps(out))
+        return
+
+    if payload.get("hookEventName") == "SessionStart" or payload.get("event") == "session_start":
+        text = _run_session_start(payload)
+        out = {"injectSteps": [{"systemMessage": {"systemMessage": text}}]}
         print(json.dumps(out))
         return
 

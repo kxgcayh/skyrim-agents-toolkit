@@ -74,7 +74,7 @@ def _session_line(a, session_id, tool="", source=None, transcript=None, hook=Non
             health.session_record(a.telemetry, session_id, "start", source or "-", transcript)
         elif hook:
             health.session_record(a.telemetry, session_id, hook, tool or "-")
-        elif a.role in health.COUNTING_HOOKS[a.agent]:
+        elif a.agent in health.COUNTING_HOOKS and a.role in health.COUNTING_HOOKS[a.agent]:
             health.session_record(a.telemetry, session_id, a.role, tool or "-")
     except Exception:  # noqa: BLE001 -- telemetry must never reach the decision path
         pass
@@ -264,6 +264,16 @@ def _receipt_identity(raw):
         return {}
 
 
+def _build_session_text(a, audit, source: str, session_id: str) -> tuple[str, str, str]:
+    """Shared session-start logic: KB guard, preferences, save-vault note & watcher, baseline snapshot."""
+    out, status, code = session.run_status(a.project, source, a.bash, audit,
+                                          root=a.root_win or a.root)
+    out = _vault_note(a.project) + out
+    _session_snapshot(a.project, source, audit)
+    out = session.with_charter(_disk_note(a.project) + out, a.project, session_id)
+    return out, status, code
+
+
 def _codex(a, raw: str) -> int:
     """Codex roles. Output is SKYGUARD-OK + body: the wrapper tells "decided" (marker present) from "broke"
     (exit 1, nothing on stdout) -- only a JSON deny blocks on Codex, so the wrapper owns the failure deny."""
@@ -271,10 +281,7 @@ def _codex(a, raw: str) -> int:
     req = codex.to_request(raw)
     if a.role == "session-start":
         _session_line(a, req.session_id, source=req.source, transcript=req.transcript_path)
-        out, status, code = session.run_status(a.project, req.source, a.bash, audit, root=a.root_win or a.root)
-        out = _vault_note(a.project) + out
-        _session_snapshot(a.project, req.source, audit)
-        out = session.with_charter(_disk_note(a.project) + out, a.project, req.session_id)
+        out, status, code = _build_session_text(a, audit, req.source, req.session_id)
         _telemetry(a, Verdict("allow", "", "", status, code))
         _emit("SKYGUARD-OK\n" + codex.session_body(out))
         return 0
@@ -301,9 +308,28 @@ def _codex(a, raw: str) -> int:
 
 
 def _neutral(a, raw: bytes) -> int:
-    """Role pre-tool for an adapter this repo has no module for (ADAPTING.md). Output is SKYGUARD-OK + a
-    verdict line; the adapter owns the failure deny, exactly as the Codex wrappers do."""
+    """Roles pre-tool and session-start for an adapter this repo has no module for (ADAPTING.md). Output is
+    SKYGUARD-OK + a verdict line (pre-tool) or the session text (session-start); the adapter owns the failure deny,
+    exactly as the Codex wrappers do."""
     from skyguard import neutral
+    if a.role == "session-start":
+        audit = Audit(a.project)
+        source = ""
+        session_id = ""
+        transcript = ""
+        try:
+            if raw.strip():
+                data = json.loads(raw.decode("utf-8", "replace"))
+                source = data.get("source", "")
+                session_id = data.get("conversationId", "") or data.get("session_id", "")
+                transcript = data.get("transcriptPath", "") or data.get("transcript_path", "")
+        except Exception:
+            pass
+        _session_line(a, session_id, source=source, transcript=transcript or None)
+        out, status, code = _build_session_text(a, audit, source, session_id)
+        _telemetry(a, Verdict("allow", "", "", status, code))
+        _emit("SKYGUARD-OK\n" + out)
+        return 0
     if a.role != "pre-tool":
         return 1
     # Telemetry (and the last-resort `failed` record in __main__, which reads this same object) is written under
@@ -360,7 +386,7 @@ def main(argv=None) -> int:
         _NONCE.append(a.nonce)
     if a.agent == "neutral":
         # Plan 7: the agent-neutral role, for an adapter living outside this package (no ADAPTERS module).
-        # _neutral refuses every role but pre-tool with exit 1 (broken wiring, never a decision).
+        # _neutral refuses every role but pre-tool and session-start with exit 1 (broken wiring, never a decision).
         return _neutral(a, sys.stdin.buffer.read())   # bytes: neutral decodes strictly (a bad byte is refused)
     if (a.agent == "codex") != (a.role in CODEX_ROLES):
         return 1      # a role the agent does not have: broken wiring, never a decision
@@ -435,11 +461,7 @@ def main(argv=None) -> int:
         snapshot.run(a.project, p["command"], p["empty"], audit)
         v = Verdict()
     else:
-        out, status, code = session.run_status(a.project, "" if p["empty"] else p["source"], a.bash, audit,
-                                              root=a.root_win or a.root)
-        out = _vault_note(a.project) + out
-        _session_snapshot(a.project, "" if p["empty"] else p["source"], audit)
-        out = session.with_charter(_disk_note(a.project) + out, a.project, p["session_id"])
+        out, status, code = _build_session_text(a, audit, "" if p["empty"] else p["source"], p["session_id"])
         _telemetry(a, Verdict(status=status, code=code))
         session.export_env(p["session_id"], "claude")   # later Bash calls get SKYGUARD_SESSION_ID (Task 10)
         _emit(out)

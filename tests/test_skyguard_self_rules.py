@@ -392,6 +392,26 @@ def test_non_store_guard_holder_move_keeps_its_guard_advice(tmp_path, holder):
     assert {rid for rid, _ in a.fired} == {"S-SELF-GUARD"}
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="a POSIX symlink; Windows junctions are a separate spelling")
+@pytest.mark.parametrize("hook_side", ["link", "real"])
+def test_a_symlinked_install_is_guarded_under_either_spelling(tmp_path, hook_side):
+    """2026-11-17 parity check: the hook takes its root from its logical $PWD (a symlinked parent folder), the payload
+    cwd is the physical folder (or the reverse). A relative `.skyguard` write was then outside every install dir and
+    allowed. Roots hold both spellings, so it is refused from either side."""
+    real = tmp_path / "real" / "toolkit"
+    real.mkdir(parents=True)
+    link = tmp_path / "link"
+    link.symlink_to(tmp_path / "real")
+    spellings = {"link": (link / "toolkit").as_posix(), "real": real.as_posix()}
+    hook_root = spellings[hook_side]
+    cwd = spellings["real" if hook_side == "link" else "link"]
+    own_roots = paths.roots(hook_root, "", {})
+    a = _audit()
+    v = shell_rules.decide("echo off > .skyguard/state", own_roots, a, cwd=cwd, shell="bash", env=ENV0)
+    assert v.decision == "deny"
+    assert "S-SELF-STATE" in {rid for rid, _ in a.fired}
+
+
 def test_a_declared_game_root_is_covered_as_well_as_the_hook_root():
     _, fired = shell("echo x > \"C:/p6t12/Skyrim VR/.skyguard/state.json\"", cwd="C:/work")
     assert fired == {"S-SELF-STATE"}
