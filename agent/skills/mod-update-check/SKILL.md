@@ -149,7 +149,8 @@ Stage 2?) at the top, so the review survives across sessions.
 4. **Per changed file type:**
    - Plugin: removed or renumbered FormIDs, ESL flag, masters, new or changed quests (Start Game
      Enabled, aliases), with xelib or Spriggit (`tools/esp-verify-wrapper.sh` around any bulk
-     operation), then `bash tools/skyrim-winner.sh conflicts <plugin>`.
+     operation), then `bash tools/skyrim-winner.sh conflicts <plugin>`. Other plugins master it?
+     See "A master updated" below.
    - `.pex`: decompile old and new (Champollion) and diff properties (an added one is the unresolved
      rubric row), states and removed scripts. Look for a version-migration path.
    - DLL: VR build, version, and the SKSE log line after install. Native-function changes: diff the
@@ -157,6 +158,39 @@ Stage 2?) at the top, so the review survives across sessions.
    - Stateful DLL? `bash tools/cosave-cli.sh <save>.skse` on the `.skse` beside the save being
      continued lists who writes co-save records.
 5. **Final record:** verdict, install steps, and the after-install check.
+
+## A master updated: the plugins that depend on it
+
+An update to a mod whose plugin other plugins master (a land or quest mod, a framework `.esm`) can
+break plugins nobody updated: patches, face and voice fixes, map and lighting tweaks, the user's own
+patches. Stage 2 step 4 covers the updated plugin; this covers everything that masters it.
+
+1. **Keep the old plugin before installing.** Copy the installed `.esm`/`.esp` to a scratch folder
+   (a patch repo's pinned inputs also hold one). Without it nothing below can run; re-extracting it
+   from the old archive is the fallback.
+2. **Measure:** `python tools/master-update-impact.py <old copy> <new installed copy>` (after the
+   install, or with the new file from the archive). It diffs the master (removed, added, changed;
+   VMAD parsed, so a re-save that only reorders script properties is not a change) and reads every
+   active plugin that masters it. Per plugin and record: `dangling` (overrides a record the update
+   deleted), `keeps-old` (carries the old value of a field the update changed, so where it wins it
+   undoes the fix), `own`, `review` (master lists not aligned: FormIDs inside fields are not
+   byte-comparable, compare by hand), `current`. `--json` lists every record. Exit 0 nothing to
+   review, 1 review, 2 could not check.
+3. **Decide per plugin, from values, not tags:**
+   - Every row `current`: nothing to do.
+   - The update fixed what the plugin fixed (same values): retire the plugin. Confirm with the
+     values (`--json`, a decompile, xelib), then the user disables it.
+   - `dangling` only: rebuild without those records (the override would inject a stray record).
+   - `keeps-old` in fields the plugin is not about (a face patch carrying stale inventory, voice,
+     AI, scripts or EditorIDs): the plugin was built from an older master. Rebuild it as the new
+     master's record plus only the fields that are the plugin's purpose. Check the assets those
+     fields need still match (a face patch: a FaceGen mesh per kept NPC in its BSA or loose files),
+     and verify the build with an independent parser, not the building tool's readback.
+   - `keeps-old` in the plugin's own subject (map data in a map mod): accept and record, or patch.
+   - A third-party plugin: never edit it in place; a patch, a rebuild in the workspace, or accept.
+4. **Our own patches pin their inputs:** re-pin to the new master, rebuild, and bump the version;
+   the README states which master version it was built against.
+5. **Run it again after the rebuilds and LOOT:** the plugins dealt with show `current` or are gone.
 
 ## Rollout: in waves, with play between them
 
@@ -191,3 +225,5 @@ A mod or version that is broken on VR, or a coupling between mods, goes in
 | "Author says safe" = SAFE | Evidence only. Map the changed files onto the rubric. |
 | A new Start-Game-Enabled quest "will just start" | Not always on an existing save. Check it is running (DevBench) before relying on it. |
 | COULD-NOT-CHECK read as "no update" | Nothing was compared. Fix the key or the network and run it again. |
+| Updating a master and checking only the master | Patches built on the old version keep its data and revert the update where they win. `master-update-impact.py` lists them. |
+| A byte diff of VMAD read as a script change | Re-saves reorder script properties. Compare parsed, as `master-update-impact.py` does. |
