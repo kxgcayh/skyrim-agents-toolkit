@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "kb-vmad",
+      "file": "kb/esp-xedit.md",
+      "targets": ["VMAD (Virtual Machine Adapter) Editing"],
+      "strong": ["VMAD", "GetFormFromFile"],
+      "weak": ["property", "properties", "script"]
+    },
+    {
+      "id": "kb-light-plugins",
+      "file": "kb/esp-xedit.md",
+      "targets": ["Plugin Types (ESM vs ESP vs ESL)"],
+      "strong": ["ESL-flagged", "light plugin", "ESL flag"],
+      "weak": ["ESL", "FormID", "formids"]
+    },
+    {
+      "id": "kb-spriggit",
+      "file": "kb/esp-xedit.md",
+      "targets": ["⚠️ Spriggit silently drops unknown YAML fields (CRITICAL)", "Spriggit CLI"],
+      "commands": ["\\bspriggit"],
+      "strong": ["Spriggit"]
+    },
+    {
+      "id": "kb-papyrus-compile",
+      "file": "kb/esp-xedit.md",
+      "targets": ["Caprica Compilation"],
+      "commands": ["\\bcaprica\\b", "\\bchampollion\\b"],
+      "strong": ["Caprica", "Champollion"],
+      "weak": ["compile", "papyrus"]
+    },
+    {
+      "id": "kb-mo2-layout",
+      "file": "kb/environment-and-guards.md",
+      "targets": ["Mod Manager Layout — MO2's Virtual Filesystem (read this before trusting any path)"],
+      "commands": ["\\bxelib\\b", "\\bxeditlib\\b"],
+      "strong": ["xelib", "XEditLib", "usvfs"],
+      "weak": ["MO2", "overwrite", "load order"]
+    }
+  ]
+}

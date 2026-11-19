@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "id": "slider",
+      "file": "kb/appearance.md",
+      "targets": ["CVEO slider clamp"],
+      "paths": ["LDD_CVEO.ini"],
+      "weak": ["ears", "lashes"]
+    },
+    {
+      "id": "third",
+      "file": "docs/ranking.md",
+      "targets": ["Third"],
+      "weak": ["ranking", "limits"]
+    },
+    {
+      "id": "second",
+      "file": "docs/ranking.md",
+      "targets": ["Second"],
+      "strong": ["ranking"],
+      "weak": ["limits"]
+    },
+    {
+      "id": "first",
+      "file": "docs/ranking.md",
+      "targets": ["First"],
+      "commands": ["\\branking\\b"],
+      "strong": ["ranking"],
+      "weak": ["limits"]
+    },
+    {
+      "id": "outside",
+      "file": "outside/notes.md",
+      "targets": ["Outside"],
+      "strong": ["outsidetarget"]
+    }
+  ]
+}
