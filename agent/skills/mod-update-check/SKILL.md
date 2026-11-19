@@ -192,6 +192,30 @@ patches. Stage 2 step 4 covers the updated plugin; this covers everything that m
    the README states which master version it was built against.
 5. **Run it again after the rebuilds and LOOT:** the plugins dealt with show `current` or are gone.
 
+### Rebuilding a third-party patch on the new master (master record + the patch's own fields)
+
+For a face, voice or visual patch whose purpose is a known set of fields. Build in the workspace, never
+in place; the original stays for comparison.
+
+1. **Name the purpose fields by subrecord tag**, and write the list into the build script. NPC face:
+   `FTST HCLF NAM9 NAMA QNAM PNAM TINI TINC TINV TIAS NAM6 NAM7` (Spriggit YAML keys `HeadTexture
+   HairColor FaceMorph FaceParts TextureLighting HeadParts TintLayers Height Weight`; the four `TI*`
+   tags are one `TintLayers` list). Add `RNAM` (`Race`) per record only where the face was made for a
+   race the master no longer uses, and record why.
+2. **Per kept override:** take the new master's record, replace or add each purpose key the patch has,
+   and remove a purpose key the patch lacks (the patch has the default there). Every other field is the
+   master's. Spriggit serialize both, merge the YAML, deserialize.
+3. **Drop:** `dangling` overrides, a master the patch no longer needs, and records whose asset is
+   missing: a face override with no `facegeom` mesh for that FormID in the patch's BSA or loose files
+   loses to the master instead of giving a dark face.
+4. **Verify with the byte parser, not Spriggit's readback.** Record set equals the original minus the
+   drops; each rebuilt record equals master outside the purpose tags and the patch inside them; master
+   order unchanged; zero dangling. Spriggit/Mutagen round trips change bytes that do not matter:
+   list subrecords (`CNTO`, `SPLO`, `SNAM`) and VMAD properties come back reordered (compare sorted),
+   NPC_ `DNAM` bytes 42-43 and 49-51 are padding Mutagen zeroes, and `QNAM` floats move in the last bit
+   (tolerance 1e-6). Allow exactly these, nothing else.
+5. Then `master-update-impact.py` again: the rebuilt patch shows `current` or `own`, never `keeps-old`.
+
 ## Rollout: in waves, with play between them
 
 Never install a whole approved list at once. Small waves: DLL-only updates first, then single

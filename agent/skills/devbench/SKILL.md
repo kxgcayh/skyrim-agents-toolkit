@@ -135,6 +135,13 @@ survive game restarts; **register it under a server name containing `devbench`**
 works too), because the toolkit's MCP guard matches a server name containing devbench and would not see a
 bridge named anything else.
 
+**MCP on other agents.** Setup registers the `devbench` server in `.mcp.json`, which only Claude Code
+reads. Antigravity (agy) reads only `~/.gemini/config/mcp_config.json`: add `"devbench": {"url":
+"http://127.0.0.1:<port>/mcp"}` under `mcpServers`, keeping the name `devbench` so the agy MCP guard
+matches. Check it with `agy mcp list`, not by asking the agy model (its in-session list is unreliable).
+agy connects to MCP servers at startup only: start or restart it after the game is up. The REST wrapper
+needs none of this and works for every agent.
+
 **Versions.** The toolkit's wrapper needs **1.11.0+** for `alive` (off-thread health since 1.12.0; older
 builds fall back to a frame diff). Everything it documents (ports, `POST /api/tool/<tool>`,
 `/api/health`, `/api/tools`, console exec/capture/read, 400/504 meanings) is unchanged in 1.32.0 per the
