@@ -51,6 +51,12 @@ def _handlers():
                 yield event, g, h
 
 
+def _guard_handlers():
+    hooks = _hooks()
+    yield "SessionStart", hooks["SessionStart"][0], hooks["SessionStart"][0]["hooks"][0]
+    yield "PreToolUse", hooks["PreToolUse"][0], hooks["PreToolUse"][0]["hooks"][0]
+
+
 def _commands():
     for event, _, h in _handlers():
         yield event, "command", h["command"]
@@ -63,7 +69,8 @@ def test_exactly_two_definitions():
     assert len(hooks["SessionStart"]) == 1 and len(hooks["PreToolUse"]) == 1
     assert "matcher" not in hooks["SessionStart"][0]
     assert hooks["PreToolUse"][0]["matcher"] == ".*"
-    assert all(len(g["hooks"]) == 1 for groups in hooks.values() for g in groups)
+    assert len(hooks["SessionStart"][0]["hooks"]) == 1
+    assert len(hooks["PreToolUse"][0]["hooks"]) == 2
 
 
 def test_only_measured_fields():
@@ -83,7 +90,7 @@ def test_no_command_starts_with_a_quote():
 
 def test_windows_commands_never_call_bash():
     """R2: under cmd.exe `bash` can resolve to the WSL stub, which fails: the command then RUNS."""
-    for event, _, h in _handlers():
+    for event, _, h in _guard_handlers():
         win = h["commandWindows"]
         assert not re.search(r"(?i)\bbash(\.exe)?\b", win), (event, win)
         role = ROLE_OF[event]
@@ -93,13 +100,23 @@ def test_windows_commands_never_call_bash():
 
 
 def test_every_command_runs_the_entry_with_a_known_role():
-    for event, _, h in _handlers():
+    for event, _, h in _guard_handlers():
         role = ROLE_OF[event]
         assert h["command"] == 'bash "{{CODEX_ROOT_POSIX}}/.codex/hooks/skyguard-entry.sh" ' + role, event
         assert h["commandWindows"].count("/.codex/hooks/skyguard-entry.ps1\" " + role) == 2, event
         # the role names the entries accept
         for name in ("skyguard-entry.ps1", "skyguard-entry.sh"):
             assert role in (ENTRY / name).read_text(encoding="ascii"), (name, role)
+
+
+def test_doc_inject_handler():
+    hooks = _hooks()
+    inject = hooks["PreToolUse"][0]["hooks"][1]
+    assert inject["type"] == "command"
+    assert inject["command"] == 'bash "{{CODEX_ROOT_POSIX}}/tools/doc-inject.sh" codex'
+    assert inject["commandWindows"] == 'bash "{{CODEX_ROOT}}/tools/doc-inject.sh" codex'
+    assert inject["timeout"] == 10
+    assert inject["statusMessage"] == "Skyrim toolkit: checking documentation"
 
 
 def test_definitions_carry_no_python_path_and_no_other_placeholder():
@@ -124,7 +141,7 @@ def _deadline(name: str, role: str) -> int:
 
 def test_timeouts_exceed_the_wrappers_own_deadlines():
     """Codex RUNS the command when a hook outlives its timeout, so each wrapper must answer first."""
-    for event, _, h in _handlers():
+    for event, _, h in _guard_handlers():
         role = ROLE_OF[event]
         for name in ("skyguard-entry.ps1", "skyguard-entry.sh"):
             d = _deadline(name, role)

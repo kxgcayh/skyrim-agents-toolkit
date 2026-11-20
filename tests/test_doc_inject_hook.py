@@ -207,3 +207,51 @@ def test_claude_settings_wire_doc_inject_and_preserve_guard_hooks():
             "hooks": [command_hook(".claude/hooks/save-sentinel.sh", 60)],
         }],
     }
+
+
+def test_codex_hooks_wire_doc_inject_and_preserve_guard_hooks():
+    source_bytes = (ROOT / "agent" / "targets" / "codex" / "hooks.json").read_bytes()
+    source_hooks = json.loads(source_bytes)["hooks"]
+
+    assert sorted(source_hooks) == ["PreToolUse", "SessionStart"]
+    assert len(source_hooks["SessionStart"][0]["hooks"]) == 1
+    assert "skyguard-entry" in source_hooks["SessionStart"][0]["hooks"][0]["command"]
+
+    pre_hooks = source_hooks["PreToolUse"][0]["hooks"]
+    assert len(pre_hooks) == 2
+    assert "skyguard-entry" in pre_hooks[0]["command"]
+    assert pre_hooks[0]["timeout"] == 60
+
+    assert pre_hooks[1] == {
+        "type": "command",
+        "command": 'bash "{{CODEX_ROOT_POSIX}}/tools/doc-inject.sh" codex',
+        "commandWindows": 'bash "{{CODEX_ROOT}}/tools/doc-inject.sh" codex',
+        "timeout": 10,
+        "statusMessage": "Skyrim toolkit: checking documentation",
+    }
+
+    installed_bytes = (ROOT / ".codex" / "hooks.json").read_bytes()
+    installed_hooks = json.loads(installed_bytes)["hooks"]
+    assert sorted(installed_hooks) == ["PreToolUse", "SessionStart"]
+    inst_pre = installed_hooks["PreToolUse"][0]["hooks"]
+    assert len(inst_pre) == 2
+    assert "skyguard-entry" in inst_pre[0]["command"]
+    assert inst_pre[1]["type"] == "command"
+    assert inst_pre[1]["command"].endswith('/tools/doc-inject.sh" codex')
+    assert inst_pre[1]["timeout"] == 10
+    assert inst_pre[1]["statusMessage"] == "Skyrim toolkit: checking documentation"
+
+
+def test_codex_definitions_render_wires_doc_inject():
+    sys.path.insert(0, str(ROOT / "tools"))
+    from skyguard.codex_definitions import render
+    template = (ROOT / "agent" / "targets" / "codex" / "hooks.json").read_text(encoding="utf-8")
+    rendered = render(template, "C:/Games/Skyrim", "/c/Games/Skyrim")
+    hooks = json.loads(rendered)["hooks"]
+
+    pre = hooks["PreToolUse"][0]["hooks"]
+    assert len(pre) == 2
+    assert pre[1]["command"] == 'bash "/c/Games/Skyrim/tools/doc-inject.sh" codex'
+    assert pre[1]["commandWindows"] == 'bash "C:/Games/Skyrim/tools/doc-inject.sh" codex'
+    assert pre[1]["timeout"] == 10
+

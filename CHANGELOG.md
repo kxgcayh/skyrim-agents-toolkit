@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Codex documentation injection:** wire `tools/doc-inject.sh` into Codex `PreToolUse`. Definition updated: re-approve your Codex hooks in `/hooks`.
+
 ## v4.1.0 — 2026-11-14
 
 - **Saves: every version is kept, and no rule reads commands for saves any more.** The new save vault
