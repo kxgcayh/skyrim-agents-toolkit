@@ -59,6 +59,20 @@ def _read_stdin() -> dict:
     return json.loads(raw)
 
 
+def _cwd(payload: dict) -> str:
+    """The folder the tool call runs in: agy's own top-level `cwd`, else the first workspace folder, else the toolkit.
+    Measured 2026-11-18 (agy, PreToolUse run_command): the payload carries `cwd`; `run_command` has no folder argument
+    (agy writes `cd <dir> && ...`, which the shell parser follows), and a `cd` in one call does not carry over to the
+    next, so `cwd` stays the session folder. It can differ from workspacePaths[0] in a multi-folder workspace, where
+    only `cwd` says which folder the command runs in. A missing, empty or relative value is not trusted."""
+    cwd = payload.get("cwd")
+    if isinstance(cwd, str) and os.path.isabs(cwd):
+        return cwd
+    workspace_paths = payload.get("workspacePaths") or []
+    first = workspace_paths[0] if isinstance(workspace_paths, list) and workspace_paths else None
+    return first if isinstance(first, str) and first else str(ROOT)
+
+
 def _make_request(tool_name: str, args: dict, cwd: str) -> dict | None:
     """Build the neutral-adapter request dict. Returns None for 'other' (always allow)."""
     if tool_name in _SHELL_TOOLS:
@@ -208,10 +222,8 @@ def main() -> None:
     tool_call = payload.get("toolCall", {})
     tool_name = tool_call.get("name", "")
     args = tool_call.get("args", {}) or {}
-    workspace_paths = payload.get("workspacePaths", [])
-    cwd = workspace_paths[0] if workspace_paths else str(ROOT)
 
-    request = _make_request(tool_name, args, cwd)
+    request = _make_request(tool_name, args, _cwd(payload))
 
     if request is None:
         # "other" kind — not guarded, allow silently

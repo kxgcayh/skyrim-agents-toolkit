@@ -152,3 +152,39 @@ def test_session_start_without_the_marker_is_said_not_silent(monkeypatch, rc, st
     assert text.startswith("SKYGUARD: session-start failed (exit {})".format(rc))
     if stderr:
         assert "boom" in text
+
+
+# ---- working folder ------------------------------------------------------------------
+# agy's PreToolUse payload carries a top-level `cwd` (measured 2026-11-18 with a logging hook: keys artifactDirectoryPath,
+# conversationId, cwd, hookEventName, lastUserInput, modelName, stepIdx, toolCall, transcriptPath, workspacePaths).
+# The adapter used workspacePaths[0] only, so a command run in another folder of a multi-folder workspace was judged
+# against the wrong folder.
+
+def _request_cwd(monkeypatch, capsys, payload):
+    mod = _agy_module()
+    seen = {}
+    monkeypatch.setattr(mod, "_read_stdin", lambda: payload)
+    monkeypatch.setattr(mod, "_run_engine", lambda request: seen.setdefault("request", request) and {"decision": "allow"})
+    mod.main()
+    capsys.readouterr()
+    return seen["request"]["cwd"]
+
+
+def _call(**top):
+    return {"hookEventName": "PreToolUse", "toolCall": {"name": "run_command", "args": {"CommandLine": "pwd"}}, **top}
+
+
+def test_the_payload_cwd_wins_over_the_first_workspace_folder(monkeypatch, capsys):
+    p = _call(cwd="/work/second", workspacePaths=["/work/first", "/work/second"])
+    assert _request_cwd(monkeypatch, capsys, p) == "/work/second"
+
+
+@pytest.mark.parametrize("cwd", [None, "", "relative/dir", 7])
+def test_a_missing_or_untrusted_cwd_falls_back_to_the_first_workspace_folder(monkeypatch, capsys, cwd):
+    p = _call(workspacePaths=["/work/first"], **({} if cwd is None else {"cwd": cwd}))
+    assert _request_cwd(monkeypatch, capsys, p) == "/work/first"
+
+
+def test_without_either_the_toolkit_root_is_used(monkeypatch, capsys):
+    mod = _agy_module()
+    assert _request_cwd(monkeypatch, capsys, _call()) == str(mod.ROOT)
