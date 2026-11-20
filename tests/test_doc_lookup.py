@@ -119,6 +119,15 @@ def test_prompt_requires_two_distinct_weak_words(lookup):
     assert_slider(hook(run, submit("ears and lashes wrong")))
 
 
+def test_weak_words_match_prompt_and_terms_but_not_bash_command(lookup):
+    _, run = lookup
+    words = "ears and lashes wrong"
+    payload = pre_tool("Bash", {"command": f"python3 - <<'PY'\n# {words}\nPY"})
+    assert hook(run, payload) == ""
+    assert_slider(hook(run, submit(words)))
+    assert_slider(run("--terms", words))
+
+
 def test_git_init_in_workspace_mods_shows_binding_pointer(lookup):
     root, run = lookup
     local = root / "local.md"
@@ -179,7 +188,7 @@ def test_output_keeps_two_highest_matches_within_byte_budget(lookup):
         ),
         encoding="utf-8",
     )
-    context = hook(run, pre_tool("Bash", {"command": "echo ranking limits"}), "codex")
+    context = hook(run, submit("ranking limits"), "codex")
     blocks = re.split(r"\n\n(?=From )", context.strip())
     assert len(blocks) == 2
     for block, title in zip(blocks, ("First", "Second")):

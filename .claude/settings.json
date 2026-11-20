@@ -48,6 +48,16 @@
             "onFailure": "block"
           }
         ]
+      },
+      {
+        "matcher": "Read|Grep|Glob|Bash|Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/doc-inject.sh\" claude",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -57,6 +67,11 @@
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/tools/session-charter.sh\"",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/tools/doc-inject.sh\" claude",
+            "timeout": 10
           }
         ]
       }

@@ -203,7 +203,7 @@ def _word(w, text):
     return re.search(r"(?<![\w])" + re.escape(w.lower()) + r"(?![\w])", text) is not None
 
 
-def score(entry, text, paths, cmd, fired_before):
+def score(entry, text, paths, cmd, fired_before, prompt=True):
     text_l, cmd_l = text.lower(), cmd.lower()
     hay = [_norm(p) for p in paths] + ([_norm(cmd)] if cmd else []) + ([_norm(text)] if not paths and not cmd else [])
     strong = weak = 0
@@ -220,7 +220,9 @@ def score(entry, text, paths, cmd, fired_before):
     for w in entry.get("strong") or []:
         if isinstance(w, str) and w and _word(w, text_l):
             strong += 1; total += WEIGHT["strong"]
-    weak_hits = {w.lower() for w in entry.get("weak") or [] if isinstance(w, str) and w and _word(w, text_l)}
+    # weak words describe symptoms in a person's words: they count in a prompt, never in a tool call's code or paths
+    weak_hits = {w.lower() for w in entry.get("weak") or [] if isinstance(w, str) and w and _word(w, text_l)} \
+        if prompt else set()
     weak, total = len(weak_hits), total + WEIGHT["weak"] * len(weak_hits)
     fires = strong >= 1 or weak >= 2 or (weak == 1 and fired_before)
     return total if fires else 0
@@ -270,12 +272,12 @@ def _write_state(path, data):
         pass
 
 
-def lookup(text, paths, cmd, state=None):
+def lookup(text, paths, cmd, state=None, prompt=True):
     """[(id, sha, block)] for the best entries; entries whose sha `state` already holds are skipped."""
     cands = []
     for e in load_entries():
         try:
-            s = score(e, text, paths, cmd, fired_before=state is not None and e["id"] in state)
+            s = score(e, text, paths, cmd, fired_before=state is not None and e["id"] in state, prompt=prompt)
         except Exception:                          # one bad entry never silences the others
             continue
         if s:
@@ -314,7 +316,7 @@ def main(argv):
         ev, text, paths, cmd = event_from_payload(d)
         sp = _state_path(agent, d.get("session_id") if isinstance(d.get("session_id"), str) else "")
         state = _read_state(sp) if sp else {}
-        blocks = lookup(text, paths, cmd, state)
+        blocks = lookup(text, paths, cmd, state, prompt=(ev == "UserPromptSubmit"))
         if not blocks:
             return 0
         def render(bs):
