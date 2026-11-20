@@ -23,6 +23,26 @@
             "commandWindows": "pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{{CODEX_ROOT}}/.codex/hooks/skyguard-entry.ps1\" pre-tool || powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{{CODEX_ROOT}}/.codex/hooks/skyguard-entry.ps1\" pre-tool",
             "timeout": 60,
             "statusMessage": "Skyrim toolkit: checking"
+          },
+          {
+            "type": "command",
+            "command": "bash \"{{CODEX_ROOT_POSIX}}/tools/doc-inject.sh\" codex",
+            "commandWindows": "bash \"{{CODEX_ROOT}}/tools/doc-inject.sh\" codex",
+            "timeout": 10,
+            "statusMessage": "Skyrim toolkit: checking documentation"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"{{CODEX_ROOT_POSIX}}/tools/doc-inject.sh\" codex",
+            "commandWindows": "bash \"{{CODEX_ROOT}}/tools/doc-inject.sh\" codex",
+            "timeout": 10,
+            "statusMessage": "Skyrim toolkit: checking documentation"
           }
         ]
       }
