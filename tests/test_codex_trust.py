@@ -95,14 +95,15 @@ def test_the_state_keys_are_spelled_like_codex_spells_them(tmp_path):
     root = _install(tmp_path)
     keys = sorted(_expected(root))
     base = str((root / ".codex" / "hooks.json").resolve())
-    assert keys == [base + ":pre_tool_use:0:0", base + ":session_start:0:0"]
+    assert keys == [base + ":pre_tool_use:0:0", base + ":pre_tool_use:0:1",
+                    base + ":session_start:0:0", base + ":user_prompt_submit:0:0"]
 
 
 def test_trusted_when_every_stored_hash_matches(tmp_path):
     root = _install(tmp_path)
     exp = _expected(root)
     rep = _report(tmp_path, root, _config(tmp_path, {k: {"trusted_hash": h} for k, h in exp.items()}, root))
-    assert rep["overall"] == "trusted" and _statuses(rep) == ["trusted", "trusted"], rep
+    assert rep["overall"] == "trusted" and _statuses(rep) == ["trusted"] * len(exp), rep
     assert rep["project_trust"] == "trusted"
     assert ct.exit_code(rep) == 0
 
@@ -110,16 +111,21 @@ def test_trusted_when_every_stored_hash_matches(tmp_path):
 def test_untrusted_with_no_state_table(tmp_path):
     root = _install(tmp_path)
     rep = _report(tmp_path, root, _config(tmp_path, {}))
-    assert rep["overall"] == "untrusted" and _statuses(rep) == ["untrusted", "untrusted"], rep
+    assert rep["overall"] == "untrusted" and _statuses(rep) == ["untrusted"] * len(_expected(root)), rep
     assert ct.exit_code(rep) == 1
 
 
-def test_modified_when_one_differs_and_another_matches(tmp_path):
+@pytest.mark.parametrize("changed", range(4))
+def test_modified_when_one_differs_and_another_matches(tmp_path, changed):
     root = _install(tmp_path)
-    (pre, h1), (ses, h2) = sorted(_expected(root).items())
-    rep = _report(tmp_path, root, _config(tmp_path, {pre: {"trusted_hash": "sha256:" + "0" * 64},
-                                                     ses: {"trusted_hash": h2}}))
-    assert _statuses(rep) == ["modified", "trusted"] and rep["overall"] == "modified", rep
+    exp = _expected(root)
+    entries = {k: {"trusted_hash": h} for k, h in exp.items()}
+    key = sorted(exp)[changed]
+    entries[key]["trusted_hash"] = "sha256:" + "0" * 64
+    rep = _report(tmp_path, root, _config(tmp_path, entries))
+    assert {r["key"]: r["status"] for r in rep["hooks"]} == {
+        k: "modified" if k == key else "trusted" for k in exp}, rep
+    assert rep["overall"] == "modified", rep
     assert ct.exit_code(rep) == 1
 
 
@@ -128,16 +134,21 @@ def test_unknown_when_no_stored_hash_matches(tmp_path):
     root = _install(tmp_path)
     exp = _expected(root)
     rep = _report(tmp_path, root, _config(tmp_path, {k: {"trusted_hash": "sha256:" + "1" * 64} for k in exp}))
-    assert _statuses(rep) == ["unknown", "unknown"] and rep["overall"] == "unknown", rep
+    assert _statuses(rep) == ["unknown"] * len(exp) and rep["overall"] == "unknown", rep
     assert ct.exit_code(rep) == 2
 
 
-def test_disabled_when_enabled_is_false(tmp_path):
+@pytest.mark.parametrize("changed", range(4))
+def test_disabled_when_enabled_is_false(tmp_path, changed):
     root = _install(tmp_path)
-    (pre, h1), (ses, h2) = sorted(_expected(root).items())
-    rep = _report(tmp_path, root, _config(tmp_path, {pre: {"trusted_hash": h1, "enabled": False},
-                                                     ses: {"trusted_hash": h2}}))
-    assert _statuses(rep) == ["disabled", "trusted"] and rep["overall"] == "disabled", rep
+    exp = _expected(root)
+    entries = {k: {"trusted_hash": h} for k, h in exp.items()}
+    key = sorted(exp)[changed]
+    entries[key]["enabled"] = False
+    rep = _report(tmp_path, root, _config(tmp_path, entries))
+    assert {r["key"]: r["status"] for r in rep["hooks"]} == {
+        k: "disabled" if k == key else "trusted" for k in exp}, rep
+    assert rep["overall"] == "disabled", rep
     assert ct.exit_code(rep) == 1
 
 
@@ -164,7 +175,7 @@ def test_a_key_stored_only_in_another_case_is_unknown_not_trusted(tmp_path):
     root = _install(tmp_path)
     exp = _expected(root)
     rep = _report(tmp_path, root, _config(tmp_path, {k.lower(): {"trusted_hash": h} for k, h in exp.items()}))
-    assert _statuses(rep) == ["unknown", "unknown"] and rep["overall"] == "unknown", rep
+    assert _statuses(rep) == ["unknown"] * len(exp) and rep["overall"] == "unknown", rep
     assert {r["matched"] for r in rep["hooks"]} == {"casefold"}
     assert ct.exit_code(rep) == 2
 
@@ -172,13 +183,14 @@ def test_a_key_stored_only_in_another_case_is_unknown_not_trusted(tmp_path):
 def test_case_variant_duplicates_are_not_collapsed(tmp_path):
     """The exact key AND a lower-case twin: which one Codex reads is unmeasured -- report both, decide nothing."""
     root = _install(tmp_path)
-    (pre, h1), (ses, h2) = sorted(_expected(root).items())
-    rep = _report(tmp_path, root, _config(tmp_path, {pre: {"trusted_hash": h1},
-                                                     pre.lower(): {"trusted_hash": "sha256:" + "2" * 64},
-                                                     ses: {"trusted_hash": h2}}))
+    exp = _expected(root)
+    pre = sorted(exp)[0]
+    entries = {k: {"trusted_hash": h} for k, h in exp.items()}
+    entries[pre.lower()] = {"trusted_hash": "sha256:" + "2" * 64}
+    rep = _report(tmp_path, root, _config(tmp_path, entries))
     row = rep["hooks"][0]
     assert row["status"] == "unknown" and sorted(row["variants"]) == sorted([pre, pre.lower()]), row
-    assert rep["hooks"][1]["status"] == "trusted"
+    assert [r["status"] for r in rep["hooks"][1:]] == ["trusted"] * (len(exp) - 1)
     assert rep["overall"] == "unknown"
 
 
@@ -189,7 +201,7 @@ def test_a_root_the_hooks_cannot_run_from_is_never_reported_as_protected(tmp_pat
     root = _install(tmp_path, "Skyrim " + ch + "x VR")
     exp = _expected(root)
     rep = _report(tmp_path, root, _config(tmp_path, {k: {"trusted_hash": h} for k, h in exp.items()}))
-    assert _statuses(rep) == ["trusted", "trusted"]
+    assert _statuses(rep) == ["trusted"] * len(exp)
     assert rep["overall"] == "unrunnable" and repr(ch) in rep["root_problem"], rep
     assert ct.exit_code(rep) == 1
     # also when Codex's config cannot be read: the root alone already decides it
