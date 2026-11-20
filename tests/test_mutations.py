@@ -2911,7 +2911,7 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
                  'if isinstance(d.get("v"), bool) or d.get("v") != 1:',
                  'tests/test_skyguard_neutral.py::test_malformed_requests_are_refused_with_the_reason[float-version]',
                  id='neutral-float-version-accepted'),
-    pytest.param('tools/skyguard/neutral.py', '    except RecursionError:', '    except ZeroDivisionError:',
+    pytest.param('tools/skyguard/neutral.py', '    if _too_deep(text):', '    if False:',
                  'tests/test_skyguard_neutral.py::test_malformed_requests_are_refused_with_the_reason[deep-request]',
                  id='neutral-deep-nesting-crashes'),
     pytest.param('tools/skyguard/neutral.py', 'raw = raw.decode("utf-8")', 'raw = raw.decode("utf-8", "replace")',

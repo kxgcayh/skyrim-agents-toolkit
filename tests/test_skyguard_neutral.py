@@ -58,7 +58,8 @@ BAD = {  # row -> (request text, fragment the refusal must name)
     "duplicate-nested": (_BASE + '"kind":"write","paths":[{"a":1,"a":2}]}', "duplicate field"),
     "duplicate-in-mcp-args": (req(kind="mcp", paths=[], mcp_tool="mcp__devbench-vr__console",
                                   mcp_args='{"command":"help","command":"smp reset"}'), "duplicate field"),
-    "deep-request": (_BASE + '"kind":"write","paths":' + "[" * DEEP + "]" * DEEP + "}", "too deeply nested"),
+    "deep-request": (_BASE + '"kind":"write","paths":' + "[" * (neutral.MAX_DEPTH + 1)
+                     + "]" * (neutral.MAX_DEPTH + 1) + "}", "too deeply nested"),
     "deep-mcp-args": (req(kind="mcp", paths=[], mcp_tool="mcp__devbench-vr__console",
                           mcp_args="[" * DEEP + "]" * DEEP), "too deeply nested"),
     "mcp-args-not-object": (req(kind="mcp", paths=[], mcp_tool="mcp__x__y", mcp_args="[1]"),
