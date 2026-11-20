@@ -1808,6 +1808,10 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
                  '        _emit("")\n        return 0',
                  "tests/test_session_disk_note.py::test_the_claude_session_start_shows_the_disk_note",
                  id="disk-note-claude"),
+    pytest.param("tools/skyguard/run.py", '        _emit("SKYGUARD-OK\\n" + codex.session_body(out))\n        return 0',
+                 '        _emit("SKYGUARD-OK\\n" + codex.session_body(""))\n        return 0',
+                 "tests/test_session_disk_note.py::test_the_codex_session_start_shows_the_disk_note",
+                 id="disk-note-codex-callsite"),
     pytest.param("tools/skyguard/run.py", '    if tool.is_file() and own and not off and not in_test:',
                  '    if tool.is_file() and own and not off:',
                  "tests/test_session_disk_note.py::test_a_sweep_is_launched_detached_outside_tests_and_never_inside_them",
@@ -5882,6 +5886,10 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
      _SNT + "test_the_session_start_hook_takes_the_baseline[claude]", "l2-snap-session-claude-wired"),
     ("tools/skyguard/run.py", "    _session_snapshot(a.project, source, audit)\n", "",
      _SNT + "test_the_session_start_hook_takes_the_baseline[codex]", "l2-snap-session-codex-wired"),
+    ("tools/skyguard/run.py",
+     '        out, status, code = _build_session_text(a, audit, req.source, req.session_id)\n        _telemetry',
+     '        out, status, code = ("", "allow", 0)\n        _telemetry',
+     _SNT + "test_the_session_start_hook_takes_the_baseline[codex]", "l2-snap-session-codex-callsite"),
     # ---- fix round 1 (review I1: links and the walk's box)
     (_SN, '    return bool(getattr(e.stat(follow_symlinks=False), "st_file_attributes", 0) & _REPARSE)',
      "    return False", _SNT + "test_a_junction_out_of_the_tree_is_not_followed", "l2-snap-r1-junction-out"),
@@ -8649,6 +8657,10 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
      '    else:\n        out, status, code = _build_session_text(a, audit, "" if p["empty"] else p["source"], p["session_id"])',
      '    else:\n        a.root = ""; a.root_win = ""\n        out, status, code = _build_session_text(a, audit, "" if p["empty"] else p["source"], p["session_id"])',
      _P8T8 + "test_run_keys_the_session_notice_on_its_root[claude-session-kb-guard]", "p8r1-claude-passes-root"),
+    ("tools/skyguard/run.py",
+     '        _session_line(a, req.session_id, source=req.source, transcript=req.transcript_path)\n        out, status, code = _build_session_text(a, audit, req.source, req.session_id)',
+     '        _session_line(a, req.session_id, source=req.source, transcript=req.transcript_path)\n        a.root = ""; a.root_win = ""\n        out, status, code = _build_session_text(a, audit, req.source, req.session_id)',
+     _P8T8 + "test_run_keys_the_session_notice_on_its_root[codex-session-start]", "p8r1-codex-callsite"),
     # I1 rules: touch / install / mklink aimed at a guard file (fix round 2: re-anchored, the routes carry a verb)
     (_P8R1_SR, "        out += [(w, False, CREATES) for w in _touch_operands(argv)]", "        pass",
      _P8R1 + "test_a_creator_aimed_at_a_guard_file_is_a_guard_write[touch]", "p8r1-touch"),
@@ -12006,6 +12018,9 @@ MUTATIONS += [pytest.param("tools/skyguard/run.py", anchor, replacement, "tests/
     ('        session.export_env(p["session_id"], "claude")   # later Bash calls get SKYGUARD_SESSION_ID (Task 10)\n        _emit(out)',
      '        session.export_env(p["session_id"], "claude")   # later Bash calls get SKYGUARD_SESSION_ID (Task 10)\n        _emit("")',
      'test_both_session_starts_show_the_vault_line[claude-session-kb-guard-payload0]', 'claude-not-wired'),
+    ('        _telemetry(a, Verdict("allow", "", "", status, code))\n        _emit("SKYGUARD-OK\\n" + codex.session_body(out))',
+     '        _telemetry(a, Verdict("allow", "", "", status, code))\n        _emit("SKYGUARD-OK\\n" + codex.session_body(""))',
+     'test_both_session_starts_show_the_vault_line[codex-session-start-payload1]', 'codex-callsite'),
 ]]
 
 # setup.sh and the save vault's sign-in task (2026-11-11): registered only when asked for; a failure is exit 1.
