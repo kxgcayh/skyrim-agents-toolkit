@@ -1,6 +1,7 @@
 #!/bin/bash
 # nexus.sh -- Nexus Mods API helper for the Skyrim AI Assistant Toolkit: version lookups and the desk review
-# of a mod before you update or add it (skill `mod-update-check`). Read-only: it never downloads a mod.
+# of a mod before you update or add it (skill `mod-update-check`). Read-only, except `download`, which saves one
+# file only when asked, to the path you name, and never overwrites (API download links need a Premium account).
 # The key is NEVER printed. Get a free Personal API Key: https://www.nexusmods.com/users/myaccount?tab=api
 #
 # Usage:
@@ -11,7 +12,11 @@
 #                                                             # files, and every changelog since --since
 #   bash tools/nexus.sh contents <mod_id> [file version] [game_domain]
 #                                                             # what is inside each file (Nexus content previews)
-#   bash tools/nexus.sh validate                              # confirm the key works (prints account name only)
+#   bash tools/nexus.sh files <mod_id> [game_domain]          # every file with its file id, version, category, size
+#   bash tools/nexus.sh download <mod_id> <file_id> <output file or folder> [game_domain]
+#                                                             # save one file (a folder: under its Nexus file name);
+#                                                             # size checked against Nexus, SHA-256 printed
+#   bash tools/nexus.sh validate                             # confirm the key works (prints account name only)
 #   bash tools/nexus.sh collection <slug> [game_domain]       # quick mod-name list of a collection (ordered plan + downloads:
 #                                                             # python tools/nexus-collection.py, docs/nexus-collections.md)
 #   bash tools/nexus.sh raw <api_path>                        # raw GET of any /v1/... path, prints JSON
@@ -84,7 +89,7 @@ need_domain() { [[ "$1" =~ ^[a-z0-9]+$ ]] || { echo "usage: a game domain like s
 
 cmd="${1:-}"
 case "$cmd" in
-    validate|mod|raw|find|page|contents|collection) ;;
+    validate|mod|raw|find|page|contents|collection|files|download) ;;
     *) usage ;;
 esac
 if [ -z "$KEY" ]; then
@@ -94,7 +99,7 @@ if [ -z "$KEY" ]; then
     could_not_check "no Nexus API key"
 fi
 JQ="$(command -v jq || true)"
-case "$cmd" in find|page|contents|collection) find_python ;; esac
+case "$cmd" in find|page|contents|collection|files|download) find_python ;; esac
 shift
 
 case "$cmd" in
@@ -143,7 +148,7 @@ case "$cmd" in
         if q="$(render gql-req "$id" "$DOMAIN" 2>/dev/null)"; then
             req="$( (gql "$q") 2>/dev/null )" || req=""
         fi
-        INFO="$info" FILES="$files" LOG="$log" LOG_STATUS="$log_status" REQ="$req" render page "$DOMAIN" "$id" "${since[@]}" "${full[@]}" \
+        INFO="$info" FILES="$files" LOG="$log" LOG_STATUS="$log_status" REQ="$req" render page "$DOMAIN" "$id" ${since[@]+"${since[@]}"} ${full[@]+"${full[@]}"} \
             || could_not_check "the mod page response could not be read"
         echo "RESULT: OK"
         ;;
@@ -152,6 +157,23 @@ case "$cmd" in
         files="$(get "/games/$DOMAIN/mods/$id/files.json")" || could_not_check
         FILES="$files" render contents ${ver:+"$ver"} || could_not_check "the file list could not be read"
         echo "RESULT: OK"
+        ;;
+    files)
+        [ "$#" -ge 1 ] && [ "$#" -le 2 ] || { echo "usage: nexus.sh files <mod_id> [game_domain]" >&2; exit 2; }
+        need_id "$1"; DOMAIN="${2:-skyrimspecialedition}"; need_domain "$DOMAIN"
+        files="$(get "/games/$DOMAIN/mods/$1/files.json")" || could_not_check
+        printf '%s' "$files" | $PY "$SCRIPT_DIR/nexus-download.py" --list
+        rc=$?; [ "$rc" -eq 3 ] && could_not_check "the file list could not be read"; exit "$rc"
+        ;;
+    download)
+        [ "$#" -ge 3 ] && [ "$#" -le 4 ] || { echo "usage: nexus.sh download <mod_id> <file_id> <output file or folder> [game_domain]" >&2; exit 2; }
+        need_id "$1"; need_id "$2"; DOMAIN="${4:-skyrimspecialedition}"; need_domain "$DOMAIN"
+        info="$(get "/games/$DOMAIN/mods/$1/files/$2.json")" || could_not_check "no file $2 on mod $1"
+        # The mirror list holds URLs signed for this account: it goes to the downloader on stdin, never printed.
+        mirrors="$(get "/games/$DOMAIN/mods/$1/files/$2/download_link.json")" \
+            || could_not_check "no download link (HTTP 403 here means the account is not Premium: download it on the site)"
+        printf '%s' "$mirrors" | INFO="$info" $PY "$SCRIPT_DIR/nexus-download.py" "$3"
+        rc=$?; [ "$rc" -eq 3 ] && could_not_check "the download did not complete"; exit "$rc"
         ;;
     collection)
         [ -n "${1:-}" ] || { echo "usage: nexus.sh collection <slug> [game_domain]" >&2; exit 2; }

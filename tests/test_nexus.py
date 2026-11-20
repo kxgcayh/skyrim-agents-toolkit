@@ -45,6 +45,8 @@ printf '%s\n' "$*" >> "$FAKE_CURL_LOG.argv"
 case "$url" in
     */graphql) case "$data" in *"mods("*) f="${FAKE_FIND:-find.json}" ;; *) f="req.json" ;; esac ;;
     */files.json) f="files.json" ;;
+    */download_link.json) f="download_link.json" ;;
+    */files/[0-9]*.json) f="fileinfo.json" ;;
     */changelogs.json) f="changelogs.json" ;;
     */users/validate.json) f="validate.json" ;;
     */mods/*.json) f="mod.json" ;;
@@ -61,7 +63,7 @@ printf '\n%s' "$code"
 def kit(tmp_path):
     tools = tmp_path / "toolkit" / "tools"
     tools.mkdir(parents=True)
-    for name in ("nexus.sh", "nexus-render.py"):
+    for name in ("nexus.sh", "nexus-render.py", "nexus-download.py"):
         shutil.copy2(REPO / "tools" / name, tools / name)
     shutil.copytree(REPO / "tools/modding_harness", tools / "modding_harness",
                     ignore=shutil.ignore_patterns("__pycache__"))
@@ -311,3 +313,123 @@ def test_contents_reads_both_preview_schemas_and_never_calls_an_unknown_one_empt
         assert e in out, out
     if "UNSUPPORTED" in expect[0]:
         assert "LISTED" not in out, out
+
+
+# --------------------------------------------------------------------------- files / download (nexus-download.py)
+
+_dspec = importlib.util.spec_from_file_location("nexus_download", REPO / "tools" / "nexus-download.py")
+nd = importlib.util.module_from_spec(_dspec)
+_dspec.loader.exec_module(nd)
+
+INFO = {"file_id": 11, "size_in_bytes": 5, "file_name": "Example-101-1.7z"}
+MIRRORS = [{"short_name": "CDN", "URI": "https://signed.example.invalid/f.7z?md5=SIGNEDTOKEN"}]
+
+
+class FakeResponse:
+    def __init__(self, body: bytes, ctype="application/octet-stream", url="https://cdn.example.invalid/f.7z"):
+        self._body, self._url = body, url
+        from email.message import Message
+        m = Message()
+        m["Content-Type"] = ctype
+        m["Content-Length"] = str(len(body))
+        self.headers = m
+
+    def geturl(self):
+        return self._url
+
+    def read(self, n=-1):
+        chunk, self._body = self._body[:n], self._body[n:]
+        return chunk
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _serve(monkeypatch, body=b"hello", seen=None, **kw):
+    def fake_urlopen(req, timeout=0):
+        if seen is not None:
+            seen["ua"] = req.get_header("User-agent")
+            seen["url"] = req.full_url
+        return FakeResponse(body, **kw)
+    monkeypatch.setattr(nd.urllib.request, "urlopen", fake_urlopen)
+
+
+def test_download_into_a_folder_uses_the_nexus_file_name_and_the_toolkit_user_agent(monkeypatch, capsys, tmp_path):
+    seen = {}
+    _serve(monkeypatch, seen=seen)
+    assert nd.download(str(tmp_path), MIRRORS, INFO) == 0
+    assert (tmp_path / "Example-101-1.7z").read_bytes() == b"hello"
+    out = capsys.readouterr()
+    assert "SHA-256: 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824" in out.out
+    assert "SIGNEDTOKEN" not in out.out + out.err, "a signed mirror URL was printed"
+    assert seen["ua"] == nd.UA == nr.UA and "Mozilla" not in seen["ua"]
+    assert [p.name for p in tmp_path.iterdir()] == ["Example-101-1.7z"], "a temp file was left behind"
+    if os.name != "nt":
+        mode = (tmp_path / "Example-101-1.7z").stat().st_mode & 0o777
+        assert mode == 0o666 & ~nd.UMASK, f"saved with the temp file's private mode {oct(mode)}"
+
+
+def test_a_size_that_differs_from_nexus_fails_and_leaves_nothing(monkeypatch, capsys, tmp_path):
+    _serve(monkeypatch, body=b"hello world")
+    assert nd.download(str(tmp_path / "x.7z"), MIRRORS, INFO) == 3
+    assert list(tmp_path.iterdir()) == []
+    assert "differs from the 5 bytes" in capsys.readouterr().err
+
+
+def test_an_html_page_is_not_saved_as_the_file(monkeypatch, tmp_path):
+    _serve(monkeypatch, body=b"<html>", ctype="text/html")
+    assert nd.download(str(tmp_path / "x.7z"), MIRRORS, {}) == 3
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_an_existing_destination_is_never_overwritten(monkeypatch, tmp_path):
+    _serve(monkeypatch)
+    dest = tmp_path / "Example-101-1.7z"
+    dest.write_bytes(b"mine")
+    assert nd.download(str(tmp_path), MIRRORS, INFO) == 2
+    assert nd.download(str(dest), MIRRORS, INFO) == 2
+    assert dest.read_bytes() == b"mine"
+
+
+@pytest.mark.parametrize("name", ["../evil.7z", "a/b.7z", "a\\b.7z", "", None, "..", "C:x.7z"])
+def test_a_folder_destination_refuses_an_unsafe_nexus_file_name(monkeypatch, tmp_path, name):
+    _serve(monkeypatch)
+    assert nd.download(str(tmp_path), MIRRORS, {"file_name": name}) == 2
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_files_lists_ids_newest_first(kit):
+    r = run(kit, "files", "101")
+    assert r.returncode == 0, r.stdout + r.stderr
+    lines = [ln for ln in r.stdout.splitlines() if ln.startswith("ID: ")]
+    assert [ln.split(" | ")[0] for ln in lines] == ["ID: 12", "ID: 11", "ID: 13"]
+    assert "LISTED: 3 file(s)" in r.stdout and "RESULT: OK" in r.stdout
+
+
+def test_download_end_to_end_skips_a_non_https_mirror_and_never_prints_it(kit, tmp_path):
+    out = tmp_path / "dl"
+    out.mkdir()
+    r = run(kit, "download", "101", "11", str(out))
+    assert r.returncode == 3 and "RESULT: COULD-NOT-CHECK" in r.stdout, r.stdout + r.stderr
+    assert list(out.iterdir()) == [], "a failed download left a file"
+    assert "Mirror 1" not in r.stderr, "a plain-http mirror was tried, not skipped"
+    assert "SIGNEDTOKEN" not in r.stdout + r.stderr
+    urls = [u for u, _ in calls(kit)]
+    assert any(u.endswith("/mods/101/files/11.json") for u in urls)
+    assert any(u.endswith("/mods/101/files/11/download_link.json") for u in urls)
+
+
+def test_download_without_premium_says_why(kit, tmp_path):
+    r = run(kit, "download", "101", "11", str(tmp_path), FAKE_CURL_404_ON="download_link")
+    assert r.returncode == 3 and "Premium" in r.stderr, r.stdout + r.stderr
+
+
+@pytest.mark.parametrize("args", [["files"], ["files", "x"], ["download", "1", "2"], ["download", "1", "x", "/tmp/a"],
+                                  ["download", "1", "2", "/tmp/a", "bad/domain"]])
+def test_files_and_download_bad_usage_is_exit_2_and_calls_nothing(kit, args):
+    r = run(kit, *args)
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert calls(kit) == []

@@ -161,6 +161,7 @@ Install them into the `tools/` folder in your game directory; the setup prompt w
 - **`tools/nexus.sh`** — built-in Nexus API helper (no install). Needs your Nexus key (see *Nexus API key* below).
   - Verify: `bash tools/nexus.sh mod <id>` prints a mod's name/version.
   - Also: `find "<name>"`, `page <id> --since <version>`, `contents <id>` (skill `mod-update-check`). Any failure prints `RESULT: COULD-NOT-CHECK` and exits 3.
+  - Download: `files <id>` lists every file with its file id; `download <id> <file_id> <file or folder>` saves one file (into a folder: under its Nexus file name), refuses to overwrite, checks the size against Nexus and prints the SHA-256. The API gives download links to **Premium accounts only** (otherwise HTTP 403: download on the site). The signed mirror URLs are never printed. It writes nowhere else: no `.meta`, nothing into a mod manager's downloads folder unless you name that folder.
 
 ## Pinned downloads
 

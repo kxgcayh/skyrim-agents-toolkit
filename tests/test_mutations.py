@@ -1568,6 +1568,17 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
            "test_fetch_never_sends_a_browser_user_agent"),
           ("http-status-ignored", "tools/nexus.sh", '    if [ "$code" != "200" ]; then', "    if false; then",
            "test_an_http_error_is_could_not_check_exit_3"),
+          ("download-browser-user-agent", "tools/nexus-download.py", 'UA = "skyrim-ai-assistant-toolkit-nexus/1',
+           'UA = "Mozilla/5.0 skyrim-ai-assistant-toolkit-nexus/1',
+           "test_download_into_a_folder_uses_the_nexus_file_name_and_the_toolkit_user_agent"),
+          ("download-size-unchecked", "tools/nexus-download.py", "    if expected is not None and total != expected:",
+           "    if False:", "test_a_size_that_differs_from_nexus_fails_and_leaves_nothing"),
+          ("download-unsafe-name", "tools/nexus-download.py", "    if any(c in name for c in ",
+           "    if False and any(c in name for c in ", "test_a_folder_destination_refuses_an_unsafe_nexus_file_name"),
+          ("download-http-mirror", "tools/nexus-download.py",
+           '            if not isinstance(url, str) or urllib.parse.urlsplit(url).scheme != "https":',
+           "            if not isinstance(url, str):",
+           "test_download_end_to_end_skips_a_non_https_mirror_and_never_prints_it"),
       ]],
 
     # --- bench-vr -------------------------------------------------------------

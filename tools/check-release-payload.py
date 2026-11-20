@@ -105,6 +105,7 @@ CORE_REQUIRED = (
     "tools/github-mod-fetch.py",
     "tools/nexus.sh",
     "tools/nexus-render.py",
+    "tools/nexus-download.py",
     "tools/bench-vr.py",
     "tools/vr-headless.sh",
     "tools/vr-headless.py",
