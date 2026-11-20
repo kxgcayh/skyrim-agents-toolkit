@@ -254,6 +254,14 @@ BREAKS = {
 }
 
 
+@pytest.mark.parametrize("rel", ["tools/doc_lookup.py", "tools/doc-inject.sh", "agent/doc-index.json"])
+def test_doc_injection_files_are_required(payload, rel):
+    (payload / rel).unlink()
+    result = _check(payload, "--expect-commit", SHA)
+    assert result.returncode == 1
+    assert "!!" in _line(result.stdout, f"{rel} present")
+
+
 @pytest.mark.parametrize("brk", sorted(BREAKS))
 def test_every_check_can_fail_on_its_own_line(payload, brk):
     damage, name = BREAKS[brk]
