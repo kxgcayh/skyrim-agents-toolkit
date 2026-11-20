@@ -593,7 +593,8 @@ def test_an_unreadable_codex_config_is_unknown_and_exits_2(tmp_path):
 def test_a_modified_hook_exits_1(tmp_path):
     root = _codex_root(tmp_path)
     exp = ct.expected_entries(root / ".codex" / "hooks.json")
-    (k1, h1), (k2, _h2) = sorted(exp.items())
+    assert len(exp) >= 2
+    (k1, h1), (k2, _h2) = sorted(exp.items())[:2]
     cfg = tmp_path / "config.toml"
     cfg.write_text("[hooks.state]\n[hooks.state.'{}']\ntrusted_hash = \"{}\"\n[hooks.state.'{}']\n"
                    "trusted_hash = \"sha256:{}\"\n".format(k1, h1, k2, "0" * 64), encoding="utf-8")
