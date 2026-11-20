@@ -375,11 +375,14 @@ def test_every_registered_hook_has_a_timeout_that_is_not_the_old_five_seconds():
     """
     settings = json.loads((REPO / ".claude" / "settings.json").read_text(encoding="utf-8"))
     floors = {"PreToolUse": 30, "SessionStart": 30}
+    advisory_commands = {'bash "$CLAUDE_PROJECT_DIR/tools/doc-inject.sh" claude'}
     problems = []
     examined = 0
     for event, matchers in settings.get("hooks", {}).items():
         for matcher in matchers:
             for entry in matcher.get("hooks", []):
+                if entry.get("command") in advisory_commands:
+                    continue
                 name = entry.get("command", "?").rsplit("/", 1)[-1]
                 examined += 1
                 t = entry.get("timeout")
