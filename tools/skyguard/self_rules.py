@@ -230,7 +230,13 @@ def shell_save_store_hit(command, parsed, roots, cwd="", env=None, target=None):
     cache = _StoreCache()
     for e in parsed.execs:
         e = deletes.substituted(e)
-        candidates = [(w, holder) for w, holder, _op in _routes(e)]
+        # `git checkout -- <paths>` / `git restore` overwrite tracked files only. The default store is ignored
+        # (`.gitignore`: .modding-agent-harness/) and the vault lives outside every repo, so a pathspec naming a store's
+        # ANCESTOR cannot reach it: that discard is S-GIT-DISCARD's (ask), as the corpus rows rtb-git-* say. A pathspec
+        # inside a store still counts. Residue: a `save_store` configured inside a repo with a store file force-added to
+        # the index is overwritten by an ancestor restore after only that ask. `git clean` / `git rm` come through
+        # deletes.operands below and stay holders (`git clean -fdx` in the install deletes the store).
+        candidates = [(w, holder and e.program != "git") for w, holder, _op in _routes(e)]
         candidates += [(w, True) for w in (deletes.operands(e) or []) if isinstance(w, str)]
         for word, holder in candidates:
             placed = resolve_own(lambda x: targets.resolve_operand(e, x, cwd, env), word)
@@ -443,19 +449,34 @@ def _routes(e) -> List[Tuple[str, bool, str]]:
 
 def _git_restore(argv) -> List[str]:
     """The pathspecs of `git checkout [<tree-ish>] -- <paths>` / `git restore <paths>`: the working files they
-    overwrite. `git checkout <branch>` (no `--`) is a branch switch, not covered (residue)."""
-    k = 0
+    overwrite, each joined onto the folder git runs in. `git checkout <branch>` (no `--`) is a branch switch, not
+    covered (residue)."""
+    from .deletes import _is_abs
+    k, base = 0, []
     while k < len(argv) and argv[k].startswith("-"):
-        k += 2 if argv[k] in ("-C", "-c", "--git-dir", "--work-tree") else 1
+        w = argv[k]
+        if w in ("-C", "--work-tree") and k + 1 < len(argv):
+            base.append(argv[k + 1])  # each -C is relative to the one before; --work-tree to where -C left off
+        elif w.startswith("--work-tree="):
+            base.append(w.split("=", 1)[1])
+        # the two-word global options (deletes._git_targets' list): `--namespace x` must not leave `x` read as the verb
+        k += 2 if w in ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env") else 1
     if k >= len(argv):
         return []
-    sub, rest = argv[k], list(argv[k + 1:])
+    root = "."
+    for b in base:
+        root = b if _is_abs(b) else root + "/" + b
+    return [s if _is_abs(s) or not base else root + "/" + s for s in _git_restore_specs(argv[k], list(argv[k + 1:]))]
+
+
+def _git_restore_specs(sub, rest) -> List[str]:  # the pathspecs as written, relative to the folder git runs in
     if sub == "checkout":
         if "--" not in rest:
             return []
         return [w for w in rest[rest.index("--") + 1:]]
     if sub == "restore":
-        if "--staged" in rest and "--worktree" not in rest and "-W" not in rest:
+        short = "".join(w[1:] for w in rest if re.fullmatch(r"-[A-Za-z]+", w))  # `-S` is --staged, `-SW` both
+        if ("--staged" in rest or "S" in short) and "--worktree" not in rest and "W" not in short:
             return []
         out, valued = [], ("-s", "--source", "--pathspec-from-file")
         j = 0
