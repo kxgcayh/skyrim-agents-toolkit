@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Codex documentation injection:** wire `tools/doc-inject.sh` into Codex `PreToolUse`. Definition updated: re-approve your Codex hooks in `/hooks`.
+- **Codex documentation injection:** wire `tools/doc-inject.sh` into Codex `PreToolUse` and `UserPromptSubmit`. Definition updated: re-approve your Codex hooks in `/hooks`.
 
 ## v4.1.0 — 2026-11-14
 

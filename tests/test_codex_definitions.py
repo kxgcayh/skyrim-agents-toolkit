@@ -63,9 +63,9 @@ def _commands():
         yield event, "commandWindows", h["commandWindows"]
 
 
-def test_exactly_two_definitions():
+def test_hook_events_and_groups():
     hooks = _hooks()
-    assert sorted(hooks) == ["PreToolUse", "SessionStart"]
+    assert sorted(hooks) == ["PreToolUse", "SessionStart", "UserPromptSubmit"]
     assert len(hooks["SessionStart"]) == 1 and len(hooks["PreToolUse"]) == 1
     assert "matcher" not in hooks["SessionStart"][0]
     assert hooks["PreToolUse"][0]["matcher"] == ".*"
@@ -112,6 +112,7 @@ def test_every_command_runs_the_entry_with_a_known_role():
 def test_doc_inject_handler():
     hooks = _hooks()
     inject = hooks["PreToolUse"][0]["hooks"][1]
+    assert hooks["UserPromptSubmit"] == [{"hooks": [inject]}]
     assert inject["type"] == "command"
     assert inject["command"] == 'bash "{{CODEX_ROOT_POSIX}}/tools/doc-inject.sh" codex'
     assert inject["commandWindows"] == 'bash "{{CODEX_ROOT}}/tools/doc-inject.sh" codex'

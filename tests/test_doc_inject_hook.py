@@ -213,7 +213,7 @@ def test_codex_hooks_wire_doc_inject_and_preserve_guard_hooks():
     source_bytes = (ROOT / "agent" / "targets" / "codex" / "hooks.json").read_bytes()
     source_hooks = json.loads(source_bytes)["hooks"]
 
-    assert sorted(source_hooks) == ["PreToolUse", "SessionStart"]
+    assert sorted(source_hooks) == ["PreToolUse", "SessionStart", "UserPromptSubmit"]
     assert len(source_hooks["SessionStart"][0]["hooks"]) == 1
     assert "skyguard-entry" in source_hooks["SessionStart"][0]["hooks"][0]["command"]
 
@@ -230,16 +230,7 @@ def test_codex_hooks_wire_doc_inject_and_preserve_guard_hooks():
         "statusMessage": "Skyrim toolkit: checking documentation",
     }
 
-    installed_bytes = (ROOT / ".codex" / "hooks.json").read_bytes()
-    installed_hooks = json.loads(installed_bytes)["hooks"]
-    assert sorted(installed_hooks) == ["PreToolUse", "SessionStart"]
-    inst_pre = installed_hooks["PreToolUse"][0]["hooks"]
-    assert len(inst_pre) == 2
-    assert "skyguard-entry" in inst_pre[0]["command"]
-    assert inst_pre[1]["type"] == "command"
-    assert inst_pre[1]["command"].endswith('/tools/doc-inject.sh" codex')
-    assert inst_pre[1]["timeout"] == 10
-    assert inst_pre[1]["statusMessage"] == "Skyrim toolkit: checking documentation"
+    assert source_hooks["UserPromptSubmit"] == [{"hooks": [pre_hooks[1]]}]
 
 
 def test_codex_definitions_render_wires_doc_inject():
@@ -254,4 +245,19 @@ def test_codex_definitions_render_wires_doc_inject():
     assert pre[1]["command"] == 'bash "/c/Games/Skyrim/tools/doc-inject.sh" codex'
     assert pre[1]["commandWindows"] == 'bash "C:/Games/Skyrim/tools/doc-inject.sh" codex'
     assert pre[1]["timeout"] == 10
+    assert hooks["UserPromptSubmit"] == [{"hooks": [pre[1]]}]
 
+
+def test_codex_prompt_submit_passes_prompt_to_resolver(hook_root):
+    write_paths(hook_root, sys.executable)
+    payload = {
+        "hook_event_name": "UserPromptSubmit",
+        "session_id": "wrapper-test",
+        "cwd": str(hook_root),
+        "prompt": "My ears and lashes look wrong.",
+    }
+    result = run_hook(hook_root, "codex", json.dumps(payload).encode("utf-8"))
+    assert_success(result)
+    output = json.loads(result.stdout)["hookSpecificOutput"]
+    assert output["hookEventName"] == "UserPromptSubmit"
+    assert "## CVEO slider clamp" in output["additionalContext"]

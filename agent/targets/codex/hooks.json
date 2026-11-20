@@ -33,6 +33,19 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"{{CODEX_ROOT_POSIX}}/tools/doc-inject.sh\" codex",
+            "commandWindows": "bash \"{{CODEX_ROOT}}/tools/doc-inject.sh\" codex",
+            "timeout": 10,
+            "statusMessage": "Skyrim toolkit: checking documentation"
+          }
+        ]
+      }
     ]
   }
 }
