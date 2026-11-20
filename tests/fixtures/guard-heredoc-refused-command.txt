@@ -1,0 +1,13 @@
+report=/work/skyrim-workspace/scratch/doc-injection/codex-task-2-report.md
+cat > "$report" <<'EOF'
+Codex CLI 0.170.0 lists UserPromptSubmit in its locally generated app-server schema.
+- `cad8baa` adds the 10-second hook to the template, installed config, and v3 freeze ledger. The resolver already handles the prompt payload. Fixture and renderer tests passed (42).
+- Installed `.codex/hooks.json` has skip-worktree set and was updated locally. Open `/hooks`, choose Review hooks, and approve the toolkit definitions. Live dispatch awaits approval.
+- `d198ccf` assumed setup had generated the installed config in every checkout. The test now checks the template and renderer. Both Windows doc hooks still resolve Bash through PATH, which can select WSL. Windows execution remains unverified.
+- `a88d0d1` stopped trying mirrors after an interrupted HTTP read. Fixed in `70e1b5d` with a regression test (67 passed, one existing escape-sequence warning). The destination reservation still assumes other processes leave the placeholder alone.
+- `5755389` approximates Git restore option and pathspec parsing. The short-flag scan also examines tokens after the option delimiter.
+- No additional findings in `1cc7103` or `c5c41bf`.
+CODEX-TASK2-DONE
+EOF
+wc -l "$report"
+tail -1 "$report"

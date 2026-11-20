@@ -104,6 +104,7 @@ import base64
 import fnmatch
 import functools
 import re
+from contextlib import contextmanager
 from typing import List, NamedTuple, Optional, Tuple
 
 from . import assign
@@ -308,9 +309,9 @@ def ps_param(ex: Exec, name: str, position: Optional[int] = None, slot: Tuple[st
 # Shared scanner state
 # ----------------------------------------------------------------------------------------------------------
 class _Ctx:
-    __slots__ = ("tokens", "out", "frame_ids", "via_xargs", "root", "counts", "subst", "dialect", "poison", "unread",
-                 "aliases", "codes", "xargs", "unnamed", "lits", "evals", "location_ambiguous", "functions",
-                 "fn_depth", "fn_tokens")
+    __slots__ = ("tokens", "out", "frame_ids", "via_xargs", "root", "assignment_text", "counts", "subst", "dialect",
+                 "poison", "unread", "aliases", "codes", "xargs", "unnamed", "lits", "evals", "location_ambiguous",
+                 "functions", "fn_depth", "fn_tokens", "raw_assignments")
 
     def __init__(self, root: str = "", dialect: str = ""):
         self.unread = False             # decoded code or location ambiguity prevents a complete scope proof
@@ -328,10 +329,12 @@ class _Ctx:
         self.frame_ids = 0
         self.via_xargs = set()          # ids of execs xargs runs: their stdin items arrive as ARGUMENTS
         self.root = root                # the whole command (Task 7b: assignments are counted over all of it)
+        self.assignment_text = root
         self.dialect = dialect
         self.poison: Optional[str] = None
         self.evals: List[str] = []      # guard3: eval-of-one-variable statements poisoned() deferred (_settle_evals)
         self.counts: Optional[dict] = None
+        self.raw_assignments = None
         self.subst: Tuple[Tuple[str, str], ...] = ()     # the Exec.subst of the simple command being resolved
 
     def writes(self, name: str) -> int:
@@ -341,8 +344,25 @@ class _Ctx:
 
     def poisoned(self) -> str:
         if self.poison is None:
-            self.poison = assign.poisoned(self.root, self.dialect, self.evals)
+            self.poison = assign.poisoned(self.assignment_text, self.dialect, self.evals)
         return self.poison
+
+    @contextmanager
+    def nested_assignments(self, depth: int):
+        if not depth or self.assignment_text == self.root:
+            yield
+            return
+        # A nested parser may execute the text masked in the caller's assignment scan.
+        saved = self.assignment_text, self.counts, self.poison, self.evals
+        if self.raw_assignments is None:
+            self.raw_assignments = (assign.write_counts(assign.normalize(self.root)),
+                                    assign.poisoned(self.root, self.dialect))
+        counts, poison = self.raw_assignments
+        self.assignment_text, self.counts, self.poison, self.evals = self.root, counts, self.poison or poison, []
+        try:
+            yield
+        finally:
+            self.assignment_text, self.counts, self.poison, self.evals = saved
 
     def tick(self, k: int = 1) -> None:
         if self.fn_depth and self.fn_tokens + k <= MAX_FUNCTION_TOKENS:
@@ -784,6 +804,8 @@ _FUNC_NAME = re.compile(r"[A-Za-z0-9_:.+-]{1,256}")
 
 class _Bash(_Scanner):
     DIALECT = "bash"
+    heredoc_spans = None
+    check_heredoc_expansions = False
 
     def keyword(self, f, cmd, w):
         plain = not w.quoted and not w.dyn and not w.bs
@@ -1069,6 +1091,8 @@ class _Bash(_Scanner):
                 pm = self._pairs()
                 k = pm.get(i + 1)
                 if k is not None and pm.get(i + 2) == k - 1:        # $(( ... )) arithmetic
+                    if self.check_heredoc_expansions and f.mode == "hd":
+                        self.ctx.poison = "heredoc-arithmetic"
                     self._skipped(f, i + 3, k - 1, True)
                     w.add(t[i:k + 1])
                     w.dyn = True
@@ -1079,6 +1103,9 @@ class _Bash(_Scanner):
             return
         if nx == "{":
             end = self._brace_end(i + 2, f.mode == "dq")
+            if self.check_heredoc_expansions and f.mode == "hd" and not _VARNAME.fullmatch(t, i + 2, end - 1):
+                # Parameter operators and array subscripts can assign in the caller.
+                self.ctx.poison = "heredoc-parameter"
             self._skipped(f, i + 2, end - 1, False)
             w.add(t[i:end])
             w.dyn = True
@@ -1403,11 +1430,11 @@ class _Bash(_Scanner):
         if cmd.redir_op is not None:
             raise ParseError("two redirections in a row")
         if op in ("<<", "<<-"):
-            self._heredoc(cmd, op == "<<-")
+            self._heredoc(cmd, op == "<<-", i)
             return
         cmd.redir_op = fd + op
 
-    def _heredoc(self, cmd, strip):
+    def _heredoc(self, cmd, strip, start):
         t, n = self.t, self.n
         j = self.i
         while j < n and t[j] in " \t":
@@ -1421,17 +1448,23 @@ class _Bash(_Scanner):
                 k = t.find(c, j + 1)
                 if k < 0:
                     raise ParseError("unterminated heredoc delimiter quote")
+                if self.heredoc_spans is not None and c == '"' and "\\" in t[j + 1:k]:
+                    raise ParseError("escaped double-quoted heredoc delimiter")
                 parts.append(t[j + 1:k])
                 quoted = True
                 j = k + 1
                 continue
             if c == "\\":
+                if self.heredoc_spans is not None and t[j + 1:j + 2] in ("\n", "\r"):
+                    raise ParseError("continued heredoc delimiter")
                 quoted = True
                 if j + 1 < n:
                     parts.append(t[j + 1])
                 j += 2
                 continue
             m = _HDELIM_PLAIN.match(t, j)
+            if self.heredoc_spans is not None and "$" in m.group():
+                raise ParseError("ambiguous heredoc delimiter")
             parts.append(m.group())
             j = m.end()
         delim = "".join(parts)
@@ -1441,6 +1474,8 @@ class _Bash(_Scanner):
         cmd.heredocs.append(h)
         self.pending.append((h, cmd))
         self.i = j
+        if self.heredoc_spans is not None:
+            self.heredoc_spans.append((start, j))
 
     def _read_bodies(self):
         t, n = self.t, self.n
@@ -1460,7 +1495,15 @@ class _Bash(_Scanner):
                     pos = end + 1
                     break
                 pos = end + 1
-            if not h.quoted and ("$(" in h.body or "`" in h.body):
+            if self.heredoc_spans is not None:
+                if t[end - 1:end] == "\r" or (not h.quoted and "\\\n" in h.body):
+                    raise ParseError("ambiguous heredoc boundary")
+                self.heredoc_spans.append((start, min(pos, n)))
+                if not h.quoted and ("${" in h.body or "$((" in h.body):
+                    expansion = _Bash(h.body, self.depth + 1, "", self.ctx, "hd")
+                    expansion.check_heredoc_expansions = True
+                    expansion.run()
+            if not h.quoted and ("$(" in h.body or "`" in h.body or "${" in h.body):
                 # Expand before the receiving command executes, in that command's shell frame. The body is
                 # read after the line's records, possibly after later argument substitutions were queued.
                 position = cmd.record_index if cmd.record_index is not None else len(self.recs)
@@ -3268,7 +3311,12 @@ def _settle_evals(sc: _Scanner) -> None:
         found += 1
         val = None if sc.unsure or not sc.vars else assign.expand_word(
             w.raw, sc.DIALECT, lambda name, rec=rec: sc.lookup(rec, name), split_safe)
-        if val is None or "$" in val or "`" in val or assign.poisoned(val, sc.DIALECT):
+        if val is None or "$" in val or "`" in val:
+            ctx.poison = "eval"
+            return
+        evaluated = _Ctx(val, sc.DIALECT)
+        _scan_assignment_text(evaluated)
+        if evaluated.poison or assign.poisoned(evaluated.assignment_text, sc.DIALECT):
             ctx.poison = "eval"
             return
     if found != len(ctx.evals):
@@ -3581,13 +3629,14 @@ def _sub(text: str, dialect: str, depth: int, cd: str, ctx: _Ctx, mode: str = "n
     try:
         if depth > MAX_DEPTH:
             raise ParseError("nesting deeper than %d" % MAX_DEPTH)
-        sc = _SCANNERS[dialect](text, depth, cd, ctx, mode)
-        try:
-            sc.run()
-        except ParseError:
-            _records_to_execs(sc)       # completed commands/substitutions remain evidence before a later syntax error
-            raise
-        _records_to_execs(sc)
+        with ctx.nested_assignments(depth):
+            sc = _SCANNERS[dialect](text, depth, cd, ctx, mode)
+            try:
+                sc.run()
+            except ParseError:
+                _records_to_execs(sc)   # completed commands/substitutions remain evidence before a later syntax error
+                raise
+            _records_to_execs(sc)
         if final_dirs is not None:
             final_dirs.extend(sc.final_cds)
         return sc.final_cd
@@ -3604,20 +3653,55 @@ def _sub_speculative(text: str, dialect: str, depth: int, cd: str, ctx: _Ctx) ->
     completed before a parse error are still judged (`$R 'rm -rf x; ((('` keeps the rm)."""
     if MAX_DEPTH < depth:                       # the same nesting bound as _sub (spelled apart: _sub's line is an anchor)
         raise ParseError("nesting deeper than %d" % MAX_DEPTH)
-    sc = _SCANNERS[dialect](text, depth, cd, ctx, "n")
+    with ctx.nested_assignments(depth):
+        sc = _SCANNERS[dialect](text, depth, cd, ctx, "n")
+        try:
+            sc.run()
+        except ParseError:
+            pass
+        try:
+            _records_to_execs(sc)
+        except ParseError:
+            pass
+
+
+def _scan_assignment_text(ctx: _Ctx) -> None:
+    """Discover heredoc boundaries before assignment tracking needs the whole command."""
+    command = ctx.root
+    if ctx.dialect != "bash" or "<<" not in command:
+        return
+    discovery = _Ctx(command, "bash")
+    discovery.counts = {}
+    scanner = _Bash(command, 0, "", discovery)
+    scanner.heredoc_spans = []
     try:
-        sc.run()
+        scanner.run()
     except ParseError:
-        pass
-    try:
-        _records_to_execs(sc)
-    except ParseError:
-        pass
+        return                         # keep the original conservative scans
+    if not scanner.heredoc_spans:
+        return
+    parts, previous = [], 0
+    for start, end in scanner.heredoc_spans:
+        parts.extend((command[previous:start], re.sub(r"[^\n]", " ", command[start:end])))
+        previous = end
+    parts.append(command[previous:])
+    ctx.assignment_text = "".join(parts)
+    ctx.poison = discovery.poison
+    if ctx.poison:
+        return
+    for rec in scanner.recs:
+        if rec.redirs and rec.words and rec.start < rec.words[0].start:
+            # A leading redirection can hide a setter from the statement scan.
+            poison = assign.poisoned(" ".join(word.raw for word in rec.words), "bash")
+            if poison:
+                ctx.poison = poison
+                return
 
 
 def _parse_one(command: str, dialect: str) -> Parsed:
     ctx = _Ctx(command, dialect)
     try:
+        _scan_assignment_text(ctx)
         _sub(command, dialect, 0, "", ctx)
         return Parsed(tuple(ctx.out), True, "", ctx.unread, tuple(ctx.codes), tuple(ctx.xargs), tuple(ctx.unnamed))
     except ParseError as e:

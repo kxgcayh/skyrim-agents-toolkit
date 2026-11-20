@@ -93,3 +93,48 @@ def test_portable_bash_context(tmp_path, case, refused):
         "cwd": str(tmp_path), "tool_input": {"command": commands[case]}}))._replace(shell="bash")
     result = engine.evaluate_shell(req, ROOTS, Audit(str(tmp_path)))
     assert (result.decision == "deny") is refused, result
+
+
+def _bash_without_workdir(command, tmp_path):
+    req = codex.to_request(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+        "cwd": str(tmp_path), "tool_input": {"command": command}}))._replace(shell="bash")
+    assert not req.execution_cwd_known
+    roots = paths.Roots("/game", "/config", install_dirs=("/game",), config_dirs=("/config",))
+    return engine.evaluate_shell(req, roots, Audit(str(tmp_path)))
+
+
+def test_exact_refused_heredoc_is_allowed(tmp_path):
+    command = (REPO / "tests/fixtures/guard-heredoc-refused-command.txt").read_text(encoding="utf-8")
+    assert _bash_without_workdir(command, tmp_path).decision == "allow"
+
+
+@pytest.mark.parametrize("heredoc,refused", [
+    ("cat > \"$VAR\" <<'END'\n. The prose\nVAR=prose\nEND", True),
+    ("cat > \"$VAR\" <<END\n. The prose\nVAR=prose\nEND", True),
+    (". ./rebind.sh\ncat > \"$VAR\" <<'END'\n. The prose\nEND", True),
+    ("source ./rebind.sh\ncat > \"$VAR\" <<'END'\n. The prose\nEND", True),
+    ("<<'END' source ./rebind.sh\n. The prose\nEND\nprintf x > \"$VAR\"", True),
+    ("2>/scratch/error source ./rebind.sh\ncat > \"$VAR\" <<'END'\n. The prose\nEND", True),
+    ("cat > \"$VAR\" <<'END'\nEND \nEND\t\n. The prose\nEND", False),
+    ("cat <<'END'\nEND \nEND\n. ./rebind.sh\nprintf x > \"$VAR\"", True),
+    ("cat <<'END'\nEND\t\nEND\nsource ./rebind.sh\nprintf x > \"$VAR\"", True),
+    ("cat <<-'END'\n\t. The prose\n\tEND\n. ./rebind.sh\nprintf x > \"$VAR\"", True),
+    ("cat <<-'END'\n\t. The prose\n\tEND\nprintf x > \"$VAR\"", False),
+    ("cat > \"$VAR\" <<'END'\n$(rm /game/file)\nEND", False),
+    ("cat > \"$VAR\" <<END\n$(rm /game/file)\nEND", True),
+    ("cat > \"$VAR\" <<END\n`rm /game/file`\nEND", True),
+    ("cat <<END\n$(. ./rebind.sh; VAR=elsewhere)\nEND\nprintf x > \"$VAR\"", True),
+    ("cat <<END\n${VAR} \\${VAR:=data}\nEND\nprintf x > \"$VAR\"", False),
+    ("cat <<END\n${other:=x}\nEND\nprintf x > \"$VAR\"", True),
+    ("cat <<END\n$((VAR=1))\nEND\nprintf x > \"$VAR\"", True),
+])
+def test_heredoc_assignment_scope(tmp_path, heredoc, refused):
+    result = _bash_without_workdir(f"VAR=/scratch/notes.txt\n{heredoc}", tmp_path)
+    assert (result.decision == "deny") is refused, result
+
+
+def test_heredoc_keeps_protected_path_refusal(tmp_path):
+    command = "VAR=/game/file\ncat <<'END'\n. The prose\nEND\nrm \"$VAR\""
+    result = _bash_without_workdir(command, tmp_path)
+    assert result.decision == "deny"
+    assert "execution workdir" not in result.reason
