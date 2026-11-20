@@ -15,6 +15,7 @@ Exit codes: 0 done, 2 bad usage or destination, 3 could not check (bad response,
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import sys
@@ -141,7 +142,7 @@ def download(arg: str, mirrors, info: dict) -> int:
                 print(f"SHA-256: {sha}")
                 print("RESULT: OK")
                 return 0
-            except (OSError, ValueError, urllib.error.URLError) as exc:
+            except (OSError, ValueError, http.client.HTTPException) as exc:
                 status = f"HTTP {exc.code}" if isinstance(exc, urllib.error.HTTPError) else (
                     str(exc) if isinstance(exc, ValueError) else type(exc).__name__)
                 name = mirror.get("short_name") if isinstance(mirror.get("short_name"), str) else f"mirror {index}"

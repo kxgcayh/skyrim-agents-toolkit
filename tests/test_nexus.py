@@ -372,6 +372,21 @@ def test_download_into_a_folder_uses_the_nexus_file_name_and_the_toolkit_user_ag
         assert mode == 0o666 & ~nd.UMASK, f"saved with the temp file's private mode {oct(mode)}"
 
 
+def test_incomplete_http_response_retries_next_mirror(monkeypatch, capsys, tmp_path):
+    class IncompleteResponse(FakeResponse):
+        def read(self, n=-1):
+            raise nd.http.client.IncompleteRead(b"he", 3)
+
+    responses = iter([IncompleteResponse(b""), FakeResponse(b"hello")])
+    monkeypatch.setattr(nd.urllib.request, "urlopen", lambda *_args, **_kwargs: next(responses))
+    mirrors = [*MIRRORS, {"URI": "https://backup.example.invalid/f.7z"}]
+
+    assert nd.download(str(tmp_path), mirrors, INFO) == 0
+    assert (tmp_path / INFO["file_name"]).read_bytes() == b"hello"
+    assert [p.name for p in tmp_path.iterdir()] == [INFO["file_name"]]
+    assert "IncompleteRead" in capsys.readouterr().err
+
+
 def test_a_size_that_differs_from_nexus_fails_and_leaves_nothing(monkeypatch, capsys, tmp_path):
     _serve(monkeypatch, body=b"hello world")
     assert nd.download(str(tmp_path / "x.7z"), MIRRORS, INFO) == 3
