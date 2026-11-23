@@ -80,6 +80,8 @@ def resolve_target(arg: str, info: dict) -> Path | None:
 
 
 def fetch(url: str, temp: Path, expected: int | None) -> tuple[int, str]:
+    # Nexus mirror URIs carry the file name unencoded; older names have spaces, which http.client rejects (InvalidURL).
+    url = url.replace(" ", "%20")
     req = urllib.request.Request(url, headers={"User-Agent": UA})
     with urllib.request.urlopen(req, timeout=60) as resp:
         if urllib.parse.urlsplit(resp.geturl()).scheme != "https":

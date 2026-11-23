@@ -372,6 +372,16 @@ def test_download_into_a_folder_uses_the_nexus_file_name_and_the_toolkit_user_ag
         assert mode == 0o666 & ~nd.UMASK, f"saved with the temp file's private mode {oct(mode)}"
 
 
+def test_a_mirror_uri_with_spaces_in_the_file_name_is_encoded(monkeypatch, tmp_path):
+    # Older Nexus files ("Beyond Skyrim - Bruma Hotfix 1.6.1-...zip") come back with raw spaces in the URI;
+    # the real urlopen raises http.client.InvalidURL on them, so every mirror failed before the fix.
+    seen = {}
+    _serve(monkeypatch, seen=seen)
+    mirrors = [{"short_name": "CDN", "URI": "https://cdn.example.invalid/1/A b - c 1.6.1.zip?md5=T&expires=1"}]
+    assert nd.download(str(tmp_path), mirrors, INFO) == 0
+    assert seen["url"] == "https://cdn.example.invalid/1/A%20b%20-%20c%201.6.1.zip?md5=T&expires=1"
+
+
 def test_incomplete_http_response_retries_next_mirror(monkeypatch, capsys, tmp_path):
     class IncompleteResponse(FakeResponse):
         def read(self, n=-1):
