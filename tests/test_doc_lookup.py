@@ -449,6 +449,10 @@ def test_script_flags_and_non_shell_programs_preserve_arguments(lookup, command)
     "python3 -c \"print('nexusmods-surfer VMAD values')\"",
     "node -e 'console.log(\"VMAD Caprica Spriggit\")'",
     "bash -c 'echo nexusmods-surfer VMAD'",
+    "python3 -W ignore -c \"print('nexusmods-surfer VMAD values')\"",
+    "python3 -X dev -c \"print('nexusmods-surfer VMAD values')\"",
+    "node -r ./hook.js -e 'console.log(\"VMAD Caprica Spriggit\")'",
+    "bash -o pipefail -c 'echo nexusmods-surfer VMAD'",
 ])
 def test_reported_false_positives_against_repository_index(repo_lookup, command):
     payload = pre_tool("Bash", {"command": command})

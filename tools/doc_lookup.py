@@ -250,18 +250,30 @@ def command_context(command):
         else:
             tokens.append(raw)
 
+    # Interpreter options whose value is the next word (not code, not the script).
+    option_args = {
+        "python": {"-W", "-X", "-Q"},
+        "node": {"-r", "--require", "--import", "--loader", "--experimental-loader",
+                 "--input-type", "--conditions", "-C", "--env-file"},
+        "sh": {"-o", "+o", "-O", "+O"},
+    }
     out = []
     interpreter = git = False
     interpreter_seen = False
-    skip = False
+    family = None
+    skip = keep_next = False
     for token in tokens:
         if token in ("\n", ";", "|", "&", "(", ")"):
-            interpreter = git = skip = False
+            interpreter = git = skip = keep_next = False
             interpreter_seen = False
             out.append(token)
             continue
         if skip:
             skip = False
+            continue
+        if keep_next:
+            keep_next = False
+            out.append(token)
             continue
         value = token.strip("\"'")
         name = value.replace("\\", "/").rsplit("/", 1)[-1].lower()
@@ -270,10 +282,15 @@ def command_context(command):
         ):
             interpreter = True
             interpreter_seen = True
+            family = "python" if name.startswith("python") else "node" if name.startswith("node") else "sh"
             out.append(token)
             continue
         if name in ("git", "git.exe"):
             git = True
+        if interpreter and value in option_args[family]:
+            keep_next = True
+            out.append(token)
+            continue
         if interpreter and re.fullmatch(r"-(?:[a-zA-Z]*c|e|p)|--eval|--print", value):
             skip = True
             interpreter = False
