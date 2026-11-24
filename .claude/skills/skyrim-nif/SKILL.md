@@ -80,6 +80,28 @@ A crash-to-desktop must be caught in tooling, not the headset. Run these gates i
 
 Blender (headless) + the PyNifly Blender addon, plus NifSkope, are optional installs — see `setup.sh`.
 
+## FaceGen `.tri` vs its mesh (heads, head parts, ears, brows, hair)
+
+A FaceGen `.tri` holds its own copy of the mesh it morphs (vertex list, triangles by vertex index); its race,
+chargen and expression morphs are per-vertex offsets, so they fit only a mesh with the same vertex count in the
+same vertex order. Check this BEFORE blaming a slider, a preset or RaceMenu when a head part deforms wrongly, and
+after any edit or replacement of a head-part NIF that keeps someone else's `.tri`:
+
+```bash
+python tools/tri-topology.py <file.tri> <mesh.nif> [more.nif ...] [--shape NAME] [--json]
+```
+
+- `match`: same vertex count and triangle set (winding, order and duplicates ignored). The morphs address the
+  right vertices; this says nothing about whether the NIF is engine-valid (gates above).
+- `vertex-count`: the morphs cannot fit. A `.tri` of a few vertices is a stub some mods ship on purpose.
+- `triangles-differ`: same count. A few percent is usually a retriangulation (edge flips); a large share means
+  the vertex order differs, so the morphs move the wrong vertices.
+- Stdlib only (runs on macOS, no PyNifly): SSE skinned `BSTriShape`/`BSDynamicTriShape` and `FRTRI003` only. An LE
+  mesh, an unskinned shape, or a BodySlide/Outfit Studio morph `.tri` (magic `PIRT`) is reported as not checked,
+  never as a match. Exit 0 all match, 1 a difference, 2 could not check.
+- Which `.tri` goes with which mesh is set by the head part record (HDPT parts: `NAM0` the type, race morph / tri /
+  chargen morph, and `NAM1` the file), not by the file name; read the record before pairing them.
+
 ---
 
 # PyFFI — LE-format NiTriShape geometry edits

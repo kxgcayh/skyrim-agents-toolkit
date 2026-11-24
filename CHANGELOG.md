@@ -5,6 +5,8 @@
 - **Codex documentation injection:** wire `tools/doc-inject.sh` into Codex `PreToolUse` and `UserPromptSubmit`. Definition updated: re-approve your Codex hooks in `/hooks`.
 - **loot-advisor `--userlist PATH`:** also applies LOOT's `userlist.yaml` (the rules set in LOOT's app), as LOOT does;
   the report names the file and its sha256, or says no userlist was applied. Read-only, never auto-detected.
+- **tri-topology (new, read-only):** `tools/tri-topology.py` says whether a FaceGen `.tri` fits the SSE mesh it morphs
+  (vertex count and triangle set per skinned shape), stdlib only so it runs without PyNifly. Recipe: skill `skyrim-nif`.
 
 ## v4.1.0 — 2026-11-14
 
