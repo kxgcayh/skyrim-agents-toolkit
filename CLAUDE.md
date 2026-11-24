@@ -191,103 +191,66 @@ verify every new field, pass `--PackageVersion` as the translation package versi
 
 ## Safety Rules
 
-**The guards** enforce these automatically on agents with hook support (your agent's notes at the end say
-how). The rules live in the Python engine `tools/skyguard/`, which needs Python 3; a guard that cannot
-start it REFUSES rather than allows. **A guard exists to stop the agent, not to interrupt the user**, so
-the rules are graded and only the first list refuses.
+**The guards** enforce these on agents with hook support (your agent's notes at the end say how), through the
+Python engine `tools/skyguard/`; a guard that cannot start it REFUSES. They judge the **program that runs** and
+the file it targets, not words in a command: pattern matching against accidents, **not a sandbox**. Every rule
+with its examples and gaps: `docs/guard-coverage.md`, "Rules in detail" (the full DENIED/ADVISED/ASKS text).
 
 ### DENIED -- refused outright, cannot proceed
-
-Each is judged on the **program that runs** and the file it targets, in Bash and PowerShell, not on words
-that merely appear in a command (`grep -rn "rm -rf" <install>` is allowed). Relative paths resolve against
-the working directory the agent reports.
-
-- **Deleting inside the game install, the config directory, or Mod Organizer's `mods/` / `overwrite/`**
-  (`rm`, `del`, `Remove-Item`, `find -delete`, `git clean`, `shutil.rmtree`, a Recycle-Bin delete, ...), or
-  moving files out of them. Also refused: a delete whose target it cannot work out in a command
-  naming a protected folder, and deleting everything in a folder it cannot place (`rm -rf *` after an
-  unknown `cd`). Scratch folders (`/tmp`, temp, the scratchpad) are not protected.
-  Pattern matching, **not a sandbox**: a guard against accidents.
-
-  The install is **resolved** (from the guard's own location plus `skyrim-paths.env` at the toolkit root), never guessed
-  from the word "Skyrim". ⚠ If no root resolves, or a path in `skyrim-paths.env` is unreadable, the guard DENIES (`docs/safety-philosophy.md`).
-- **Moving or renaming the install, `Data`, the settings folder or `Saves`** away.
-- **Deleting Bethesda registry keys** (`reg delete` / `Remove-Item` on a Bethesda key or one of its parents).
-- **Writing a plugin or archive (`.esp .esm .esl .bsa .ba2`) as raw text, anywhere** -- through the edit
-  tools, and through the shell: `>` / `>>`, `tee`, `Set-Content`, `Out-File`, `sed -i`, `perl -i`, `dd of=`,
-  `[IO.File]::Write*`, downloaders, and a name written in `python -c` / `node -e` code. Use xelib, Spriggit
-  or AutoMod. Copying a finished plugin onto `Data/` is **advised**, not refused. Not covered: a name
-  built at runtime, a script run from a file (`python fix.py`), other interpreters.
-- A program's output flag (`-o`, `--output`) aimed at a `.psc`, and Champollion against a `.pex`
-  inside `Data/Scripts/` -- both have destroyed sources
-- `sed -i` without `-b` on install/MO2 files
-- DevBench `smp reset` (crashes big load orders), by MCP, `curl` or `devbench-cli.sh`
-- Decoded text run as commands (`base64 -d | bash`), which the guard cannot read
-- A command the guard cannot read: empty or not text ("GUARD INERT"), or unparseable while it contains
-  a deletion and names a protected folder -- it refuses rather than shrugs
+- Deleting inside the game install, the config directory or MO2's `mods/` / `overwrite/` (a Recycle-Bin delete
+  too), moving files out of them, a delete whose target it cannot work out in a command naming a protected folder, and
+  deleting everything in a folder it cannot place. Scratch folders are not protected. An install root that
+  does not resolve also denies.
+- Moving or renaming the install, `Data`, the settings folder or `Saves`; deleting Bethesda registry keys.
+- Writing a plugin or archive (`.esp .esm .esl .bsa .ba2`) as raw text, anywhere: use xelib, Spriggit or AutoMod.
+- An output flag aimed at a `.psc`; Champollion against a `.pex` in `Data/Scripts/`; `sed -i` without `-b` on
+  install/MO2 files; DevBench `smp reset`.
+- Decoded text run as commands (`base64 -d | bash`), and a command the guard cannot read: empty or not text ("GUARD INERT"),
+  or unparseable while it deletes in a protected folder.
 
 ### ADVISED -- the call proceeds, I get a note, the user is never prompted
-- Skyrim INI files (Skyrim.ini, SkyrimVR.ini, SkyrimPrefs.ini) -- last file wins
-- SKSE plugin configs (`Data/SKSE/Plugins/*.ini`) -- not captured by any snapshot
-- Papyrus scripts (`.psc`, `.pex`) -- a `.pex` loads at game startup ONLY
-- Load order files -- the mod manager owns them and may overwrite a direct edit
-- Redirects, `tee`, an in-place sed and other shell writes into `Data/`, the config folder or MO2 (a `cp`/`mv`
-  there is silent), a copy onto a plugin where the game loads it, and any write, copy or move onto a
-  file directly in the game folder (its exe and dlls, `openvr_api.dll`, loader INIs)
-- A decompiler writing its output into the install; an in-place sed with a backslash path, on a file in the install
-- AutoMod write commands without `--dry-run`
-
-Naming a plugin or INI in a read-only command is silent: notes fire on the program that writes.
+Writes to Skyrim INIs; SKSE plugin configs (not captured by any snapshot); Papyrus scripts (a `.pex` loads at game
+startup ONLY); load-order files (the mod manager owns them and may overwrite a direct edit); redirects, `tee` and
+in-place edits into `Data/`, the config folder or MO2 (a plain `cp`/`mv` there is silent); a copy onto a live plugin;
+any write, copy or move directly into the game root; a decompiler writing into the install; AutoMod writes without
+`--dry-run`. A read-only command naming such a file is silent.
 
 ### ASKS THE USER -- four rules
 - git discarding uncommitted changes in a protected folder (`checkout -- x`, `restore`, `reset --hard`)
 - an unnamed program, an eval of a variable, or awk system() given a protected path
-- `lock disable` (the file lock off for good)
-- `snapshot restore --in-place` or `restore-from-backup.sh --restore` (writes over live files)
+- `lock disable`; `snapshot restore --in-place` or `restore-from-backup.sh --restore`
 
-Few prompts by design: a guard that prompts on routine work gets approved by reflex
-(`docs/safety-philosophy.md`). **Check the guards are alive: `bash tools/hook-canary.sh`.**
+Few prompts by design (`docs/safety-philosophy.md`). **Check the guards are alive: `bash tools/hook-canary.sh`.**
 
-### Saves: no rule; the save vault keeps every version
-`python tools/save_vault.py status <SAVE>` lists kept versions; `restore` (dry run without `--apply`).
-**Session line says NOT RUNNING: tell the user.** A whole `Saves` folder stays refused. `docs/save-vault.md`.
-Coverage and gaps: `docs/guard-coverage.md`.
-
-### The file lock and the guards' own state
-- **"Access denied" writing a vanilla master or archive** (`Skyrim.esm`, a base `.bsa`) is the optional lock, not
-  a fault (the OS says no more): never retry or work around it. `bash tools/skyguard.sh lock unlock <file>` lifts
-  it for an hour (the next tool call after that relocks it): **tell the user why first; relock when done**
-  (`lock lock`). If it answers "No session id", you cannot lift it, by design: ask the user to run
-  `tools\skyguard-unlock.cmd` in their own terminal. Never clear the read-only bit or ACL by hand.
-- **Never edit `.skyguard/`** (guard on/off state): refused. `bash tools/skydoctor` shows what is live.
+### Saves, the file lock and the guards' own state
+- Saves have no rule; the save vault keeps every version: `python tools/save_vault.py status <SAVE>` lists them,
+  `python tools/save_vault.py restore <SAVE>` previews a restore unless `--apply` is given. **Session line says NOT RUNNING: tell the user.** `docs/save-vault.md`.
+- **"Access denied" writing a vanilla master or archive** is the optional lock, not a fault: never retry or work
+  around it. `bash tools/skyguard.sh lock unlock <file>` lifts it for an hour (the first guarded call after that
+  relocks it): **tell the user why first; relock when done** (`lock lock`). "No session id": ask the user to run `tools\skyguard-unlock.cmd` themselves. Never
+  clear the read-only bit or ACL by hand. **Never edit `.skyguard/`**; `bash tools/skydoctor` shows what is live.
 
 ### General rules
-- **Always review changes before applying** -- modded installs are delicate
-- Never modify ESP/ESM files directly -- use xelib programmatically or Spriggit
-- **Keep line endings:** a CRLF file stays CRLF; whole-file churn in `git diff --stat` means you broke it
-- **Never bare-copy a third-party mod into `Data/`**, SKSE DLLs (DevBench too) included: untracked
-  files get clobbered or orphaned by a deploy or purge. Prefer the user's mod manager; a manual
-  install goes through `tools/mod-install.py`: dry run first, read every destination, then `--apply`
-  (backups + manifest) and check the result. (The user's **own** in-development mod files are fine.)
-- **Delete to the Recycle Bin, never permanently.** Windows: `Microsoft.VisualBasic.FileIO.FileSystem`
-  `DeleteFile`/`DeleteDirectory` with `SendToRecycleBin`, not `rm`/`Remove-Item`. A permanent delete
-  needs the user's OK; a tool's own temp files are exempt. The guard judges a Recycle-Bin delete like any delete.
-- **Never push CPU, RAM, free disk, disk I/O or GPU past 80% of the machine**, counting what already
-  runs (games, other sessions). Measure first; if it won't fit, wait, shrink or ask. Stress tests: never
-  one worker per core, idle priority, time-boxed.
+- **Always review changes before applying**; never modify ESP/ESM files directly (xelib or Spriggit).
+- **Keep line endings:** a CRLF file stays CRLF; whole-file churn in `git diff --stat` means you broke it.
+- **Never bare-copy a third-party mod into `Data/`**, SKSE DLLs included: use the user's mod manager, or
+  `tools/mod-install.py` (dry run, read every destination, then `--apply`), and check the result. The
+  user's own in-development mod files are fine.
+- **Delete to the Recycle Bin, never permanently** (Windows: `Microsoft.VisualBasic.FileIO.FileSystem`
+  `DeleteFile`/`DeleteDirectory` with `SendToRecycleBin`). A
+  permanent delete needs the user's OK; a tool's own temp files are exempt.
+- **Never push CPU, RAM, free disk, disk I/O or GPU past 80% of the machine**, counting what already runs.
+  Measure first; if it won't fit, wait, shrink or ask. Stress tests: idle priority, time-boxed, not one worker per core.
+- **Safety improvement loop:** after a session, near-miss or surprise, ask whether a guard rule, protection or
+  knowledgebase entry would have caught it, unprompted; record proposals under "Hook Candidates" in `KNOWLEDGEBASE.local.md`.
+- **Audit trail:** on agents with hooks, edit-tool changes are backed up to `.claude/backups/` (script writes are not);
+  `.claude/backups/AUDIT_LOG.txt` logs every file touched.
 
-### Safety improvement loop
-After every session, near-miss or surprise, ask whether a new guard rule, protection or knowledgebase entry would have caught it, unprompted. Record proposals in a "Hook Candidates" section of `KNOWLEDGEBASE.local.md`.
-
-### Audit trail
-- On agents with hooks, files changed through the edit tools are backed up to `.claude/backups/` first. ⚠ A file a script writes is not backed up (see the knowledgebase note above).
-- An audit log at `.claude/backups/AUDIT_LOG.txt` records every file touched, when, and by which tool
-
-### Iteration snapshots (standing process — do not skip)
-1. **Before any experimental change**, copy the current `.psc` files to `.claude/backups/<descriptive-name>/` (e.g. `known-good-pre-stagger/`): the rollback point.
-2. **Automatic copies are not rollback points** -- you can't identify them later, so snapshot by name anyway. Spriggit backs up the ESP on deserialize, not scripts.
-3. **After a state works in-game**, snapshot scripts and a Spriggit export to a `known-good/` folder named for what works.
-4. **"Restore from transcript" is a trap** -- that code is entangled with the bugs fixed that turn.
+### Iteration snapshots (standing process -- do not skip)
+1. **Before any experimental change**, copy the current `.psc` files to `.claude/backups/<descriptive-name>/`.
+2. **Automatic copies are not rollback points**: snapshot by name anyway (Spriggit backs up the ESP, not scripts).
+3. **After a state works in-game**, snapshot scripts and a Spriggit export to a `known-good/` folder named for it.
+4. **"Restore from transcript" is a trap**: that code is entangled with the bugs fixed that turn.
 
 ## Confidence Levels (Mandatory)
 

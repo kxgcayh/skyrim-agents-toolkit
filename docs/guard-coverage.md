@@ -140,3 +140,59 @@ at once (S-DEL-CONFIG, S-MOVE-ROOT), and writes into the vault or the 4.0 save s
   Reads (`x.ess --top 20`, `x.pex --psc`, `--json info x.ess`) get none. MEASURED by
   `tests/test_resaver_native_guard.py` (bash, `bash -c`, quoted, PowerShell `&`, `start`). Not seen (INFERRED): a
   renamed copy of either executable, and interpreter code that starts one (`python -c "subprocess.run(...)"`).
+
+## Rules in detail
+
+The full rule text the agent instructions summarize (moved from `agent/instructions/core.md`, 2026-11-24).
+
+### DENIED -- refused outright, cannot proceed
+
+Each is judged on the **program that runs** and the file it targets, in Bash and PowerShell, not on words
+that merely appear in a command (`grep -rn "rm -rf" <install>` is allowed). Relative paths resolve against
+the working directory the agent reports.
+
+- **Deleting inside the game install, the config directory, or Mod Organizer's `mods/` / `overwrite/`**
+  (`rm`, `del`, `Remove-Item`, `find -delete`, `git clean`, `shutil.rmtree`, a Recycle-Bin delete, ...), or
+  moving files out of them. Also refused: a delete whose target it cannot work out in a command
+  naming a protected folder, and deleting everything in a folder it cannot place (`rm -rf *` after an
+  unknown `cd`). Scratch folders (`/tmp`, temp, the scratchpad) are not protected.
+  Pattern matching, **not a sandbox**: a guard against accidents.
+
+  The install is **resolved** (from the guard's own location plus `skyrim-paths.env` at the toolkit root), never guessed
+  from the word "Skyrim". ⚠ If no root resolves, or a path in `skyrim-paths.env` is unreadable, the guard DENIES (`docs/safety-philosophy.md`).
+- **Moving or renaming the install, `Data`, the settings folder or `Saves`** away.
+- **Deleting Bethesda registry keys** (`reg delete` / `Remove-Item` on a Bethesda key or one of its parents).
+- **Writing a plugin or archive (`.esp .esm .esl .bsa .ba2`) as raw text, anywhere** -- through the edit
+  tools, and through the shell: `>` / `>>`, `tee`, `Set-Content`, `Out-File`, `sed -i`, `perl -i`, `dd of=`,
+  `[IO.File]::Write*`, downloaders, and a name written in `python -c` / `node -e` code. Use xelib, Spriggit
+  or AutoMod. Copying a finished plugin onto `Data/` is **advised**, not refused. Not covered: a name
+  built at runtime, a script run from a file (`python fix.py`), other interpreters.
+- A program's output flag (`-o`, `--output`) aimed at a `.psc`, and Champollion against a `.pex`
+  inside `Data/Scripts/` -- both have destroyed sources
+- `sed -i` without `-b` on install/MO2 files
+- DevBench `smp reset` (crashes big load orders), by MCP, `curl` or `devbench-cli.sh`
+- Decoded text run as commands (`base64 -d | bash`), which the guard cannot read
+- A command the guard cannot read: empty or not text ("GUARD INERT"), or unparseable while it contains
+  a deletion and names a protected folder -- it refuses rather than shrugs
+
+### ADVISED -- the call proceeds, I get a note, the user is never prompted
+- Skyrim INI files (Skyrim.ini, SkyrimVR.ini, SkyrimPrefs.ini) -- last file wins
+- SKSE plugin configs (`Data/SKSE/Plugins/*.ini`) -- not captured by any snapshot
+- Papyrus scripts (`.psc`, `.pex`) -- a `.pex` loads at game startup ONLY
+- Load order files -- the mod manager owns them and may overwrite a direct edit
+- Redirects, `tee`, an in-place sed and other shell writes into `Data/`, the config folder or MO2 (a `cp`/`mv`
+  there is silent), a copy onto a plugin where the game loads it, and any write, copy or move onto a
+  file directly in the game folder (its exe and dlls, `openvr_api.dll`, loader INIs)
+- A decompiler writing its output into the install; an in-place sed with a backslash path, on a file in the install
+- AutoMod write commands without `--dry-run`
+
+Naming a plugin or INI in a read-only command is silent: notes fire on the program that writes.
+
+### ASKS THE USER -- four rules
+- git discarding uncommitted changes in a protected folder (`checkout -- x`, `restore`, `reset --hard`)
+- an unnamed program, an eval of a variable, or awk system() given a protected path
+- `lock disable` (the file lock off for good)
+- `snapshot restore --in-place` or `restore-from-backup.sh --restore` (writes over live files)
+
+Few prompts by design: a guard that prompts on routine work gets approved by reflex
+(`docs/safety-philosophy.md`). **Check the guards are alive: `bash tools/hook-canary.sh`.**
