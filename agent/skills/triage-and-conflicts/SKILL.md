@@ -131,14 +131,15 @@ first. All three exit 0 nothing found, 1 findings, 2 could not check.
 ## loot-advisor — what LOOT would say, without changing anything (v4.1.0)
 
 ```bash
-python tools/loot_advisor.py [--json] [--offline]   # LOOT's order + masterlist messages for the ACTIVE plugins
+python tools/loot_advisor.py [--json] [--offline] [--userlist PATH]   # LOOT's order + masterlist messages for the ACTIVE plugins
 ```
 
 It asks libloot (LOOT's own library; wheels ship for Python 3.10-3.13 on Windows x64, elsewhere
 `python tools/libloot/build.py build`) for the order LOOT would sort the active plugins into, the fewest plugins
 that order moves, and the masterlist's messages: warnings, dirty plugins (ITM / deleted-reference counts and the
 cleaner to use), requirements that are missing and incompatibilities that are both active. The masterlist is the
-newest LOOT publishes for this libloot, fetched at run time; a failed fetch uses the last copy and says so. It never
+newest LOOT publishes for this libloot, fetched at run time; a failed fetch uses the last copy and says so.
+`--userlist` also applies LOOT's `userlist.yaml` (the user's rules from LOOT's app). It never
 writes plugins.txt, loadorder.txt or LOOT's files. A move is advice: Wrye Bash or the mod manager owns the order,
 and on a kept save read `## My preferences` in KNOWLEDGEBASE.local.md before reordering anything. Exit 0 nothing
 to add, 1 findings, 2 could not check. Details: docs/loot.md.

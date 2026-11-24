@@ -3,6 +3,8 @@
 ## Unreleased
 
 - **Codex documentation injection:** wire `tools/doc-inject.sh` into Codex `PreToolUse` and `UserPromptSubmit`. Definition updated: re-approve your Codex hooks in `/hooks`.
+- **loot-advisor `--userlist PATH`:** also applies LOOT's `userlist.yaml` (the rules set in LOOT's app), as LOOT does;
+  the report names the file and its sha256, or says no userlist was applied. Read-only, never auto-detected.
 
 ## v4.1.0 — 2026-11-14
 

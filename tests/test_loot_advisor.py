@@ -143,6 +143,9 @@ class FakeLoot(types.SimpleNamespace):
             def load_masterlist_with_prelude(self, ml, pre):
                 fake.loaded = (Path(ml).name, Path(pre).name)
 
+            def load_userlist(self, path):
+                fake.userlist = Path(path)
+
             def general_messages(self, *a):
                 return list(general)
 
@@ -247,6 +250,41 @@ def test_masterlist_messages_dirty_plugins_requirements_and_incompatibilities_ar
     assert got == {("general", "general note"), ("message", "check this"), ("dirty", 3),
                    ("requirement-missing", "Missing.esm"), ("requirement-missing", "SKSE/absent.dll"),
                    ("incompatible", "B.esp")}       # Off.esp is not active, so it is no incompatibility
+
+
+def test_no_userlist_is_loaded_unless_one_is_named_and_the_report_says_which(install, tmp_path):
+    game, local, names = install
+    fake = FakeLoot(names, {"Skyrim.esm", "A.esp", "B.esp"}, ["Skyrim.esm", "A.esp", "B.esp"])
+    report = _advise(install, tmp_path, fake)
+    assert report["userlist"] is None and not hasattr(fake, "userlist")
+
+
+def test_a_named_userlist_is_loaded_after_the_masterlist_reported_with_its_hash_and_left_unchanged(install, tmp_path):
+    game, local, names = install
+    ul = tmp_path / "userlist.yaml"
+    ul.write_text("plugins:\n  - name: A.esp\n    after: [B.esp]\n", encoding="utf-8")
+    before = ul.read_bytes()
+    fake = FakeLoot(names, {"Skyrim.esm", "A.esp", "B.esp"}, ["Skyrim.esm", "B.esp", "A.esp"])
+    old, loot_advisor.CACHE = loot_advisor.CACHE, tmp_path / "cache"
+    try:
+        report = loot_advisor.advise(local / "Plugins.txt", game / "Data", game, [], loot=fake,
+                                    fetch=lambda url, timeout=20.0: Net()(url), userlist=ul)
+    finally:
+        loot_advisor.CACHE = old
+    assert fake.userlist == ul and hasattr(fake, "loaded")
+    assert report["userlist"] == {"path": str(ul), "sha256": hashlib.sha256(before).hexdigest()}
+    assert ul.read_bytes() == before
+
+
+def test_a_userlist_path_that_is_not_a_file_is_could_not_check_before_libloot_loads(monkeypatch, capsys, install):
+    game, local, names = install
+    monkeypatch.setattr(loot_advisor.skyrim_paths, "game_root", lambda: (game, "test"))
+    monkeypatch.setattr(loot_advisor, "_plugin_check", lambda: types.SimpleNamespace(
+        mo2_folders=lambda env: ([], None), locate=lambda n, d, f: str(game / "Data" / n)))
+    monkeypatch.setattr(loot_advisor.libloot_loader, "load", lambda: pytest.fail("libloot loaded"))
+    assert loot_advisor.main(["--plugins-txt", str(local / "Plugins.txt"),
+                              "--userlist", str(local / "nope.yaml")]) == 2
+    assert "userlist not found" in capsys.readouterr().err
 
 
 def test_an_active_plugin_missing_from_disk_is_could_not_check(install, tmp_path):

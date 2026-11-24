@@ -10,6 +10,7 @@ goes red when one is added). That test cannot see inside the real libloot; the E
 python tools/loot_advisor.py            # summary
 python tools/loot_advisor.py --json     # everything, for the agent
 python tools/loot_advisor.py --offline  # the last fetched masterlist, no network
+python tools/loot_advisor.py --userlist PATH  # also apply LOOT's userlist.yaml (your rules from LOOT's app)
 ```
 
 ## What it reports
@@ -63,6 +64,9 @@ loader also refuses a file in the unpacked copy that the wheel does not hold.
 
 ## Limits
 
-- It reads plugin headers and the masterlist; it does not run LOOT's GUI or apply user metadata from LOOT's
-  `userlist.yaml`.
+- It reads plugin headers and the masterlist; it does not run LOOT's GUI. LOOT's `userlist.yaml` (the rules set in
+  LOOT's app) is applied only with `--userlist PATH`, which the report names with its sha256; without it the order is
+  the masterlist's alone, so a rule you set in LOOT can show up as a move. LOOT keeps the file at
+  `%LOCALAPPDATA%\LOOT\games\<game folder>\userlist.yaml` (inside the bottle under CrossOver). The tool never finds it
+  on its own: a guessed file would sort by rules nobody chose for this install.
 - A masterlist message is LOOT's community data, not a measurement of your install: check it before acting.

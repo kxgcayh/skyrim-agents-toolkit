@@ -10,11 +10,13 @@ itself is built on -- for:
            active, and the masterlist's general messages
 The masterlist and its prelude are fetched from LOOT's GitHub repositories at run time, the newest branch this libloot
 reads; the report names the branch and commit it used. When the fetch fails the last fetched copy is used and the
-report says so. This tool NEVER writes the load order: it does not call libloot's set_load_order or write any of
-plugins.txt, loadorder.txt or LOOT's own files. Wrye Bash / the mod manager stays the authority on order; on a save you
+report says so. With --userlist, the rules in LOOT's own userlist.yaml (load-after, group and message metadata you set
+in LOOT's app) are applied on top, as LOOT's app does; without it they are not, and the report says which.
+This tool NEVER writes the load order: it does not call libloot's set_load_order or write any of plugins.txt,
+loadorder.txt or LOOT's own files. Wrye Bash / the mod manager stays the authority on order; on a save you
 are keeping, read KNOWLEDGEBASE.local.md `## My preferences` before reordering anything.
 
-Usage:  python tools/loot_advisor.py [--plugins-txt PATH] [--data DIR] [--json] [--offline]
+Usage:  python tools/loot_advisor.py [--plugins-txt PATH] [--data DIR] [--json] [--offline] [--userlist PATH]
 Exit:   0 no moves and nothing but notes · 1 moves or findings (listed) · 2 could not check (named), never "clean"
         --plugins-txt must name a file called plugins.txt (libloot reads that name in the folder it is given)
 """
@@ -22,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import bisect
+import hashlib
 import importlib.util
 import json
 import os
@@ -231,12 +234,24 @@ def issues(loot, db, active, present=None):
     return out
 
 
-def advise(plugins_txt: Path, data: Path, game: Path, folders, offline=False, loot=None, fetch=None):
+def userlist_source(path) -> dict | None:
+    """Which userlist the sort used: its path and sha256, or None when none was given."""
+    if path is None:
+        return None
+    path = Path(path)
+    if not path.is_file():
+        raise ValueError("userlist not found: %s (LOOT keeps it at <LOOT data>/games/<game folder>/userlist.yaml)"
+                         % path)
+    return {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+
+
+def advise(plugins_txt: Path, data: Path, game: Path, folders, offline=False, loot=None, fetch=None, userlist=None):
     if (plugins_txt.name.casefold() != "plugins.txt" if os.name == "nt" else plugins_txt.name != "Plugins.txt"):
         # libloot reads the file named Plugins.txt in the folder it is given, whatever path was passed here; a report
         # naming another file would describe a file libloot never read.
         raise ValueError("libloot reads only a file named Plugins.txt (any case on Windows); %s is named otherwise "
                          "(copy it to a folder as Plugins.txt and pass that)" % plugins_txt)
+    ul = userlist_source(userlist)                                # before libloot: a wrong path costs nothing
     loot = loot or libloot_loader.load()
     kind = game_type(game)
     readable = (loot.LIBLOOT_VERSION_MAJOR, loot.LIBLOOT_VERSION_MINOR)
@@ -258,9 +273,11 @@ def advise(plugins_txt: Path, data: Path, game: Path, folders, offline=False, lo
     g.load_plugins(paths)
     db = g.database()
     db.load_masterlist_with_prelude(ml, pre)
+    if ul:
+        db.load_userlist(Path(ul["path"]))                       # read-only: libloot never writes the userlist here
     proposed = list(g.sort_plugins(active))
     return {"game": kind, "libloot": loot.libloot_version(), "libloot_revision": loot.libloot_revision(),
-            "masterlist": source, "plugins_txt": str(plugins_txt), "active": len(active),
+            "masterlist": source, "userlist": ul, "plugins_txt": str(plugins_txt), "active": len(active),
             "moves": moves(active, proposed), "issues": issues(loot, db, active, present_check(active, data, folders)), "proposed": proposed,
             "note": "Advisory only: nothing was reordered. Wrye Bash / the mod manager owns the order; on a kept save "
                     "read KNOWLEDGEBASE.local.md `## My preferences` before moving anything."}
@@ -272,6 +289,7 @@ def main(argv=None):
     ap.add_argument("--data")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--offline", action="store_true", help="use the last fetched masterlist; no network")
+    ap.add_argument("--userlist", help="LOOT's userlist.yaml: apply the rules set in LOOT's app, as LOOT does")
     args = ap.parse_args(argv)
     try:
         game, _ = skyrim_paths.game_root()
@@ -283,7 +301,7 @@ def main(argv=None):
         folders, problem = _plugin_check().mo2_folders(os.environ)
         if problem:
             raise ValueError(problem)
-        report = advise(plugins_txt, data, game, folders, args.offline)
+        report = advise(plugins_txt, data, game, folders, args.offline, userlist=args.userlist)
     except (OSError, ValueError, libloot_loader.Unavailable) as exc:
         print("COULD NOT CHECK: " + str(exc) + " -- this is not a clean result.", file=sys.stderr)
         return 2
@@ -298,6 +316,8 @@ def main(argv=None):
         print("LOOT %s on %d active plugins; masterlist %s %s@%s%s" % (
             report["libloot"], report["active"], src["masterlist"]["repo"], src["masterlist"]["branch"],
             src["masterlist"]["commit"][:7], " (CACHED: " + src.get("fetch_problem", "") + ")" if src.get("from_cache") else ""))
+        print("userlist " + report["userlist"]["path"] if report["userlist"]
+              else "no userlist: rules set in LOOT's app are not applied (--userlist PATH)")
         print("%d plugin(s) LOOT would move; %d issue(s)" % (len(report["moves"]), len(report["issues"])))
         for m in report["moves"]:
             print("  move   %s -> after %s" % (m["plugin"], m["after"] or "(top)"))
