@@ -135,12 +135,27 @@ def _v4_section() -> str:
 
 def test_the_changelog_v4_section_is_the_whole_release():
     """Review L4a M4 / L6 F2: a 201-line '## Unreleased' above '## v4.0.0' never reached the release notes, which
-    release.yml extracts from the version heading to the next one."""
+    release.yml extracts from the version heading to the next one.
+
+    Between releases an '## Unreleased' section on top is normal; what must hold is that a release cannot ship
+    with it populated. scripts/check_changelog_release.py, run by the release workflow, is that gate: when the
+    section has entries, it must refuse the newest version heading below it."""
+    import importlib.util
     import re
     text = _read("CHANGELOG.md")
     first = text.index("\n## ")
-    # The first heading is a version (v4.1.0 since 4.1 opened), never an "Unreleased" section above it.
-    assert re.match(r"\n## v\d+\.\d+\.\d+ ", text[first:]), text[first:first + 40]
+    head = re.match(r"\n## (Unreleased|v(\d+\.\d+\.\d+)) ?", text[first:])
+    assert head, text[first:first + 40]
+    if head.group(1) == "Unreleased":
+        version = re.search(r"\n## v(\d+\.\d+\.\d+) ", text[first + 1:])
+        assert version, "no version heading below Unreleased"
+        body = text[first + len(head.group(0)):first + 1 + version.start()]
+        spec = importlib.util.spec_from_file_location("ccr", REPO / "scripts" / "check_changelog_release.py")
+        gate = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(gate)
+        # Populated = any non-blank line that is not a heading; empty `### Added` scaffolding is not (as in the gate).
+        if any(l.strip() and not gate.HEADING.match(l) for l in body.splitlines()):
+            assert gate.problem(text, version.group(1)), "the release gate would ship a populated Unreleased section"
     notes = _v4_section()
     for entry in ("housekeep", "House Carl", "S-SAVE-OPAQUE", "Knowledgebase notes get committed"):
         assert entry in notes, entry

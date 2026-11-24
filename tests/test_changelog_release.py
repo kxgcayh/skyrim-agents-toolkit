@@ -63,10 +63,12 @@ def test_the_cli_exit_codes_and_the_real_changelog(tmp_path):
     bad.write_text("## Unreleased\n\n- x\n\n" + V4, encoding="utf-8")
     run = lambda *a: subprocess.run([sys.executable, "-B", str(SCRIPT), *a], capture_output=True, text=True)
     assert run("v4.0.0", str(bad)).returncode == 1
-    # The real CHANGELOG is dated by the maintainer at tag time, so until then its only allowed problem is the
-    # undated heading: never assert a pass on it (review2 C-docs L5), but anything else is still a failure here.
+    # The real CHANGELOG is dated by the maintainer at tag time, and between releases it may carry a populated
+    # Unreleased section that the gate refuses until it is folded in. Those are its only allowed problems: never
+    # assert a pass on it (review2 C-docs L5), but anything else is still a failure here.
     real = run("v4.0.0", str(REPO / "CHANGELOG.md"))
-    assert real.returncode == 0 or (real.returncode == 1 and "still says 'unreleased'" in real.stdout), real.stdout
+    allowed = ("still says 'unreleased'", "has entries under 'Unreleased'")
+    assert real.returncode == 0 or (real.returncode == 1 and any(a in real.stdout for a in allowed)), real.stdout
     assert run().returncode == 2
 
 
