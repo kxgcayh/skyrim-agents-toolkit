@@ -68,7 +68,8 @@ reverted later, so never present its version number as fact.
 ## Stage 1: desk review (per mod)
 
 1. **Known-bad list:** if the user keeps a list of VR-broken mods or versions (in
-   `KNOWLEDGEBASE.local.md`), a hit closes the mod as `DON'T`.
+   `KNOWLEDGEBASE.local.md`; list hits with `python tools/kb-section.py --body <words>` and read each hit's section, never the whole file), a
+   hit that the section confirms closes the mod as `DON'T`.
 2. **Identify it:** `bash tools/nexus.sh find "<name>"` lists candidate ids. Ports, backports and
    "NG" rewrites share names: pick by author and page, and say which one you picked.
 3. **Read the page:** `bash tools/nexus.sh page <modId> --since <installed version>` prints the

@@ -110,7 +110,7 @@ For the page itself (comments, bugs, permissions), WebFetch gets a Cloudflare 40
 **Standing instruction**: after every debugging session, mod investigation, or web
 research, extract any new facts (engine quirks, VR vs SSE differences, API gotchas,
 tool limitations) and append them to **`KNOWLEDGEBASE.local.md`**, creating it if it
-does not exist. Read both files; write only to the local one. If git does not
+does not exist; index each new section. Read both files; write only to the local one. If git does not
 ignore it, commit it alone by explicit path (`git commit -m "KB" -- <file>`). Never push.
 
 ### Your preferences: `## My preferences`, read every session
@@ -118,11 +118,12 @@ ignore it, commit it alone by explicit path (`git commit -m "KB" -- <file>`). Ne
 `KNOWLEDGEBASE.local.md` holds the user's facts AND their standing instructions. Its
 `## My preferences` section is the user's instructions to you: **read it at the start of every
 session and follow it**. Never grant or imply an exception to it; no doc outranks it. On agents with session hooks the guards print it at session start; that is
-the same text. Read the rest of the file before making changes. When the user states a lasting
+the same text. Read `## Preference details` too, then `## Index` and only the sections you need
+(`python tools/kb-section.py <words>`), never the whole file. When the user states a lasting
 preference ("always…", "never…", "from now on…"), add it to that section. When you create the
 file, start it with an empty `## My preferences` section.
 
-**Why the split.** The upgrade path is "extract the new zip over your install", so any shipped file is replaced on update. Keeping user notes and preferences in `KNOWLEDGEBASE.local.md` ensures updates never overwrite them.
+**Why the split.** The upgrade path is "extract the new zip over your install", so any shipped file is replaced on update; the local file never is.
 
 ### The copy that covers the install you already have
 
@@ -275,7 +276,7 @@ Coverage and gaps: `docs/guard-coverage.md`.
   one worker per core, idle priority, time-boxed.
 
 ### Safety improvement loop
-After every session, near-miss or surprise, ask whether a new guard rule, protection or knowledgebase entry would have caught it -- proactively, when you notice a gap. Record proposals in a "Hook Candidates" section of `KNOWLEDGEBASE.local.md`.
+After every session, near-miss or surprise, ask whether a new guard rule, protection or knowledgebase entry would have caught it, unprompted. Record proposals in a "Hook Candidates" section of `KNOWLEDGEBASE.local.md`.
 
 ### Audit trail
 - On agents with hooks, files changed through the edit tools are backed up to `.claude/backups/` first. ⚠ A file a script writes is not backed up (see the knowledgebase note above).

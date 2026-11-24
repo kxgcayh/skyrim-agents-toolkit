@@ -21,7 +21,7 @@ If `toolkit.env` is missing or points nowhere, say so and ask the user to re-run
 | Something you build or patch | `mods/<Name>/` (own repo; `src/`, `build/`, `dist/`) |
 | Audits, sorted lists, generated reports | `reports/` |
 | Throwaway files, test output, a fake game folder for a test | `scratch/<task>/` |
-| Notes you want to keep across sessions | `KNOWLEDGEBASE.local.md` in the toolkit (it is never shipped) |
+| Notes you want to keep across sessions | `KNOWLEDGEBASE.local.md` in the toolkit (it is never shipped; read single sections with `python tools/kb-section.py <words>` from the toolkit root, never the whole file) |
 
 ## Rules
 
