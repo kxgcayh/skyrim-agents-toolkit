@@ -67,6 +67,9 @@ Matchers are compared with a full match against the tool name (measured below: `
 | `Bash\|PowerShell\|Monitor` | protect-bash, snapshot-before-tool |
 | `Edit\|Write\|NotebookEdit` | protect-files, backup-before-edit |
 | `mcp__.*[Dd][Ee][Vv][-_. ]?[Bb][Ee][Nn][Cc][Hh].*` | protect-mcp |
+| `Read\|Grep\|Glob\|Bash\|Edit\|Write\|NotebookEdit` | doc-inject (`tools/doc-inject.sh`) |
+
+doc-inject injects reference text only and guards nothing; a route matched only by it counts as unguarded.
 
 ## Routes
 

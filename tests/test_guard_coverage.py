@@ -1,8 +1,8 @@
 """The guard-coverage inventory (docs/guard-coverage.md) is checked against the shipped matchers (Plan 5 Task 14).
 
 WHAT FAILS
-  - a route marked guarded/partial whose tool name no PreToolUse matcher fires on (the doc claims a hook the settings lack);
-  - a route marked uncovered/absent whose tool name a matcher now fires on (the doc is stale: the gap was closed);
+  - a route marked guarded/partial whose tool name no guard's PreToolUse matcher fires on;
+  - a route marked uncovered/absent whose tool name a guard's matcher now fires on (the doc is stale: the gap was closed);
   - a PreToolUse matcher with no row in the matcher table, or a table row with no matcher;
   - a literal tool name in a matcher that no route lists (a matcher naming a route the inventory lacks);
   - a summary count that does not equal the rows, or a status outside the key, or a row with no evidence tier.
@@ -59,6 +59,13 @@ def claude_matchers(settings):
     return [e["matcher"] for e in settings["hooks"]["PreToolUse"]]
 
 
+def guard_matchers(settings):
+    """Only policy hooks provide guard coverage; reference injection and backups do not."""
+    return [e["matcher"] for e in settings["hooks"]["PreToolUse"]
+            if any(re.search(r'[/\\]protect-(?:bash|files|mcp)\.sh(?:["\s]|$)', h.get("command", ""))
+                   for h in e.get("hooks", []))]
+
+
 def fires(matcher, tool):
     return re.fullmatch(matcher, tool) is not None
 
@@ -68,6 +75,7 @@ def check(settings, text):
     problems = []
     tabs = tables(text)
     matchers = claude_matchers(settings)
+    guards = guard_matchers(settings)
     mrows = next((r for h, r in tabs.items() if h.startswith("Claude Code PreToolUse matchers")), None)
     rrows = tabs.get("Routes")
     if mrows is None or rrows is None:
@@ -106,9 +114,9 @@ def check(settings, text):
         if agent != "claude":
             continue        # Codex rows: the Codex target is not in this branch; its matcher is `.*` (master hooks.json)
         for n in names:
-            hit = [m for m in matchers if fires(m, n)]
+            hit = [m for m in guards if fires(m, n)]
             if status in SEEN and not hit:
-                problems.append("GUARDED-BUT-UNMATCHED: %s %s is %s but no matcher fires on it" % (rid, n, status))
+                problems.append("GUARDED-BUT-UNMATCHED: %s %s is %s but no guard matcher fires on it" % (rid, n, status))
             if status in UNSEEN and hit:
                 problems.append("UNCOVERED-BUT-MATCHED: %s %s is %s but matcher %r fires on it" % (rid, n, status, hit[0]))
     for m in matchers:
@@ -156,7 +164,7 @@ def test_measured_gaps_are_closed_by_a_matcher_and_the_doc_says_so():
     rows = {r[0]: r for r in tables(text)["Routes"][1:]}
     for rid, tool in (("C7", "NotebookEdit"), ("C8", "Monitor")):
         assert rows[rid][4] == "guarded", rid
-        assert any(fires(m, tool) for m in claude_matchers(settings)), tool
+        assert any(fires(m, tool) for m in guard_matchers(settings)), tool
 
 
 # ---- mutations: one twin per clause, each must produce its own named problem ----
@@ -169,6 +177,9 @@ def test_mutation_matcher_removed_makes_a_guarded_route_unmatched():
     settings, text = load()
     s = json.loads(json.dumps(settings))
     s["hooks"]["PreToolUse"] = [e for e in s["hooks"]["PreToolUse"] if e["matcher"] != "Edit|Write|NotebookEdit"]
+    for tool in ("Edit", "Write", "NotebookEdit"):
+        assert any(fires(m, tool) for m in claude_matchers(s)), tool
+        assert not any(fires(m, tool) for m in guard_matchers(s)), tool
     p = check(s, text)
     assert _has(p, "GUARDED-BUT-UNMATCHED"), p
     assert _has(p, "MATCHER-NOT-IN-SETTINGS"), p
@@ -177,10 +188,32 @@ def test_mutation_matcher_removed_makes_a_guarded_route_unmatched():
 def test_mutation_matcher_added_is_flagged_both_ways():
     settings, text = load()
     s = json.loads(json.dumps(settings))
-    s["hooks"]["PreToolUse"].append({"matcher": "EnterWorktree", "hooks": []})
+    s["hooks"]["PreToolUse"].append({"matcher": "EnterWorktree", "hooks": settings["hooks"]["PreToolUse"][0]["hooks"]})
     p = check(s, text)
     assert _has(p, "UNCOVERED-BUT-MATCHED"), p      # the doc still calls EnterWorktree uncovered
     assert _has(p, "MATCHER-NOT-DOCUMENTED"), p
+
+
+def test_reference_only_matcher_does_not_close_an_uncovered_route():
+    settings, text = load()
+    s = json.loads(json.dumps(settings))
+    reference = next(e for e in s["hooks"]["PreToolUse"]
+                     if any("doc-inject.sh" in h.get("command", "") for h in e["hooks"]))
+    s["hooks"]["PreToolUse"].append({"matcher": "EnterWorktree", "hooks": reference["hooks"]})
+    p = check(s, text)
+    assert not _has(p, "UNCOVERED-BUT-MATCHED"), p
+    assert _has(p, "MATCHER-NOT-DOCUMENTED"), p
+
+
+def test_guard_removed_from_hooks_is_detected_even_if_matcher_remains():
+    settings, text = load()
+    s = json.loads(json.dumps(settings))
+    entry = next(e for e in s["hooks"]["PreToolUse"] if e["matcher"] == "Edit|Write|NotebookEdit")
+    entry["hooks"] = [h for h in entry["hooks"] if "protect-files.sh" not in h.get("command", "")]
+    assert entry["hooks"]  # the backup hook still runs, but does not guard the route
+    p = check(s, text)
+    assert _has(p, "GUARDED-BUT-UNMATCHED"), p
+    assert not _has(p, "MATCHER-NOT-IN-SETTINGS"), p
 
 
 def test_mutation_unlisted_tool_in_a_matcher():
