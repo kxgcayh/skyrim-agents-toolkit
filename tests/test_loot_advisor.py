@@ -562,6 +562,12 @@ def test_render_refuses_a_plugins_txt_entry_the_sort_lost():
         loot_advisor.render(['Skyrim.esm'], ['*Lost.esp'])
 
 
+def test_render_drops_an_inactive_entry_whose_plugin_is_gone(capsys):
+    lo, pl = loot_advisor.render(['Skyrim.esm', 'A.esp'], ['*A.esp', 'Gone.esp'])
+    assert pl == loot_advisor.HEADER + '\r\n*A.esp\r\n'
+    assert 'Gone.esp' in capsys.readouterr().err
+
+
 def _app_fixture(tmp_path, userlist=False, game_folder='Skyrim Special Edition'):
     app = tmp_path / 'app'
     game = app / 'games' / game_folder

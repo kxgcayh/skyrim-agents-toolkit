@@ -359,13 +359,18 @@ def apply_locks(order: list[str], locks: list[tuple[str, int]]) -> list[str]:
 
 def render(order: list[str], plugins_lines: list[str]) -> tuple[str, str]:
     """(loadorder.txt, plugins.txt) in MO2's format. plugins.txt keeps each original line (its '*' and spelling) and
-    lists only the plugins it listed before (the implicit base-game and Creation Club plugins are not in it)."""
+    lists only the plugins it listed before (the implicit base-game and Creation Club plugins are not in it).
+    An inactive line whose plugin the sort does not have (its file is gone) is dropped, as MO2 drops it on start;
+    an active one still refuses."""
     orig = {l.lstrip('*').lower(): l for l in plugins_lines}
     lo = [HEADER] + order
     pl = [HEADER] + [orig[p.lower()] for p in order if p.lower() in orig]
     missing = set(orig) - {p.lower() for p in order}
-    if missing:
-        raise ValueError('plugins.txt lists plugins the sort does not have: ' + ', '.join(sorted(missing)[:5]))
+    active = sorted(m for m in missing if orig[m].startswith('*'))
+    if active:
+        raise ValueError('plugins.txt lists plugins the sort does not have: ' + ', '.join(active[:5]))
+    for m in sorted(missing):
+        print(f'note: dropped inactive plugins.txt entry with no plugin file: {orig[m]}', file=sys.stderr)
     return '\r\n'.join(lo) + '\r\n', '\r\n'.join(pl) + '\r\n'
 
 
