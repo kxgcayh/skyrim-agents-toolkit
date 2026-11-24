@@ -341,3 +341,130 @@ def test_real_repo_source_read_is_silent(repo_lookup):
     payload = pre_tool("Read", {"file_path": "/fixture/Scripts/Source/Example.psc"})
     payload.pop("session_id")
     assert hook(repo_lookup, payload) == ""
+
+
+@pytest.mark.parametrize("agent", ["claude", "codex"])
+@pytest.mark.parametrize("command", [
+    "python3 - <<EOF\nprint('ranking nexusmods-surfer VMAD values')\nEOF",
+    "python3 - <<'EOF'\nprint('ranking')\nEOF",
+    'cat > plan.md <<"EOF"\nranking Caprica MO2 Spriggit\nEOF',
+    "cat > plan.md <<-EOF\n\tranking\n\tEOF",
+    "cat <<EOF\nranking",  # unfinished input is still advisory
+    "cat <<A <<'B'\nranking\nA\nranking\nB",
+    "python3 -c \"print('ranking')\"",
+    "node -e 'console.log(\"ranking\")'",
+    "bash -lc 'echo ranking'",
+    "fish -c 'echo ranking'",
+    "git commit -m 'ranking'",
+    "git commit --message='ranking'",
+    "git commit -mranking",
+    "git commit -F - <<EOF\nranking\nEOF",
+    "git commit -m \"$(cat <<'EOF'\nranking\nEOF\n)\"",
+    "cat <<< 'ranking'",
+])
+def test_command_embedded_text_is_silent(lookup, command, agent):
+    _, run = lookup
+    assert hook(run, pre_tool("Bash", {"command": command}), agent) == ""
+
+
+@pytest.mark.parametrize("command", [
+    "ranking --flag /fixture/file",
+    "cat <<EOF; ranking\nignored\nEOF",
+    "cat <<'EOF'\nignored\nEOF\nranking",
+    "cat <<-EOF && ranking\n\tignored\n\tEOF",
+    "python3 -c 'print(123)' && ranking",
+])
+def test_real_command_survives_embedded_text_filter(lookup, command):
+    _, run = lookup
+    payload = pre_tool("Bash", {"command": command})
+    assert "## First" in hook(run, payload)
+    assert hook(run, payload) == ""
+
+
+@pytest.mark.parametrize("command, expected", [
+    ("caprica --game skyrim Script.psc", "kb-papyrus-compile"),
+    ("champollion Example.pex -p /tmp/out", "kb-papyrus-compile"),
+    ("bash tools/spriggit-cli.sh serialize --input Example.esp", "kb-spriggit"),
+    ("spriggit serialize --input Example.esp", "kb-spriggit"),
+    ("bash tools/nexusmods-surfer/run.sh 123", "local-nexus"),
+    ("bash tools/nexus.sh mod 123", "local-nexus"),
+    ("nexus-download 123", "local-nexus"),
+    ("xelib inspect Example.esp", "kb-mo2-layout"),
+    ("xeditlib inspect Example.esp", "kb-mo2-layout"),
+    ("git init", "local-creating-a-mod"),
+    ("mkdir /fixture/mods/example", "local-creating-a-mod"),
+    ("git clone https://example.com/repo", "local-patching-source"),
+    ("git submodule status", "local-patching-source"),
+    ("bash tools/link-submodules.sh", "local-patching-source"),
+    ("gh release view", "local-releasing"),
+    ("python3 tools/release.py --help", "local-releasing"),
+    ("python3 tools/foo.py -c tools/nexusmods-surfer/x.json", "local-nexus"),
+    ("python3 -m tools.foo -c tools/nexusmods-surfer/x.json", "local-nexus"),
+])
+def test_repository_command_regexes_survive_filter(command, expected):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("doc_lookup", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    entries = {entry["id"]: entry for entry in module.load_entries()}
+    if expected not in entries:
+        pytest.skip("Local index entry unavailable")
+    _, text, paths, cmd = module.event_from_payload(pre_tool("Bash", {"command": command}))
+    assert module.score(entries[expected], text, paths, cmd, False, prompt=False) > 0
+
+
+def test_explicit_paths_survive_code_filter(lookup):
+    _, run = lookup
+    payload = pre_tool("Bash", {"command": "python3 -c 'print(123)'", "path": SLIDER_PATH})
+    assert_slider(hook(run, payload))
+
+
+def test_codex_argv_keeps_inline_code_as_one_argument(lookup):
+    _, run = lookup
+    assert hook(run, pre_tool("Bash", {"command": ["python3", "-c", "print('ranking')"]}), "codex") == ""
+
+
+@pytest.mark.parametrize("command", [
+    "python3 tools/foo.py -c ranking",
+    "python3 -m tools.foo -c ranking",
+    "python3 -- tools/foo.py -c ranking",
+    "bash tools/x.sh -e ranking",
+    "node script.js -p ranking",
+    "python3 tools/foo.py bash -c ranking",
+    "ssh -c ranking host",
+    "customsh -c ranking",
+    "fishlike -c ranking",
+    "python3 -c 'print(123)' ; node script.js -p ranking",
+])
+def test_script_flags_and_non_shell_programs_preserve_arguments(lookup, command):
+    _, run = lookup
+    assert "## First" in hook(run, pre_tool("Bash", {"command": command}))
+
+
+@pytest.mark.parametrize("command", [
+    "python3 - <<EOF\nprint('nexusmods-surfer VMAD values')\nEOF",
+    "cat > note.md <<'EOF'\nracemenu-headpart-sliders\nEOF",
+    "git commit -F - <<EOF\nCaprica MO2 layout Spriggit\nEOF",
+    "cat > plan.md <<EOF\nCaprica MO2 layout Spriggit\nEOF",
+    "python3 -c \"print('nexusmods-surfer VMAD values')\"",
+    "node -e 'console.log(\"VMAD Caprica Spriggit\")'",
+    "bash -c 'echo nexusmods-surfer VMAD'",
+])
+def test_reported_false_positives_against_repository_index(repo_lookup, command):
+    payload = pre_tool("Bash", {"command": command})
+    payload.pop("session_id")
+    assert hook(repo_lookup, payload) == ""
+
+
+def test_devbench_invocation_keeps_command_path(lookup):
+    root, run = lookup
+    index = root / "agent" / "doc-index.json"
+    data = json.loads(index.read_text())
+    data["entries"].append({
+        "id": "devbench", "file": "docs/ranking.md", "targets": ["Third"],
+        "commands": [r"devbench-cli\.sh"],
+    })
+    index.write_text(json.dumps(data))
+    assert "## Third" in hook(run, pre_tool("Bash", {
+        "command": "bash tools/devbench-cli.sh health",
+    }))

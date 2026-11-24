@@ -16,6 +16,7 @@ import json
 import os
 import pathlib
 import re
+import shlex
 import sys
 import tempfile
 
@@ -179,6 +180,120 @@ def _norm(s):
     return s.replace("\\", "/").lower()
 
 
+def command_context(command):
+    """Keep shell invocation context, excluding embedded source and message text.
+
+    This is a bounded lexical scan, not shell execution or a shell parser. Heredoc
+    delimiters are queued until the next newline, in shell redirection order.
+    """
+    tokens = []
+    pending = []
+    i = 0
+    expect_delimiter = None
+    while i < len(command):
+        c = command[i]
+        if c == "\n":
+            tokens.append("\n")
+            i += 1
+            for delimiter, tabs in pending:
+                while i < len(command):
+                    end = command.find("\n", i)
+                    end = len(command) if end < 0 else end
+                    line = command[i:end]
+                    i = min(end + 1, len(command))
+                    if (line.lstrip("\t") if tabs else line) == delimiter:
+                        break
+            pending.clear()
+            continue
+        if c.isspace():
+            i += 1
+            continue
+        if c == "#":
+            end = command.find("\n", i)
+            i = len(command) if end < 0 else end
+            continue
+        if command.startswith("<<<", i):
+            tokens.append("<<<")
+            i += 3
+            continue
+        if command.startswith("<<", i):
+            expect_delimiter = command.startswith("<<-", i)
+            i += 3 if expect_delimiter else 2
+            continue
+        if c in ";|&()<>":
+            tokens.append(c)
+            i += 1
+            continue
+        start = i
+        quote = None
+        while i < len(command):
+            c = command[i]
+            if c == "\\" and quote != "'":
+                i = min(i + 2, len(command))
+                continue
+            if quote:
+                if c == quote:
+                    quote = None
+            elif c in "\"'":
+                quote = c
+            elif c.isspace() or c in ";|&()<>":
+                break
+            i += 1
+        raw = command[start:i]
+        if expect_delimiter is not None:
+            try:
+                delimiter = shlex.split(raw)[0]
+            except (ValueError, IndexError):
+                delimiter = raw.strip("\"'")
+            pending.append((delimiter, expect_delimiter))
+            expect_delimiter = None
+        else:
+            tokens.append(raw)
+
+    out = []
+    interpreter = git = False
+    interpreter_seen = False
+    skip = False
+    for token in tokens:
+        if token in ("\n", ";", "|", "&", "(", ")"):
+            interpreter = git = skip = False
+            interpreter_seen = False
+            out.append(token)
+            continue
+        if skip:
+            skip = False
+            continue
+        value = token.strip("\"'")
+        name = value.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if not interpreter_seen and re.fullmatch(
+            r"(?:python(?:\d+(?:\.\d+)*)?|node(?:js)?|sh|bash|zsh|dash|ksh|fish)(?:\.exe)?", name
+        ):
+            interpreter = True
+            interpreter_seen = True
+            out.append(token)
+            continue
+        if name in ("git", "git.exe"):
+            git = True
+        if interpreter and re.fullmatch(r"-(?:[a-zA-Z]*c|e|p)|--eval|--print", value):
+            skip = True
+            interpreter = False
+        elif interpreter and re.match(r"(?:-c.|-e.|--eval=|--print=)", value):
+            interpreter = False
+            out.append(value.split("=", 1)[0] if "=" in value else value[:2])
+            continue
+        elif git and value in ("-m", "--message"):
+            skip = True
+        elif git and (value.startswith("--message=") or value.startswith("-m") and len(value) > 2):
+            out.append("--message")
+            continue
+        elif token == "<<<":
+            skip = True
+        if interpreter and (not value.startswith("-") or value in ("-", "--")):
+            interpreter = False
+        out.append(token)
+    return " ".join(out)
+
+
 def event_from_payload(d):
     """(event name, text, paths, command) from a Claude or Codex hook payload."""
     ev = d.get("hook_event_name") or ""
@@ -190,7 +305,8 @@ def event_from_payload(d):
     paths = [ti[k] for k in PATH_KEYS if isinstance(ti.get(k), str)]
     cmd = next((ti[k] for k in COMMAND_KEYS if isinstance(ti.get(k), str)), "")
     if not cmd and isinstance(ti.get("command"), list):          # Codex may pass argv as a list
-        cmd = " ".join(str(x) for x in ti["command"])
+        cmd = shlex.join(str(x) for x in ti["command"])
+    cmd = command_context(cmd)
     pattern = ti.get("pattern") if isinstance(ti.get("pattern"), str) else ""
     tool = d.get("tool_name") if isinstance(d.get("tool_name"), str) else ""
     if cmd and isinstance(d.get("cwd"), str) and d["cwd"]:
