@@ -132,6 +132,7 @@ first. All three exit 0 nothing found, 1 findings, 2 could not check.
 
 ```bash
 python tools/loot_advisor.py [--json] [--offline] [--userlist PATH]   # LOOT's order + masterlist messages for the ACTIVE plugins
+python tools/loot_advisor.py --from-app [DIR] --propose [DIR]  # SE/AE proposal outside the profile; never applies it
 ```
 
 It asks libloot (LOOT's own library; wheels ship for Python 3.10-3.13 on Windows x64, elsewhere
@@ -143,6 +144,13 @@ newest LOOT publishes for this libloot, fetched at run time; a failed fetch uses
 writes plugins.txt, loadorder.txt or LOOT's files. A move is advice: Wrye Bash or the mod manager owns the order,
 and on a kept save read `## My preferences` in KNOWLEDGEBASE.local.md before reordering anything. Exit 0 nothing
 to add, 1 findings, 2 could not check. Details: docs/loot.md.
+
+`--from-app [DIR]` uses the app's local masterlist, prelude and optional userlist, without fetching. DIR defaults
+to `LOOT_APP_DIR` in the environment or `skyrim-paths.env`; no user path is built in. `--propose [DIR]` implies app
+lists, applies MO2 locked positions after sorting, and writes proposed CRLF order files, issues and input hashes.
+Its default is `<workspace>/scratch/loot-sort/<profile>-<timestamp>/`; output inside the profile is refused.
+Proposal mode is SE/AE only: 0 byte-identical, 1 review proposal, 2 failure. Review the files and messages before
+giving the user the printed checksum/backup/apply command. Never run it for them. Plain advisory behavior is unchanged.
 
 ## mirror-launch-logs — keep the logs the next launch would overwrite
 

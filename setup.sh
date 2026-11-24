@@ -1041,6 +1041,12 @@ _keep SKYRIM_LOADORDER_DIR LOADORDER_DIR
 _keep SKYRIM_MO2_MODS MO2_MODS
 _keep SKYRIM_MO2_OVERWRITE MO2_OVERWRITE
 
+# Optional tool configuration is user-owned; unlike detected paths it has no replacement value.
+LOOT_APP_KEEP=""
+if [ -f "$PATHS_ENV" ]; then
+    LOOT_APP_KEEP=$(tr -d '\r' < "$PATHS_ENV" | sed -n -E 's/^[[:space:]]*(export[[:space:]]+)?(LOOT_APP_DIR=.*)/\2/p' | tail -n 1)
+fi
+
 # --- The workspace: where every new file goes, never the toolkit (docs/workspace.md) ---
 # Absolute, forward slashes, native form under Git Bash; a folder that does not exist yet is named by its parent.
 ws_norm() {
@@ -1080,6 +1086,7 @@ fi
     printf 'SKYRIM_MO2_OVERWRITE=%s\n' "$(sq "$MO2_OVERWRITE")"
     # The workspace folder (docs/workspace.md): where every new file goes. No guarded root; '' = none recorded.
     printf 'SKYRIM_WORKSPACE_DIR=%s\n' "$(sq "$WORKSPACE_DIR")"
+    if [ -n "$LOOT_APP_KEEP" ]; then printf '%s\n' "$LOOT_APP_KEEP"; fi
     # One line per MO2 profile that keeps its own saves (none on a stock install). Its own key: a shell sourcing this
     # file keeps only the last line of a repeated key, so SKYRIM_CONFIG_DIR stays one value.
     for pd in "${PROFILE_SAVES[@]+"${PROFILE_SAVES[@]}"}"; do printf 'SKYRIM_PROFILE_SAVES=%s\n' "$(sq "$pd")"; done

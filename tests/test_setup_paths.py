@@ -184,8 +184,7 @@ def test_mo2_instance_ini_escape_hatch_works(portable_mo2, tmp_path):
     ini = inst / "MO2" / "ModOrganizer.ini"
     moved = inst / "Elsewhere" / "ModOrganizer.ini"
     moved.parent.mkdir(parents=True, exist_ok=True)
-    moved.write_text(ini.read_text(encoding="utf-8"), encoding="utf-8", newline="\n")
-    ini.unlink()  # only reachable via the env override now
+    ini.rename(moved)  # preserve the fixture; only reachable via the env override now
     r = run_setup(game, env_overrides={"MO2_INSTANCE_INI": str(moved).replace("\\", "/")})
     assert r.returncode == 0, r.stdout + r.stderr
     assert "Mod Organizer 2" in key_path(game, "Mod manager"), "escape hatch did not resolve"
@@ -497,7 +496,7 @@ def test_setup_renders_definitions_deterministically(tmp_path):
     assert "Already configured: .codex/hooks.json" in again.stdout, again.stdout
     assert game.joinpath(".codex", "hooks.json").read_bytes() == first
     # A second install at the SAME path from a different shell environment (the PATH shims first).
-    shutil.rmtree(game)
+    game.rename(tmp_path / 'first-install')
     game = make_game(tmp_path, name="Skyrim VR")
     assert run_setup(game, shim_path=True).returncode == 0
     assert game.joinpath(".codex", "hooks.json").read_bytes() == first
@@ -624,6 +623,17 @@ def test_a_hand_set_path_survives_a_rerun_and_can_be_reset(tmp_path):
     r = run_setup(game, env_overrides={"SKYRIM_PREFER_DETECTED": "1"})
     assert r.returncode == 0, r.stdout + r.stderr
     assert re.search(r"(?m)^SKYRIM_MO2_MODS=''$", env.read_text(encoding="utf-8"))
+
+
+def test_loot_app_dir_survives_setup_reruns(game_dir):
+    assert run_setup(game_dir).returncode == 0
+    env = game_dir / 'skyrim-paths.env'
+    setting = "LOOT_APP_DIR='/configured/LOOT app'"
+    env.write_text(env.read_text(encoding='utf-8') + setting + '\n', encoding='utf-8')
+    for _ in range(2):
+        result = run_setup(game_dir)
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert env.read_text(encoding='utf-8').splitlines().count(setting) == 1
 
 
 def test_a_path_setup_wrote_itself_follows_what_it_detects_now(tmp_path):

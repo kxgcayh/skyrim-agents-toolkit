@@ -38,6 +38,7 @@ All under `tools/`:
 | **crash-triage** | CrashLogger dumps → ranked signatures | `python tools/crash-triage.py [dir\|file] [--frames N] [--all]` |
 | **mod-sizes** | MO2 mods by size; search by mod or plugin name (read-only) | `python tools/mod-sizes.py [search] [--enabled] [--top N]` |
 | **DevBench** | **LIVE in-game** inspect / console / Papyrus / scenario | `bash tools/devbench-cli.sh <command>`; skill `devbench` |
+| **loot-advisor** | LOOT advice or an SE/AE order proposal outside the profile | `python tools/loot_advisor.py [--from-app [DIR]] [--propose [DIR]]`; `docs/loot.md` |
 
 - **Caprica**: run from `Data/Scripts/Source` with bare filename and `-i` for base sources (skill `skyrim-context`).
 - **PyFFI / PyNifly**: LE NiTriShape vs SSE BSTriShape limits below; skill `skyrim-nif`.

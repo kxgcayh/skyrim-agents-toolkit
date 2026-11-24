@@ -1,7 +1,7 @@
 # LOOT advisor (read-only)
 
 `tools/loot_advisor.py` tells the agent what LOOT would say about the active load order. It changes nothing: it
-never writes `plugins.txt`, `loadorder.txt` or LOOT's own files, and it never calls libloot's order-writing
+never writes the live profile's `plugins.txt`, `loadorder.txt` or LOOT's own files, and it never calls libloot's order-writing
 functions (a test runs it against a fake libloot that fails on any such call, and a mutation test proves that test
 goes red when one is added). That test cannot see inside the real libloot; the E2E run on a real install compares
 `plugins.txt` and `loadorder.txt` byte for byte before and after.
@@ -43,6 +43,36 @@ the cached copy, so a masterlist libloot cannot read never becomes the cache. Th
 and the report says CACHED with the reason, but only when its branch is one this libloot reads; with no usable copy
 the result is could-not-check.
 
+## Local app lists and SE/AE proposals
+
+```sh
+python tools/loot_advisor.py --from-app /path/to/LOOT
+python tools/loot_advisor.py --from-app /path/to/LOOT --propose /path/to/proposal
+```
+
+`--from-app [DIR]` reads `games/<game folder>/masterlist.yaml`, `prelude/prelude.yaml`, and optional
+`games/<game folder>/userlist.yaml`. It makes no network request. Omitting DIR uses `LOOT_APP_DIR` from the
+environment or a literal entry in `skyrim-paths.env`; no machine-specific location is assumed. Explicit
+`--userlist PATH` overrides the app userlist for advice. The ordinary command without these flags is unchanged.
+
+`--propose [DIR]` implies local app lists and supports Skyrim SE/AE only. `--plugins-txt PATH` selects the profile;
+otherwise the configured profile is used. It cannot be combined with `--data`, `--userlist`, or `--json`.
+Both local modes reject `--offline`, since app lists already require no network. Proposals require MO2 folders
+or a `modlist.txt` in the selected profile. Setup preserves a literal `LOOT_APP_DIR` entry on reruns.
+The default output is `<workspace>/scratch/loot-sort/<profile>-<timestamp>/`, using `SKYRIM_WORKSPACE_DIR`.
+Output inside the profile is refused. It writes CRLF `loadorder.txt` and `plugins.txt`, `moves.txt`, `issues.txt`,
+`inputs.sha256`, and a `libloot-input/` copy of the input plugins file. MO2 `lockedorder.txt` positions are applied
+after sorting. The original active markers and spelling in `plugins.txt` are preserved; implicit base plugins
+are omitted from that file.
+
+Exit 0 means the proposal matches the profile byte for byte; 1 means a proposal needs review; 2 means sorting
+failed. Exit 0 can still include LOOT findings: it describes file equality, not a clean bill of health.
+Review both proposed files and `issues.txt`. The printed apply command is for the user: close MO2 first;
+it checks `pgrep -f ModOrganizer` on macOS/Linux, checks SHA-256 hashes of the original `plugins.txt`,
+`loadorder.txt` and `lockedorder.txt` when present, backs up existing profile order files, then copies the proposal.
+A missing `loadorder.txt` is created by the apply command without attempting to back it up. The tool never runs that command
+or writes the live profile. Local app lists may be older than GitHub's lists, so their results can differ.
+
 ## libloot
 
 libloot is the library LOOT is built on (GPL-3.0-or-later, by the LOOT Team). The toolkit ships it as wheels for
@@ -64,9 +94,12 @@ loader also refuses a file in the unpacked copy that the wheel does not hold.
 
 ## Limits
 
+- Proposal mode cannot render a profile with any disabled plugin listed in `plugins.txt`: it sorts active plugins only.
+  The error is `COULD NOT SORT: could not render proposal: plugins.txt lists plugins the sort does not have: <names>`
+  (up to five names, lowercased).
 - It reads plugin headers and the masterlist; it does not run LOOT's GUI. LOOT's `userlist.yaml` (the rules set in
-  LOOT's app) is applied only with `--userlist PATH`, which the report names with its sha256; without it the order is
+  LOOT's app) is applied with `--userlist PATH` or `--from-app`; advisory reports name it with its sha256. Without either the order is
   the masterlist's alone, so a rule you set in LOOT can show up as a move. LOOT keeps the file at
-  `%LOCALAPPDATA%\LOOT\games\<game folder>\userlist.yaml` (inside the bottle under CrossOver). The tool never finds it
-  on its own: a guessed file would sort by rules nobody chose for this install.
+  `%LOCALAPPDATA%\LOOT\games\<game folder>\userlist.yaml` (inside the bottle under CrossOver). Local app discovery
+  requires opting in with `--from-app` or `--propose` and choosing the app directory explicitly or through configuration.
 - A masterlist message is LOOT's community data, not a measurement of your install: check it before acting.
