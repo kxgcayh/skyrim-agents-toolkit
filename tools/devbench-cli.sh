@@ -43,6 +43,9 @@
 #                                                         #   JSON); --timeout 15 --every 1; 0 matched, 3 timeout
 #   bash tools/devbench-cli.sh coc CYRBrumaChapel [--timeout 120]        # coc, then wait until the load is over
 #                                                         #   and the player is in the cell; 4 = cell rejected
+#   bash tools/devbench-cli.sh cellcycle CellA CellB [--doors 0xAtoB,0xBtoA] [--rounds 10] [--settle 3] [--log F]
+#                                                         # round-trip two cells (coc, or door Activate) until a
+#                                                         #   failure: 1 game stopped, 2 not in the cell, 4 bad door
 #   bash tools/devbench-cli.sh goto BSHeartland.esm:0012F7 [--dist 150] [--z 20] [--if-unloaded]
 #                                                         # player BESIDE the ref, facing it (moveto onto a ref
 #                                                         #   traps the player in its collision); 4 = not in memory
@@ -479,6 +482,7 @@ filter_entries() { # $1 errors 0|1  $2 grep ERE  $3 ref hex (8 digits, upper cas
 F_LINES=0; F_VALUE=0; F_GPU=0; F_INGAME=0; F_ERRORS=0; GREP=""; HAVE_GREP=0
 MARK_NAME=""; F_REF=""; F_EQUALS=""; HAVE_EQUALS=0; F_TIMEOUT=""; F_EVERY=1; F_WAIT=0; F_ANSWER=""; HAVE_ANSWER=0
 F_DIST=150; F_Z=20; F_IFUNLOADED=0
+F_DOORS=""; F_ROUNDS=10; F_LOG=""; F_SETTLE=3
 _flagval() { [ $# -ge 2 ] || { echo "ERROR: $CMD $1 needs a value." >&2; exit 1; }; }
 _num() { case "$2" in ''|*[!0-9.-]*) echo "ERROR: $CMD $1 needs a number, got '$2'." >&2; exit 1 ;; esac; }
 _args=()
@@ -499,7 +503,11 @@ while [ $# -gt 0 ]; do
         --ref)    if [ "$CMD" = logdiff ]; then _flagval "$@"; shift; F_REF="$1"; else _args+=("$1"); fi ;;
         --equals) if [ "$CMD" = waitcall ]; then _flagval "$@"; shift; F_EQUALS="$1"; HAVE_EQUALS=1
                   else _args+=("$1"); fi ;;
-        --timeout) if [ "$CMD" = waitcall ] || [ "$CMD" = coc ] || [ "$CMD" = goto ]; then
+        --doors)  if [ "$CMD" = cellcycle ]; then _flagval "$@"; shift; F_DOORS="$1"; else _args+=("$1"); fi ;;
+        --rounds) if [ "$CMD" = cellcycle ]; then _flagval "$@"; _num "$1" "$2"; shift; F_ROUNDS="$1"; else _args+=("$1"); fi ;;
+        --log)    if [ "$CMD" = cellcycle ]; then _flagval "$@"; shift; F_LOG="$1"; else _args+=("$1"); fi ;;
+        --settle) if [ "$CMD" = cellcycle ]; then _flagval "$@"; _num "$1" "$2"; shift; F_SETTLE="$1"; else _args+=("$1"); fi ;;
+        --timeout) if [ "$CMD" = waitcall ] || [ "$CMD" = coc ] || [ "$CMD" = goto ] || [ "$CMD" = cellcycle ]; then
                       _flagval "$@"; _num "$1" "$2"; shift; F_TIMEOUT="$1"; else _args+=("$1"); fi ;;
         --every)  if [ "$CMD" = waitcall ]; then _flagval "$@"; _num "$1" "$2"; shift; F_EVERY="$1"; else _args+=("$1"); fi ;;
         --wait)   if [ "$CMD" = msgbox ]; then _flagval "$@"; _num "$1" "$2"; shift; F_WAIT="$1"; else _args+=("$1"); fi ;;
@@ -909,6 +917,105 @@ case "$CMD" in
           fi
       done ;;
 
+  cellcycle)
+      # Round-trip the player between two cells and stop at the first failure: a crash-reproduction loop.
+      # Without --doors each entry is a `coc` (the subcommand above). With --doors A2B,B2A each entry activates the
+      # door with the player as activator, as walking through it does. `coc` runs the cell change on a job thread
+      # while the main thread draws (seen 2026-11-25: 5 of 5 coc loops crashed, 40 of 40 door round trips did not),
+      # so a crash seen only with coc is not proof of a mod fault: confirm it with --doors.
+      # Exit 0 all entries ok, 1 the game stopped (crash or hang), 2 the player did not reach the cell, 4 bad door ref.
+      [ $# -ge 2 ] || { echo "usage: devbench-cli.sh cellcycle <CellA> <CellB> [--doors <refAtoB>,<refBtoA>] [--rounds 10] [--settle 3] [--timeout 40] [--log FILE]" >&2; exit 1; }
+      need_jq cellcycle
+      case "$F_ROUNDS" in ''|0*|*[!0-9]*) echo "ERROR: --rounds needs a whole number of at least 1" >&2; exit 1 ;; esac
+      # A NEW log, made before anything changes in the game: never empty an existing file or one a link points to.
+      if [ -n "$F_LOG" ] && ! ( set -C; : > "$F_LOG" ) 2>/dev/null; then
+          echo "ERROR: --log $F_LOG exists or cannot be created; give a new file name" >&2; exit 1
+      fi
+      cA="$1"; cB="$2"; limit="${F_TIMEOUT:-40}"; me=(bash "${BASH_SOURCE[0]}")
+      lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+      say() { local l; l="$(date +%T) $*"; echo "$l"; [ -z "$F_LOG" ] || echo "$l" >> "$F_LOG"; }
+      # RUNNING within a grace period; a load screen or a short pause also stops the frame, so one non-RUNNING
+      # answer is not a crash. ALIVE_LINE keeps the last answer for the failure message.
+      running() {
+          local waited=0 grace="${DEVBENCH_CELLCYCLE_GRACE:-15}" out
+          while :; do
+              out=$("${me[@]}" alive 2>/dev/null)
+              case "$out" in RUNNING*|*$'\n'RUNNING*) return 0 ;; esac
+              ALIVE_LINE=$(printf '%s\n' "$out" | grep -v '^instance:' | grep -v '^ ' | head -1)
+              [ "$waited" -ge "$grace" ] && return 1
+              sleep 1; waited=$((waited + 1))
+          done
+      }
+      tgm_restore() { # once; says so when the game answers but god mode could not be turned back off
+          [ "${toggled:-0}" -eq 1 ] || return 0
+          toggled=0
+          post console '{"action":"exec","command":"tgm"}' >/dev/null 2>&1 \
+              || { running && echo "WARNING: cellcycle turned god mode on and could not turn it off: run 'tgm' in the console" >&2; }
+          return 0
+      }
+      stopped() { say "entry $1 $2 FAILED: the game stopped (${ALIVE_LINE:-no answer}) for ${DEVBENCH_CELLCYCLE_GRACE:-15}s: crash, hang or a pause left open"
+                  echo "Crash logs: python tools/crash-triage.py; liveness: devbench-cli.sh alive" >&2; exit 1; }
+      notthere() { say "entry $1 $2 FAILED: player in '$(player_cell)', not $2"; tgm_restore; exit 2; }
+      # `coc` exits 0 on a neighbouring exterior cell too (see coc above), so a coc entry is checked by cell here.
+      incell() { [ "$(lc "$(player_cell)")" = "$(lc "$1")" ]; }
+      arrive() { # $1 cell -> 0 when there: no Loading Menu, player in the cell, frame advancing; 3 timeout
+          local start f1 f2; start=$(now_ms)
+          while [ $(( ($(now_ms) - start) / 1000 )) -lt "$limit" ]; do
+              sleep 1
+              probe_health; [ "${PH_CODE:-}" = 200 ] || continue
+              case "$PH_BODY" in *'"Loading Menu"'*) continue ;; esac
+              [ "$(lc "$(player_cell)")" = "$(lc "$1")" ] || continue
+              f1=$(printf '%s' "$PH_BODY" | jget '.frame'); sleep 0.5; probe_health
+              [ "${PH_CODE:-}" = 200 ] || continue          # a failed second probe is no frame reading at all
+              f2=$(printf '%s' "$PH_BODY" | jget '.frame')
+              [ -n "$f1" ] && [ -n "$f2" ] && [ "$f1" != "$f2" ] && return 0
+          done
+          return 3
+      }
+      dAB=""; dBA=""
+      if [ -n "$F_DOORS" ]; then
+          case "$F_DOORS" in *,*) ;; *) echo "ERROR: --doors needs <refAtoB>,<refBtoA>" >&2; exit 1 ;; esac
+          dAB=$(resolve_form "${F_DOORS%%,*}") || exit 4; dBA=$(resolve_form "${F_DOORS#*,}") || exit 4
+      fi
+      toggled=0
+      # Cancelled or failed partway: still turn god mode back off (EXIT covers every exit; INT/TERM must exit).
+      trap 'tgm_restore' EXIT
+      trap 'tgm_restore; exit 130' INT
+      trap 'tgm_restore; exit 143' TERM
+      if [ "$(post inspect '{"kind":"player"}' 2>/dev/null | jq -r '.godMode')" = false ]; then
+          post console '{"action":"exec","command":"tgm"}' >/dev/null 2>&1 && toggled=1
+      fi
+      if [ "$(lc "$(player_cell)")" != "$(lc "$cA")" ]; then
+          { "${me[@]}" coc "$cA" --timeout "$limit" >/dev/null 2>&1 && incell "$cA"; } \
+              || { running || stopped 0 "$cA"; notthere 0 "$cA"; }
+      fi
+      say "start in $cA; $F_ROUNDS round(s) by ${F_DOORS:+door}${F_DOORS:-coc}"
+      for i in $(seq 1 "$F_ROUNDS"); do
+          for target in "$cB" "$cA"; do
+              if [ -n "$F_DOORS" ]; then
+                  door=$dAB; [ "$target" = "$cA" ] && door=$dBA
+                  act=$(pcall ObjectReference Activate '[{"form":"0x14"},false]' "{\"form\":\"$door\"}" 2>/dev/null); arc=$?
+                  case "$arc" in
+                      0) [ "$act" != false ] || { say "entry $i $target FAILED: door $door refused activation"; tgm_restore; exit 4; } ;;
+                      4|5|6) say "entry $i $target FAILED: DevBench rejected door $door (not a usable reference)"; tgm_restore; exit 4 ;;
+                      *) running || stopped "$i" "$target" ;;   # no answer or main thread busy: the game, not the door
+                  esac
+                  arrive "$target"; rc=$?
+              else
+                  "${me[@]}" coc "$target" --timeout "$limit" >/dev/null 2>&1; rc=$?
+                  [ "$rc" -ne 0 ] || incell "$target" || rc=2
+              fi
+              [ "$rc" -eq 0 ] || { running || stopped "$i" "$target"; notthere "$i" "$target"; }
+              sleep "$F_SETTLE"
+              running || stopped "$i" "$target"
+              incell "$target" || notthere "$i" "$target"   # still there after the settle (and any pause ridden out)
+              say "entry $i $target ok"
+          done
+      done
+      tgm_restore
+      say "DONE: $F_ROUNDS round(s), $((F_ROUNDS * 2)) entries, no failure"
+      exit 0 ;;
+
   goto)
       # Put the player BESIDE a reference, never inside it: `player.moveto <ref>` lands in the ref's own collision
       # (stuck in a runestone, 2026-11-13). Moves --dist units (150) in front of the ref along its facing, --z (20)
@@ -1013,6 +1120,6 @@ case "$CMD" in
 
   *)
       echo "Unknown command: $CMD" >&2
-      echo "Try: ping | alive | wait | health | quest | state | fps | inspect <kind> | exec | call | waitcall | form | coc | goto | msgbox | describe | notify | logmark | logdiff | tool | gfx | dialogue | tools | port" >&2
+      echo "Try: ping | alive | wait | health | quest | state | fps | inspect <kind> | exec | call | waitcall | form | coc | cellcycle | goto | msgbox | describe | notify | logmark | logdiff | tool | gfx | dialogue | tools | port" >&2
       exit 1 ;;
 esac

@@ -255,6 +255,18 @@ Added after the 2026-11-13 live shrine test, where each of these had to be scrip
   target and the frame counter advances; before the load visibly starts it waits at least 3 s, so the old cell (even
   the same one) is not taken as arrival. An exterior `coc` that lands in a neighbouring cell is accepted after 5
   settled seconds and says so. Exit 0 arrived, 3 timeout, 4 cell rejected by the console.
+- **`cellcycle <CellA> <CellB> [--doors <refAtoB>,<refBtoA>] [--rounds 10] [--settle 3] [--timeout 40] [--log F]`** --
+  a crash-reproduction loop: round-trips the player between two cells until the first failure, checking `alive` after
+  each entry (after `--settle` seconds). Without `--doors` each entry is a `coc`; with `--doors` the player activates
+  the door, as walking through it does, and it waits for arrival (no `Loading Menu`, player in the cell, frame
+  advancing). Turns god mode on only if it was off and turns it back, also on Ctrl-C. A `coc` that lands in a
+  neighbouring exterior cell counts as not there. `--log` must name a NEW file. The game counts as stopped only after
+  `alive` has not said RUNNING for 15 s (`DEVBENCH_CELLCYCLE_GRACE`), so a load screen or short pause is ridden out.
+  Exit 0 every entry ok, 1 the game stopped (crash, hang or a pause left open; then `tools/crash-triage.py`), 2 the
+  player did not reach the cell, 4 a bad door ref (unresolved, rejected by DevBench, or refusing activation).
+  **A crash seen only with `coc` is not proof of a mod fault:** `coc` runs the cell change on a job thread while the
+  main thread draws; on 2026-11-25 five of five `coc` loops crashed and 40 of 40 door round trips did not. Confirm
+  with `--doors` before blaming a mod.
 - **`goto <0xREF | Plugin:id> [--dist 150] [--z 20] [--if-unloaded] [--timeout 30]`** -- never `exec "player.moveto
   <ref>"` onto a solid activator: it puts the player inside the ref's collision (trapped in a LOTD runestone,
   2026-11-13). `goto` moves the player `--dist` units in front of the ref along its `GetAngleZ`, `--z` up, turns the

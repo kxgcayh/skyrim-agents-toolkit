@@ -47,6 +47,9 @@ def health_body() -> dict:
                 "lastTaskFrame": 7770, "pendingTasks": 3, **common}
     if MODE == "sim":
         loading = _sim_loading()
+        if _sim.get("paused_from", 0) <= _time.time() < _sim.get("paused_until", 0):   # frame frozen, queue idle: a pause, not a hang
+            return {"ok": True, "lastLifecycle": "postLoadGame", "frame": 4321, "lastTaskFrame": 4320,
+                    "pendingTasks": 0, "menus": ["HUD Menu"], **common}
         return {"ok": True, "lastLifecycle": "postLoadGame", "frame": 1000 + n * 7, "lastTaskFrame": 1000 + n * 7,
                 "pendingTasks": 0, "menus": ["HUD Menu"] + (["Loading Menu"] if loading else []), **common}
     if MODE == "notingame":
@@ -67,9 +70,25 @@ _sim = {"cell": "StartCell", "load_until": 0.0, "pending": None, "moved": False,
         "box": True, "answer": None, "moveto": None}
 
 
+# Doors for `cellcycle`: activating 0x0000D00A loads CellB, 0x0000D00B loads CellA, 0x0000D0FF does nothing.
+# MOCK_CRASH_AFTER=N makes the "game" stop answering (process exits) on the N-th cell arrival.
+_DOORS = {"0x0000D00A": "CellB", "0x0000D00B": "CellA"}
+_NEIGHBOUR = {"ExteriorCell": "NeighbourCell"}  # `coc ExteriorCell` lands one cell over
+_sim["arrivals"] = 0
+_sim["god"] = False   # `tgm` toggles it; inspect kind "player" reports it as godMode
+
+
 def _sim_loading() -> bool:
     if _sim["pending"] and _time.time() >= _sim["load_until"]:
         _sim["cell"], _sim["pending"] = _sim["pending"], None
+        _sim["arrivals"] += 1
+        if int(os.environ.get("MOCK_PAUSE_AFTER") or 0) == _sim["arrivals"]:   # a pause/menu after this arrival
+            # starts MOCK_PAUSE_DELAY s after the arrival, once coc has seen the frame advance
+            _sim["paused_from"] = _time.time() + float(os.environ.get("MOCK_PAUSE_DELAY") or 0)
+            _sim["paused_until"] = _sim["paused_from"] + float(os.environ.get("MOCK_PAUSE_SECONDS") or 4)
+        crash = int(os.environ.get("MOCK_CRASH_AFTER") or 0)
+        if crash and _sim["arrivals"] >= crash:
+            threading.Timer(0.2, lambda: os._exit(0)).start()
     return _sim["pending"] is not None
 
 
@@ -84,16 +103,22 @@ def _sim_post(path: str, body: dict):
             if _sim_loading():
                 return 504, {"error": "main thread busy", "code": 504}
             return 200, {"cell": {"editorId": _sim["cell"]}, "playerLoaded": True}
+        if kind == "player":
+            return 200, {"godMode": _sim["god"]}
         return 200, {"playerLoaded": True, "frame": 1000}
     if path == "/api/tool/console" and body.get("action") == "exec":
         cmd = str(body.get("command"))
+        if cmd.strip().lower() == "tgm":
+            _sim["god"] = not _sim["god"]
+            return 200, {"completed": True, "lines": ["God Mode -> " + ("On" if _sim["god"] else "Off")]}
         if cmd.lower().startswith("coc "):
             cell = cmd[4:].strip()
             if cell == "NoSuchCell":
                 return 200, {"completed": True, "lines": ["Cell 'NoSuchCell' not found"]}
             if cell == "SilentBadCell":  # the real console prints nothing for an unknown cell
                 return 200, {"completed": True, "lines": []}
-            _sim["pending"], _sim["load_until"] = cell, _time.time() + 1.5
+            # an exterior coc can land in the neighbouring cell, as the real one does
+            _sim["pending"], _sim["load_until"] = _NEIGHBOUR.get(cell, cell), _time.time() + 1.5
         return 200, {"completed": True, "lines": []}
     if path == "/api/tool/menu":
         if body.get("action") == "describe":
@@ -123,6 +148,9 @@ def _sim_post(path: str, body: dict):
             return 200, {"returned": 150.0}
         if fn == "Echo":
             return 200, {"returned": body}
+        if fn == "Activate" and self_ in _DOORS:
+            _sim["pending"], _sim["load_until"] = _DOORS[self_], _time.time() + 1.0
+            return 200, {"returned": True}
         return 200, {"returned": None}
     if path == "/api/tool/sim":  # test hook: the sim's own state
         return 200, {k: v for k, v in _sim.items() if k != "load_until"}

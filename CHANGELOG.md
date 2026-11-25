@@ -8,6 +8,11 @@
   command that backs up the way MO2 does and refuses when `modlist.txt` changed since it was read, or the proposal file since it was written. `--label` takes a
   plain name and the output is never written through a link. An unset mods folder or profile is refused, and
   the apply never overwrites an existing same-second backup. Never writes the profile. Usage: skill `triage-and-conflicts`.
+- **DevBench `cellcycle`:** `devbench-cli.sh cellcycle <CellA> <CellB> [--doors A2B,B2A]` round-trips two cells by
+  `coc` or by door activation until the first failure (exit 1 game stopped, 2 not in the cell; a `coc` that lands in a
+  neighbouring exterior cell counts as not there). God mode it turned on is turned off again on any exit, Ctrl-C
+  included; `--rounds` must be at least 1; `--log` must be a new file; a rejected door exits 4; the game counts as
+  stopped only after 15 s without RUNNING (`DEVBENCH_CELLCYCLE_GRACE`). Usage: skill `devbench`.
 
 - **loot-advisor local lists and proposals:** `--from-app [DIR]` reads the LOOT app's masterlist, prelude and optional
   userlist without fetching. `--propose [DIR]` writes an SE/AE proposal outside the profile, applies MO2 locks, and

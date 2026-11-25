@@ -571,3 +571,109 @@ def test_devbench_host_is_used(server):
     bad = subprocess.run([BASH, str(CLI), "health"], cwd=str(REPO), env=env, capture_output=True, text=True, timeout=60)
     assert bad.returncode == 1
     assert "no response from DevBench at invalid.invalid:%d" % server.port in bad.stderr
+
+
+# ---- cellcycle: round trips between two cells, by coc or by door, stopping at the first failure ----------------
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_cellcycle_coc_round_trip_passes(server, tmp_path):
+    log = tmp_path / "cycle.log"
+    r = run_cli("cellcycle", "CellA", "CellB", "--rounds", "1", "--settle", "0", "--log", str(log), port=server.port)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "entry 1 CellB ok" in r.stdout and "entry 1 CellA ok" in r.stdout and "DONE" in r.stdout
+    assert "DONE" in log.read_text()
+    assert _sim_state(server.port)["cell"] == "CellA"
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_cellcycle_doors_activate_and_wait_for_arrival(server):
+    run_cli("coc", "CellA", "--timeout", "20", port=server.port)
+    r = run_cli("cellcycle", "CellA", "CellB", "--doors", "0x0000D00A,0x0000D00B", "--rounds", "1",
+                "--settle", "0", port=server.port)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "by door" in r.stdout and "entry 1 CellB ok" in r.stdout
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_cellcycle_door_that_does_nothing_exits_2(server):
+    run_cli("coc", "CellA", "--timeout", "20", port=server.port)
+    r = run_cli("cellcycle", "CellA", "CellB", "--doors", "0x0000D0FF,0x0000D00B", "--rounds", "1",
+                "--settle", "0", "--timeout", "4", port=server.port)
+    assert r.returncode == 2 and "player in 'CellA', not CellB" in r.stdout
+
+
+def test_cellcycle_game_that_stops_exits_1(monkeypatch):
+    monkeypatch.setenv("MOCK_CRASH_AFTER", "2")  # the start coc is arrival 1, the first entry arrival 2
+    monkeypatch.setenv("DEVBENCH_CELLCYCLE_GRACE", "3")
+    s = Server("sim")
+    try:
+        r = run_cli("cellcycle", "CellA", "CellB", "--rounds", "2", "--settle", "1", "--timeout", "10", port=s.port)
+        assert r.returncode == 1, r.stdout + r.stderr
+        assert "entry 1 CellB FAILED: the game stopped" in r.stdout and "crash-triage" in r.stderr
+    finally:
+        s.stop()
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_cellcycle_coc_landing_in_a_neighbouring_cell_exits_2(server):
+    r = run_cli("cellcycle", "CellA", "ExteriorCell", "--rounds", "1", "--settle", "0", "--timeout", "20",
+                port=server.port)
+    assert r.returncode == 2, r.stdout + r.stderr
+    assert "entry 1 ExteriorCell FAILED: player in 'NeighbourCell', not ExteriorCell" in r.stdout
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_cellcycle_rounds_zero_is_refused_before_touching_the_game(server):
+    r = run_cli("cellcycle", "CellA", "CellB", "--rounds", "0", port=server.port)
+    assert r.returncode == 1 and "--rounds needs a whole number of at least 1" in r.stderr
+    assert _sim_state(server.port)["god"] is False
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_cellcycle_cancelled_mid_run_turns_god_mode_back_off(server):
+    import signal
+    env = dict(os.environ, DEVBENCH_PORT=str(server.port))
+    p = subprocess.Popen([BASH, str(CLI), "cellcycle", "CellA", "CellB", "--rounds", "50", "--settle", "0"],
+                         cwd=str(REPO), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        deadline = time.time() + 30
+        while not _sim_state(server.port)["god"] and time.time() < deadline:
+            time.sleep(0.2)
+        assert _sim_state(server.port)["god"] is True
+        p.send_signal(signal.SIGINT)
+        p.wait(timeout=20)
+    finally:
+        if p.poll() is None:
+            p.kill()
+    assert p.returncode == 130
+    assert _sim_state(server.port)["god"] is False
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_cellcycle_never_empties_an_existing_log(server, tmp_path):
+    log = tmp_path / "keep.log"
+    log.write_text("earlier run\n")
+    r = run_cli("cellcycle", "CellA", "CellB", "--rounds", "1", "--settle", "0", "--log", str(log), port=server.port)
+    assert r.returncode == 1 and "exists or cannot be created" in r.stderr
+    assert log.read_text() == "earlier run\n" and _sim_state(server.port)["god"] is False
+
+
+@pytest.mark.parametrize("server", ["sim"], indirect=True)
+def test_cellcycle_rejected_door_exits_4(server):
+    run_cli("coc", "CellA", "--timeout", "20", port=server.port)
+    r = run_cli("cellcycle", "CellA", "CellB", "--doors", "0x16000999,0x0000D00B", "--rounds", "1",
+                "--settle", "0", "--timeout", "4", port=server.port)
+    assert r.returncode == 4, r.stdout + r.stderr
+    assert "DevBench rejected door 0x16000999" in r.stdout and _sim_state(server.port)["god"] is False
+
+
+def test_cellcycle_rides_out_a_short_pause(monkeypatch):
+    monkeypatch.setenv("MOCK_PAUSE_AFTER", "2")     # frozen frame for 4 s right after the first entry arrives
+    monkeypatch.setenv("MOCK_PAUSE_SECONDS", "4")
+    monkeypatch.setenv("MOCK_PAUSE_DELAY", "2.5")   # after coc returns, during the settle wait
+    s = Server("sim")
+    try:
+        r = run_cli("cellcycle", "CellA", "CellB", "--rounds", "1", "--settle", "3", "--timeout", "20", port=s.port)
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "DONE" in r.stdout
+    finally:
+        s.stop()
