@@ -87,6 +87,44 @@ def write(root: Path, name: str, body: str) -> None:
     (root / name).write_text(body, encoding="utf-8", newline="\n")
 
 
+def test_local_topic_is_snapshotted_and_shrinkage_alarms(tmp_path):
+    root = make_install(tmp_path)
+    (root / "kb.local").mkdir()
+    topic = "kb.local/engine-notes.md"
+    body = "local notes\n" * 100
+    write(root, topic, body)
+    write(root, "kb.local/skip this.md", body)
+
+    first = run_guard(root)
+    assert first.returncode == 0, first.stdout + first.stderr
+    (copy,) = stored_copies(root, topic)
+    assert copy.read_text(encoding="utf-8") == body
+    assert not stored_copies(root, "kb.local/skip this.md")
+
+    write(root, topic, "short\n")
+    shrunk = run_guard(root)
+    assert shrunk.returncode == 1, shrunk.stdout + shrunk.stderr
+    assert topic in shrunk.stdout and str(copy) in shrunk.stdout
+
+
+def test_deleted_local_topic_alarms_once_even_without_live_topic_directory(tmp_path):
+    root = make_install(tmp_path)
+    (root / "kb.local").mkdir()
+    topic = "kb.local/engine-notes.md"
+    write(root, topic, "local notes\n")
+    assert run_guard(root).returncode == 0
+    (copy,) = stored_copies(root, topic)
+
+    (root / topic).unlink()
+    (root / "kb.local").rmdir()
+    deleted = run_guard(root)
+    assert deleted.returncode == 1, deleted.stdout + deleted.stderr
+    assert f"{topic} is GONE" in deleted.stdout and str(copy) in deleted.stdout
+    again = run_guard(root)
+    assert again.returncode == 0, again.stdout + again.stderr
+    assert f"{topic} is still gone" in again.stdout and "is GONE" not in again.stdout
+
+
 # --------------------------------------------------------------------------
 # the copy itself
 # --------------------------------------------------------------------------
@@ -103,6 +141,7 @@ def test_the_first_run_copies_the_knowledgebase_and_a_second_does_not_duplicate_
 
     second = run_guard(root)
     assert second.returncode == 0, second.stdout + second.stderr
+    assert second.stdout == "KB GUARD: 1 file(s) checked, unchanged (1 kept)\n"
     assert len(stored_copies(root)) == 1, (
         "an unchanged file was copied again; every session would add a directory "
         "and the rotation would then walk real history off the end")
@@ -512,3 +551,34 @@ def test_the_guard_never_deletes_permanently():
     code = "\n".join(ln for ln in src.splitlines() if not ln.lstrip().startswith("#"))
     for call in ("rm -rf", "rm -r ", "rmdir", "shutil.rmtree", "os.unlink", "Remove-Item"):
         assert call not in code, call
+
+
+def test_split_kb_drift_is_a_note_not_an_alarm(tmp_path):
+    root = make_install(tmp_path)
+    shutil.copy2(REPO / "tools" / "kb-section.py", root / "tools" / "kb-section.py")
+    (root / "kb.local").mkdir()
+    write(root, "kb.local/devbench.md", "## DevBench timeouts\nx\n")
+    index = "## My preferences\n- a\n## Index\n| Read | When |\n|---|---|\n| `kb.local/devbench.md` | DevBench |\n"
+    write(root, "KNOWLEDGEBASE.local.md", index)
+    clean = run_guard(root)
+    assert clean.returncode == 0 and "split KB" not in clean.stdout, clean.stdout + clean.stderr
+
+    write(root, "KNOWLEDGEBASE.local.md", index + "## DevBench retry gotcha\ny\n")
+    drift = run_guard(root)
+    assert drift.returncode == 0, drift.stdout + drift.stderr
+    assert 'note: split KB: KNOWLEDGEBASE.local.md:7 "DevBench retry gotcha" belongs in a topic file' in drift.stdout
+    assert "kb.local/devbench.md" in drift.stdout
+
+
+def test_split_parent_is_measured_with_its_topic_files(tmp_path):
+    root = make_install(tmp_path)
+    write(root, "KNOWLEDGEBASE.local.md", "## Index\n" + "finding\n" * 500)
+    assert run_guard(root).returncode == 0
+    (root / "kb.local").mkdir()
+    write(root, "kb.local/mods.md", "finding\n" * 495)
+    write(root, "KNOWLEDGEBASE.local.md", "## Index\nsmall\n")
+    split = run_guard(root)
+    assert split.returncode == 1 and "lost more than half" in split.stdout   # the transition still alarms once
+    later = run_guard(root)
+    assert later.returncode == 0, later.stdout + later.stderr
+    assert "largest stored copy" not in later.stdout, later.stdout

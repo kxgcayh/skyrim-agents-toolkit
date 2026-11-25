@@ -91,7 +91,7 @@ def pristine(tmp_path_factory):
         (root / "scripts" / "prepush-gate.py").unlink()
     for junk in (".claude/settings.local.json", ".claude/skyrim-paths.env", "skyrim-paths.env", ".claude/backups",
                  ".claude/retired",
-                 "KNOWLEDGEBASE.local.md", ".superpowers", ".skyguard", ".modding-agent-harness", "tools/resaver-cli/tests"):
+                 "KNOWLEDGEBASE.local.md", "kb.local", ".superpowers", ".skyguard", ".modding-agent-harness", "tools/resaver-cli/tests"):
         p = root / junk
         if p.is_dir():
             shutil.rmtree(p)
@@ -181,6 +181,8 @@ BREAKS = {
     "docs-superpowers-shipped": (_mkdir("docs/superpowers"), "docs/superpowers NOT shipped"),
     "skyguard-state-shipped": (_mkdir(".skyguard"), ".skyguard NOT shipped"),
     "local-kb-shipped": (lambda r: (r / "KNOWLEDGEBASE.local.md").write_text("mine"), "KNOWLEDGEBASE.local.md NOT shipped"),
+    "local-kb-topics-shipped": (lambda r: ((r / "kb.local").mkdir(), (r / "kb.local" / "mods.md").write_text("mine")),
+                                "kb.local NOT shipped"),
     "backups-shipped": (_mkdir(".claude/backups"), ".claude/backups NOT shipped"),
     "retired-shipped": (_mkdir(".claude/retired"), ".claude/retired NOT shipped"),       # review2 B-tools I1
     "settings-local-shipped": (lambda r: (r / ".claude" / "settings.local.json").write_text("{}"),

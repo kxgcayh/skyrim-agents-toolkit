@@ -28,6 +28,10 @@
 
 set -uo pipefail
 
+# Byte-order globs. Snapshot directories are found newest-LAST by glob order, and a same-second
+# run gets a `_2` suffix. MEASURED 2026-11-25 on macOS en_US.UTF-8: bash sorted `<stamp>_2/` BEFORE
+# `<stamp>/`, so the guard compared against an older copy and the rotation pruned the oldest.
+export LC_ALL=C   # not LC_COLLATE alone: a set LC_ALL overrides it
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)}"
 STORE="$ROOT/.claude/backups/kb"
 
@@ -35,7 +39,7 @@ STORE="$ROOT/.claude/backups/kb"
 # Anything the toolkit can regenerate (skyrim-paths.env, settings.json) is NOT here --
 # a store full of reproducible files makes the copies that matter harder to find.
 # AGENTS.md (Plan 4): the same installed instructions, with the same filled-in paths, for Codex.
-WATCHED="KNOWLEDGEBASE.md KNOWLEDGEBASE.local.md CLAUDE.md AGENTS.md"
+WATCHED=(KNOWLEDGEBASE.md KNOWLEDGEBASE.local.md CLAUDE.md AGENTS.md)
 
 KEEP="${KB_GUARD_KEEP:-30}"
 # A non-numeric KEEP used to kill the script inside the rotation arithmetic under
@@ -53,6 +57,17 @@ if [ -z "$ROOT" ] || [ ! -d "$ROOT" ]; then
     echo "KB GUARD: NOT RUN -- could not resolve the install root, so nothing was checked" >&2
     exit 2
 fi
+
+# Include stored topics so removing a live topic still triggers a loss alarm.
+for topic in "$ROOT"/kb.local/*.md "$STORE"/*/kb.local/*.md; do
+    [ -f "$topic" ] || continue
+    name="kb.local/${topic##*/}"
+    case "$name" in *[[:space:]]*) continue ;; esac
+    case " ${WATCHED[*]} " in
+        *" $name "*) ;;
+        *) WATCHED+=("$name") ;;
+    esac
+done
 
 bytes() {
     local n
@@ -85,7 +100,7 @@ scan_store() {
         case "$path" in ""|total) continue ;; esac
         STORE_PATHS[${#STORE_PATHS[@]}]=$path
         STORE_SIZES[${#STORE_SIZES[@]}]=$sz
-    done < <(find "$STORE" -mindepth 2 -maxdepth 2 -type f -exec wc -c {} + 2>/dev/null)
+    done < <(find "$STORE" -mindepth 2 -maxdepth 3 -type f -exec wc -c {} + 2>/dev/null)
 }
 # The scanned size of stored file $1, in $SZ (0 when it is not in the store). A linear scan: the store holds
 # a few hundred files, and no fork is spent.
@@ -158,11 +173,12 @@ notes=""
 # unchanged" and counted the empty directory it had just made as "1 kept".
 store_copy() {
     local live="$1" name="$2" label="$3"
-    if ! mkdir -p "$DEST" 2>/dev/null; then
+    local target="$DEST/$name"
+    if ! mkdir -p "${target%/*}" 2>/dev/null; then
         failed="$failed $name(mkdir)"
         return 1
     fi
-    if ! cp -p "$live" "$DEST/$name" 2>/dev/null; then
+    if ! cp -p "$live" "$target" 2>/dev/null; then
         failed="$failed $name(copy)"
         return 1
     fi
@@ -170,8 +186,9 @@ store_copy() {
     return 0
 }
 
-for name in $WATCHED; do
+for name in "${WATCHED[@]}"; do
     live="$ROOT/$name"
+    gone="$STORE/.gone-${name//\//__}"
     prior=$(prior_copy "$name")
 
     if [ ! -f "$live" ]; then
@@ -187,11 +204,11 @@ for name in $WATCHED; do
         if [ "$LARGEST_SIZE" -gt 0 ]; then
             checked=$((checked + 1))
             # Once per loss: a stored copy is kept forever, so without this a file removed on purpose alarms every session.
-            if [ -f "$STORE/.gone-$name" ]; then
+            if [ -f "$gone" ]; then
                 notes="$notes
   note: $name is still gone; the largest stored copy is $LARGEST_SIZE bytes ($LARGEST_PATH)"
             else
-                : > "$STORE/.gone-$name" 2>/dev/null
+                : > "$gone" 2>/dev/null
                 alarms="$alarms
   $name is GONE. Its largest stored copy is $LARGEST_SIZE bytes.
 $(where_to_recover "$name" "${prior:-$LARGEST_PATH}")"
@@ -199,7 +216,7 @@ $(where_to_recover "$name" "${prior:-$LARGEST_PATH}")"
         fi
         continue
     fi
-    rm -f "$STORE/.gone-$name" 2>/dev/null
+    rm -f "$gone" 2>/dev/null
 
     checked=$((checked + 1))
     cur=$(bytes "$live")
@@ -217,7 +234,15 @@ $(where_to_recover "$name" "${prior:-$LARGEST_PATH}")"
         # standing reminder for that state: not a second alarm (a deliberate trim would
         # then nag forever), but not silence either.
         largest_copy_of "$name"
-        if [ "$LARGEST_SIZE" -gt 0 ] && [ $((cur * 2)) -lt "$LARGEST_SIZE" ]; then
+        # Splitting the local KB into kb.local/ moves content, it does not lose it: measure the parent
+        # together with its topic files, or the pre-split copy (kept forever) flags it every session.
+        whole=$cur
+        if [ "$name" = "KNOWLEDGEBASE.local.md" ] && [ -d "$ROOT/kb.local" ]; then
+            for t in "$ROOT"/kb.local/*.md; do
+                [ -f "$t" ] && whole=$((whole + $(bytes "$t")))
+            done
+        fi
+        if [ "$LARGEST_SIZE" -gt 0 ] && [ $((whole * 2)) -lt "$LARGEST_SIZE" ]; then
             notes="$notes
   note: $name is $cur bytes; the largest stored copy is $LARGEST_SIZE bytes ($LARGEST_PATH)"
         fi
@@ -306,7 +331,7 @@ prune_store() {
     [ "${#dirs[@]}" -le "$KEEP" ] && return 0
 
     local protected=("${dirs[0]}" "${dirs[$(( ${#dirs[@]} - 1 ))]}")
-    for name in $WATCHED; do
+    for name in "${WATCHED[@]}"; do
         best=""; bestsize=0
         for d in "${dirs[@]}"; do
             [ -f "$d$name" ] || continue
@@ -337,13 +362,34 @@ prune_store
 # The instructions tell the agent to append findings to KNOWLEDGEBASE.local.md, and
 # nothing else makes it commit them. MEASURED in the sibling X4 toolkit 2026-10-20: about
 # 1,767 appended lines over 2.5 weeks, none committed. In a git-tracked install that does
-# not ignore the file, say so every session. A note, never an alarm: exit codes unchanged.
-if command -v git >/dev/null 2>&1 \
-    && dirty=$(git -C "$ROOT" status --porcelain -- KNOWLEDGEBASE.local.md 2>/dev/null) \
-    && [ -n "$dirty" ]; then
-    notes="$notes
-  note: KNOWLEDGEBASE.local.md has uncommitted changes; commit it alone:
-    git add -- KNOWLEDGEBASE.local.md && git commit -m \"Knowledgebase notes\" -- KNOWLEDGEBASE.local.md"
+# not ignore the files, say so every session. A note, never an alarm: exit codes unchanged.
+if command -v git >/dev/null 2>&1; then
+    for path in KNOWLEDGEBASE.local.md kb.local/; do
+        if dirty=$(git -C "$ROOT" status --porcelain -- "$path" 2>/dev/null) && [ -n "$dirty" ]; then
+            notes="$notes
+  note: $path has uncommitted changes; commit it alone:
+    git add -- $path && git commit -m \"Knowledgebase notes\" -- $path"
+        fi
+    done
+fi
+
+# ---------------------------------------------------------------- split-KB drift notes
+# A split local knowledgebase (kb.local/) only stays split if findings go to topic files. Nothing
+# moves them; this names a section appended to the parent, a topic file the Index does not list,
+# and an Index row with no file. A note, never an alarm, and silent when there is no kb.local/.
+if [ -d "$ROOT/kb.local" ]; then
+    ks="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/kb-section.py"
+    for cand in "${SKYGUARD_PYTHON:-}" python3 python "py -3"; do
+        [ -n "$cand" ] && [ -f "$ks" ] || continue
+        if [ -e "$cand" ]; then run=("$cand"); else IFS=' ' read -r -a run <<< "$cand"; fi
+        "${run[@]}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1 || continue
+        drift=$("${run[@]}" -B "$ks" --check --file "$ROOT/KNOWLEDGEBASE.local.md" --dir "$ROOT/kb.local" 2>&1)
+        [ "$?" -eq 1 ] && [ -n "$drift" ] && while IFS= read -r line; do
+            notes="$notes
+  note: split KB: $line"
+        done <<< "$drift"
+        break
+    done
 fi
 
 # ---------------------------------------------------------------- report
@@ -367,7 +413,7 @@ if [ -n "$alarms" ]; then
 fi
 
 if [ "$checked" -eq 0 ]; then
-    echo "KB GUARD: NOT RUN -- none of the watched files exist under $ROOT ($WATCHED)" >&2
+    echo "KB GUARD: NOT RUN -- none of the watched files exist under $ROOT (${WATCHED[*]})" >&2
     exit 2
 fi
 
@@ -396,13 +442,17 @@ fi
 # documented flag that does nothing is a small lie in a permanent record.
 if [ "$VERBOSE" -eq 1 ]; then
     echo "  store: $STORE"
-    for name in $WATCHED; do
+    width=24
+    for name in "${WATCHED[@]}"; do
+        [ "${#name}" -gt "$width" ] && width=${#name}
+    done
+    for name in "${WATCHED[@]}"; do
         if [ -f "$ROOT/$name" ]; then
             largest_copy_of "$name"
-            printf '  %-24s live %s b, largest stored %s b\n' \
-                "$name" "$(bytes "$ROOT/$name")" "$LARGEST_SIZE"
+            printf '  %-*s live %s b, largest stored %s b\n' \
+                "$width" "$name" "$(bytes "$ROOT/$name")" "$LARGEST_SIZE"
         else
-            printf '  %-24s not present\n' "$name"
+            printf '  %-*s not present\n' "$width" "$name"
         fi
     done
 fi

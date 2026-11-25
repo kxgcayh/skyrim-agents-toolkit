@@ -12,7 +12,7 @@
 # (No argument = the current folder.) Then extract the zip over your install and run `bash setup.sh`.
 #
 # What it copies, into <install>/.claude/backups/pre-update-<stamp>/ with the same relative paths:
-#   - always, if present: CLAUDE.md, AGENTS.md, KNOWLEDGEBASE.md, KNOWLEDGEBASE.local.md, skyrim-paths.env,
+#   - always, if present: CLAUDE.md, AGENTS.md, KNOWLEDGEBASE.md, KNOWLEDGEBASE.local.md (and kb.local/), skyrim-paths.env,
 #     .claude/settings.json, .claude/settings.local.json, .claude/skyrim-paths.env,
 #     .devcontainer/devcontainer.json, and everything under .claude/hooks, .claude/skills, .codex, .agents;
 #   - plus every file of your install that the new toolkit (the folder this script came from) would
@@ -57,7 +57,7 @@ for rel in CLAUDE.md AGENTS.md KNOWLEDGEBASE.md KNOWLEDGEBASE.local.md skyrim-pa
            .devcontainer/devcontainer.json; do
     [ -f "$TARGET/$rel" ] && printf '%s\0' "$rel" >> "$LIST"
 done
-for dir in .claude/hooks .claude/skills .codex .agents; do
+for dir in .claude/hooks .claude/skills .codex .agents kb.local; do
     [ -d "$TARGET/$dir" ] || continue
     ( cd "$TARGET" && find "$dir" -type f -print0 ) >> "$LIST"
 done

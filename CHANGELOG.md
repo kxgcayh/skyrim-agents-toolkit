@@ -13,6 +13,16 @@
   neighbouring exterior cell counts as not there). God mode it turned on is turned off again on any exit, Ctrl-C
   included; `--rounds` must be at least 1; `--log` must be a new file; a rejected door exits 4; the game counts as
   stopped only after 15 s without RUNNING (`DEVBENCH_CELLCYCLE_GRACE`). Usage: skill `devbench`.
+- **Split local knowledgebase (optional):** `kb.local/<topic>.md` topic files beside `KNOWLEDGEBASE.local.md`, whose
+  parent keeps the preferences, an Index table, Hook Candidates and the Doc index. `kb-section.py` searches both
+  (`--dir`; `--file` alone stays single-file), `kb-guard.sh` snapshots and alarms per topic file, and `.gitignore`,
+  the release payload check, the delivery audit, `backup-local.sh`, `pre-update-snapshot.sh` and `doc_lookup` treat
+  `kb.local/` as user-owned and never shipped. `kb-section.py --check` reports a section appended to the parent,
+  a topic file without an Index row and an Index row without a file; `kb-guard.sh` prints it as a session-start note.
+  Without `kb.local/` nothing changes.
+- **kb-guard same-second snapshots:** globs now sort in byte order (`LC_ALL=C`). Under a UTF-8 locale `<stamp>_2/`
+  sorted before `<stamp>/`, so a second run in the same second compared against an older copy and rotation could
+  prune the oldest one.
 
 - **loot-advisor local lists and proposals:** `--from-app [DIR]` reads the LOOT app's masterlist, prelude and optional
   userlist without fetching. `--propose [DIR]` writes an SE/AE proposal outside the profile, applies MO2 locks, and

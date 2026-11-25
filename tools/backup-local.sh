@@ -8,7 +8,8 @@ DEST="${1:-${SKYRIM_LOCAL_BACKUP:-$HOME/.skyrim-toolkit-local}}"
 mkdir -p "$DEST/tools"
 chmod 700 "$DEST"
 n=0
-for f in KNOWLEDGEBASE.local.md setup.local.env tools/.nexus_api_key .claude/settings.local.json; do
+for f in KNOWLEDGEBASE.local.md "$ROOT"/kb.local/*.md setup.local.env tools/.nexus_api_key .claude/settings.local.json; do
+    f=${f#"$ROOT/"}
     [ -f "$ROOT/$f" ] || continue
     mkdir -p "$DEST/$(dirname "$f")"
     cp -p "$ROOT/$f" "$DEST/$f"

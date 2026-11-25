@@ -152,3 +152,93 @@ def test_missing_file(tmp_path):
     assert result.returncode == 2
     assert b"Cannot read" in result.stderr
     assert str(path).encode() in result.stderr
+
+
+def _split_kb(tmp_path):
+    parent = tmp_path / "KNOWLEDGEBASE.local.md"
+    parent.write_bytes(b"## My preferences\n- one\n## Index\n| Read | When |\n")
+    folder = tmp_path / "kb.local"
+    folder.mkdir()
+    (folder / "mods.md").write_bytes(b"# Mods\n## Embers XD patch\nfire body\n")
+    (folder / "tools.md").write_bytes(b"## DevBench timeouts\nslow body\n")
+    return parent, folder
+
+
+def _kb(*args):
+    return subprocess.run([sys.executable, str(SCRIPT), *map(str, args)], capture_output=True, timeout=10)
+
+
+def test_split_listing_labels_every_file(tmp_path):
+    parent, folder = _split_kb(tmp_path)
+    out = _kb("--file", parent, "--dir", folder).stdout.decode()
+    assert "KNOWLEDGEBASE.local.md:1  " in out
+    assert "kb.local/mods.md:2  " in out and "kb.local/tools.md:1  " in out
+    assert out.rstrip().endswith("in 3 files")
+
+
+def test_split_heading_match_prints_the_child_section(tmp_path):
+    parent, folder = _split_kb(tmp_path)
+    result = _kb("--file", parent, "--dir", folder, "embers")
+    assert result.returncode == 0
+    assert result.stdout == b"kb.local/mods.md:2\n## Embers XD patch\nfire body\n"
+
+
+def test_split_body_match_names_the_child(tmp_path):
+    parent, folder = _split_kb(tmp_path)
+    out = _kb("--file", parent, "--dir", folder, "--body", "slow").stdout.decode()
+    assert out.startswith("kb.local/tools.md:1  ") and "(matching lines: 2)" in out
+
+
+def test_file_alone_ignores_topic_files(tmp_path):
+    parent, folder = _split_kb(tmp_path)
+    out = _kb("--file", parent).stdout.decode()
+    assert "mods.md" not in out and out.endswith(f"Total: 2 sections, {parent.stat().st_size} bytes\n")
+
+
+def test_missing_dir_is_single_file(tmp_path):
+    parent, _ = _split_kb(tmp_path)
+    out = _kb("--file", parent, "--dir", tmp_path / "absent").stdout.decode()
+    assert out.startswith("1  ")
+
+
+def _indexed(tmp_path, extra=b""):
+    parent, folder = _split_kb(tmp_path)
+    parent.write_bytes(b"## My preferences\n- one\n## Index\n| Read | When |\n|---|---|\n"
+                       b"| `kb.local/mods.md` | patching a mod |\n| `kb.local/tools.md` | DevBench and tools |\n" + extra)
+    return parent, folder
+
+
+def test_check_clean_split(tmp_path):
+    parent, folder = _indexed(tmp_path)
+    result = _kb("--check", "--file", parent, "--dir", folder)
+    assert (result.returncode, result.stdout) == (0, b"")
+
+
+def test_check_not_split_is_silent(tmp_path):
+    parent, _ = _split_kb(tmp_path)
+    result = _kb("--check", "--file", parent, "--dir", tmp_path / "absent")
+    assert (result.returncode, result.stdout) == (0, b"")
+
+
+def test_check_stray_parent_section_suggests_a_topic(tmp_path):
+    parent, folder = _indexed(tmp_path, b"## DevBench timeouts again\nnew\n")
+    result = _kb("--check", "--file", parent, "--dir", folder)
+    assert result.returncode == 1
+    assert b'"DevBench timeouts again" belongs in a topic file' in result.stdout
+    assert b"closest topic file: kb.local/tools.md" in result.stdout
+
+
+def test_check_unindexed_and_missing_files(tmp_path):
+    parent, folder = _indexed(tmp_path)
+    (folder / "crashes.md").write_bytes(b"## Crash X\n")
+    (folder / "tools.md").unlink()
+    out = _kb("--check", "--file", parent, "--dir", folder).stdout.decode()
+    assert "kb.local/crashes.md has no row in the ## Index table" in out
+    assert "## Index names kb.local/tools.md, which does not exist" in out
+
+
+def test_check_flags_a_topic_name_kb_guard_cannot_watch(tmp_path):
+    parent, folder = _indexed(tmp_path)
+    (folder / "my notes.md").write_bytes(b"## X\n")
+    out = _kb("--check", "--file", parent, "--dir", folder).stdout.decode()
+    assert "kb.local/my notes.md has whitespace in its name" in out

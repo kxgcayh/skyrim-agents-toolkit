@@ -173,6 +173,7 @@ ABSENT_PATHS = (
     "docs/REVIEW-SCOPE.md",   # the maintainer's release-review scope note
     ".skyguard",
     "KNOWLEDGEBASE.local.md",
+    "kb.local",                # the local knowledgebase's topic files
     ".claude/backups",
     ".claude/retired",         # the guard stores' pruned batches awaiting the Recycle Bin
     ".claude/settings.local.json",

@@ -1441,7 +1441,7 @@ def pin_of(repo, spec):
 
 DELIVERY_SUFFIXES = (".md", ".txt", ".sh", ".ps1", ".cmd", ".bat", ".py", ".json", ".yml", ".yaml", ".js", ".example")
 DELIVERY_SKIP_DIRS = {".git", "node_modules", "tests", ".superpowers", ".pytest_cache", "__pycache__", ".venv"}
-DELIVERY_PRIVATE_PATHS = (".skyguard", ".claude/backups", ".claude/settings.local.json", "KNOWLEDGEBASE.local.md")
+DELIVERY_PRIVATE_PATHS = (".skyguard", ".claude/backups", ".claude/settings.local.json", "KNOWLEDGEBASE.local.md", "kb.local")
 # Files that only record history (file-scoped; nothing in them is an instruction), plus this file's own rule text.
 DELIVERY_HISTORY_FILES = ("CHANGELOG.md", "docs/superpowers/*", "docs/evidence/*", "scripts/thirdparty-audit.py")
 SHA256_HEX = re.compile(r"\b[0-9a-f]{64}\b")

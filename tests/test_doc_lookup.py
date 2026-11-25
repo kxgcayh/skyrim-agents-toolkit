@@ -318,7 +318,8 @@ def repo_lookup():
 
 def test_real_repo_slider_smoke(repo_lookup):
     context = repo_lookup("--terms", "LDD_CVEO.ini")
-    assert "From KNOWLEDGEBASE.local.md:" in context
+    # the entry sits in the parent, or in a topic file once the local KB is split into kb.local/
+    assert "From KNOWLEDGEBASE.local.md:" in context or "From kb.local/" in context
     assert "LDD_CVEO.ini" in context
 
 
