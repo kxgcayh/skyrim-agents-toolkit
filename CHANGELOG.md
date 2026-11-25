@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Codex hook parity:** Capture the session charter and show the ledger on prompts. Report save changes after tool calls. Run `/hooks` to re-approve your Codex hooks.
+
 - **modlist-move (new):** `tools/modlist-move.py` moves mods between MO2 separators in a copy of `modlist.txt`
   (`--move "MOD=>ANCHOR"`, `--plan` with above/top_of/bottom_of, `--disabled-to SEP`), refuses unless every name matches
   one line and unmoved lines keep their order, reports loose-file conflicts the move creates, and prints an apply

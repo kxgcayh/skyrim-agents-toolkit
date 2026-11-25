@@ -28,7 +28,7 @@ CONTEXT_LIMIT = 8000
 ASK_PREFIX = ("NEEDS YOUR CONFIRMATION -- Codex cannot ask, so the toolkit refuses instead. Stop and tell "
               "the user what you wanted to run and why; if they agree, they run it themselves. "
               "(In the Codex prompt they can type ! followed by the command.) ")
-BANNER = "SKYGUARD: Codex hooks live (definitions v1)."
+BANNER = "SKYGUARD: Codex hooks live (definitions v2)."
 _NOTE = " [truncated by the toolkit at {n} bytes]"
 _PREFS_MARK = "USER PREFERENCES ("
 ENV_UNREADABLE = (

@@ -95,8 +95,9 @@ def test_the_state_keys_are_spelled_like_codex_spells_them(tmp_path):
     root = _install(tmp_path)
     keys = sorted(_expected(root))
     base = str((root / ".codex" / "hooks.json").resolve())
-    assert keys == [base + ":pre_tool_use:0:0", base + ":pre_tool_use:0:1",
-                    base + ":session_start:0:0", base + ":user_prompt_submit:0:0"]
+    assert keys == [base + ":post_tool_use:0:0", base + ":pre_tool_use:0:0",
+                    base + ":pre_tool_use:0:1", base + ":session_start:0:0",
+                    base + ":user_prompt_submit:0:0", base + ":user_prompt_submit:0:1"]
 
 
 def test_trusted_when_every_stored_hash_matches(tmp_path):

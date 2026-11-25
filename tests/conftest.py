@@ -221,8 +221,15 @@ def copy_repo(dest: Path, ignore=IGNORE) -> Path:
         if skip.intersection(rel.split("/")) or not src.is_file():  # deleted-but-tracked files are absent
             continue
         (dest / rel).parent.mkdir(parents=True, exist_ok=True)
+        # Keep Codex hooks at the same revision as the working-tree guard manifest.
+        # Strip setup's interpreter paths and use the unrendered definition template.
         if pinned.get(rel) is not None:
-            (dest / rel).write_bytes(pinned[rel])
+            if rel == ".codex/hooks.json":
+                shutil.copy2(REPO / "agent/targets/codex/hooks.json", dest / rel)
+            elif rel.startswith(".codex/hooks/") and rel in _template_forms():
+                (dest / rel).write_bytes(_template_forms()[rel](src.read_bytes()))
+            else:
+                (dest / rel).write_bytes(pinned[rel])
             continue
         shutil.copy2(src, dest / rel)
         if rel in _template_forms():   # a configured working tree holds setup's fill: a test copy starts from the template

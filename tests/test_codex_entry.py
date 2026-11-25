@@ -345,7 +345,7 @@ def test_a_wrapper_exception_is_a_deny(tmp_path, entry):
 @pytest.mark.parametrize("entry", ENTRIES)
 def test_an_unknown_role_is_a_deny(tmp_path, entry):
     root = _install(tmp_path)
-    r = _run(entry, root, "post-tool", _benign(root))
+    r = _run(entry, root, "unknown-role", _benign(root))
     assert r.returncode == 0 and r.stdout == _expected("pre-tool", "unknown role"), r.stdout
     assert not _hb(root).exists() or not any(_hb(root).iterdir()), "an unknown role wrote telemetry"
 

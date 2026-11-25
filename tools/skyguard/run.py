@@ -31,7 +31,7 @@ from skyguard.audit import Audit  # noqa: E402
 from skyguard.verdict import Verdict  # noqa: E402
 
 ADAPTERS = {"claude": claude, "codex": codex}
-CODEX_ROLES = ("pre-tool", "session-start")
+CODEX_ROLES = ("pre-tool", "session-start", "prompt", "post-tool")
 DECISION_ROLES = ("protect-bash", "protect-files", "protect-mcp")
 
 
@@ -274,6 +274,15 @@ def _build_session_text(a, audit, source: str, session_id: str) -> tuple[str, st
     return out, status, code
 
 
+def _save_sentinel(a):
+    from skyguard import save_sentinel
+
+    env = _declared_env(a)
+    roots = paths.roots(a.root, a.root_win, env if env is not None else {})
+    text, loud = save_sentinel.report_text(a.project, roots, dict(os.environ))
+    return save_sentinel.render(text, loud)
+
+
 def _codex(a, raw: str) -> int:
     """Codex roles. Output is SKYGUARD-OK + body: the wrapper tells "decided" (marker present) from "broke"
     (exit 1, nothing on stdout) -- only a JSON deny blocks on Codex, so the wrapper owns the failure deny."""
@@ -284,6 +293,19 @@ def _codex(a, raw: str) -> int:
         out, status, code = _build_session_text(a, audit, req.source, req.session_id)
         _telemetry(a, Verdict("allow", "", "", status, code))
         _emit("SKYGUARD-OK\n" + codex.session_body(out))
+        return 0
+
+    if a.role == "prompt":
+        from modding_harness import charter
+
+        text = charter.prompt(raw.encode("utf-8"), a.project)
+        _telemetry(a, Verdict())
+        _emit("SKYGUARD-OK\n" + text)
+        return 0
+
+    if a.role == "post-tool":
+        _telemetry(a, Verdict())
+        _emit("SKYGUARD-OK\n" + _save_sentinel(a))
         return 0
 
     def roots_fn():
@@ -448,12 +470,9 @@ def main(argv=None) -> int:
     elif a.role == "save-sentinel":
         # PostToolUse, after the call: report the saves that changed or went (save_sentinel.py). Never a
         # decision; an unreadable paths file costs only the declared config dirs, never the look itself.
-        from skyguard import save_sentinel
-        env = _declared_env(a)
-        roots = paths.roots(a.root, a.root_win, env if env is not None else {})
-        text, loud = save_sentinel.report_text(a.project, roots, dict(os.environ))
+        answer = _save_sentinel(a)
         _telemetry(a, Verdict())
-        _emit(save_sentinel.render(text, loud))
+        _emit(answer)
         return 0
     elif a.role == "snapshot-before-tool":
         env = _declared_env(a)                 # Task 15: the load order and INIs, then scripts

@@ -51,7 +51,7 @@ STAGES = ("invoked", "received", "evaluated", "emitted", "failed")
 STATUS_VALUES = ("evaluated", "partial", "failed")
 CLAUDE_HOOKS = ("protect-files", "protect-bash", "protect-mcp", "backup-before-edit", "snapshot-before-tool",
                 "session-kb-guard", "save-sentinel")
-CODEX_HOOKS = ("pre-tool", "session-start")
+CODEX_HOOKS = ("pre-tool", "session-start", "prompt", "post-tool")
 SKEW_S = 300           # a stamp further ahead of "now" than this is a clock fault, not a record
 LATENCY_MAX_BYTES = 256 * 1024
 LATENCY_KEEP_LINES = 2000
