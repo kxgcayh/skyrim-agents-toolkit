@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **modlist-move (new):** `tools/modlist-move.py` moves mods between MO2 separators in a copy of `modlist.txt`
+  (`--move "MOD=>ANCHOR"`, `--plan` with above/top_of/bottom_of, `--disabled-to SEP`), refuses unless every name matches
+  one line and unmoved lines keep their order, reports loose-file conflicts the move creates, and prints an apply
+  command that backs up the way MO2 does and refuses when `modlist.txt` changed since it was read, or the proposal file since it was written. `--label` takes a
+  plain name and the output is never written through a link. An unset mods folder or profile is refused, and
+  the apply never overwrites an existing same-second backup. Never writes the profile. Usage: skill `triage-and-conflicts`.
+
 - **loot-advisor local lists and proposals:** `--from-app [DIR]` reads the LOOT app's masterlist, prelude and optional
   userlist without fetching. `--propose [DIR]` writes an SE/AE proposal outside the profile, applies MO2 locks, and
   prints a checksum-checked backup/apply command. Defaults use configuration and the workspace, with no user paths.

@@ -113,6 +113,24 @@ Read-only headless form of the MO2ModSizeAnalyzer plugin, which needs MO2's `mob
 what is on disk, not how much content a mod adds: a generated output folder or a hair pack can outrank a
 quest mod. Folders come from `SKYRIM_MO2_MODS` and `SKYRIM_LOADORDER_DIR`.
 
+## modlist-move — sort mods into MO2 separators, in a copy
+
+```bash
+python tools/modlist-move.py --out <dir> --move "New Patch=>Base Mod"           # put New Patch right above Base Mod
+python tools/modlist-move.py --out <dir> --plan plan.json                        # many moves: above / top_of / bottom_of
+python tools/modlist-move.py --out <dir> --disabled-to "TESTED & DISABLED"       # every disabled mod to one separator
+```
+
+Never writes the profile: it writes `<dir>/modlist.<profile>.<label>.txt` (refused inside the MO2 instance) and
+prints the apply command, which backs up `modlist.txt` the way MO2 names its own backups
+(`modlist.txt.YYYY_MM_DD_HH_MM_SS`); run it with MO2 closed. `modlist.txt` lists the highest priority first and a
+separator follows its members, so "above" means higher priority. Writes nothing (exit 1) unless every mod and anchor
+matches exactly one line, the lines are the same set and every unmoved line keeps its order; the line ending is kept.
+It then lists the loose files each moved enabled mod newly loses or wins (meta.ini, `.DS_Store`, top-level docs
+ignored). Plugin load order is LOOT's and does not move with mod priority. Plan entries are
+`{"mod": M, "above": A}`, `{"mod": M, "top_of": SEP}` or `{"mod": M, "bottom_of": SEP}`, SEP a substring of one
+separator name; entries sharing a target keep plan order.
+
 ## postmortem, plugin-check, missing-textures — for the agent, read-only (v4.1.0)
 
 ```bash

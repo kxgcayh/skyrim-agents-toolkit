@@ -37,6 +37,7 @@ All under `tools/`:
 | **papyrus-triage** | `Papyrus.N.log` → bucketed, attributed counts | `python tools/papyrus-triage.py [logfile] [--top N] [--all]` |
 | **crash-triage** | CrashLogger dumps → ranked signatures | `python tools/crash-triage.py [dir\|file] [--frames N] [--all]` |
 | **mod-sizes** | MO2 mods by size; search by mod or plugin name (read-only) | `python tools/mod-sizes.py [search] [--enabled] [--top N]` |
+| **modlist-move** | Move mods between MO2 separators in a copy of modlist.txt; prints the apply command | `python tools/modlist-move.py --out DIR [--move "MOD=>ANCHOR"] [--plan F] [--disabled-to SEP]` |
 | **DevBench** | **LIVE in-game** inspect / console / Papyrus / scenario | `bash tools/devbench-cli.sh <command>`; skill `devbench` |
 | **loot-advisor** | LOOT advice or an SE/AE order proposal outside the profile | `python tools/loot_advisor.py [--from-app [DIR]] [--propose [DIR]]`; `docs/loot.md` |
 
