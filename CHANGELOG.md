@@ -16,7 +16,9 @@
 
 - **loot-advisor local lists and proposals:** `--from-app [DIR]` reads the LOOT app's masterlist, prelude and optional
   userlist without fetching. `--propose [DIR]` writes an SE/AE proposal outside the profile, applies MO2 locks, and
-  prints a checksum-checked backup/apply command. Defaults use configuration and the workspace, with no user paths.
+  prints a backup/apply command that refuses when `modlist.txt` or any order file changed, appeared or vanished
+  (`--check-inputs`). Installed inactive plugins are kept; a lock that puts a plugin before its master fails the sort;
+  the output folder must be new or empty. Defaults use configuration and the workspace, with no user paths.
 
 - **Codex documentation injection:** wire `tools/doc-inject.sh` into Codex `PreToolUse` and `UserPromptSubmit`. Definition updated: re-approve your Codex hooks in `/hooks`.
 - **loot-advisor `--userlist PATH`:** also applies LOOT's `userlist.yaml` (the rules set in LOOT's app), as LOOT does;

@@ -60,16 +60,19 @@ otherwise the configured profile is used. It cannot be combined with `--data`, `
 Both local modes reject `--offline`, since app lists already require no network. Proposals require MO2 folders
 or a `modlist.txt` in the selected profile. Setup preserves a literal `LOOT_APP_DIR` entry on reruns.
 The default output is `<workspace>/scratch/loot-sort/<profile>-<timestamp>/`, using `SKYRIM_WORKSPACE_DIR`.
-Output inside the profile is refused. It writes CRLF `loadorder.txt` and `plugins.txt`, `moves.txt`, `issues.txt`,
-`inputs.sha256`, and a `libloot-input/` copy of the input plugins file. MO2 `lockedorder.txt` positions are applied
-after sorting. The original active markers and spelling in `plugins.txt` are preserved; implicit base plugins
-are omitted from that file.
+Output inside the profile, a link, or a folder that already holds files is refused, and each file is created new.
+It writes CRLF `loadorder.txt` and `plugins.txt`, `moves.txt`, `issues.txt`, `inputs.json`, and a `libloot-input/`
+copy of the input plugins file. Installed inactive plugins are sorted and kept; an inactive entry with no plugin file
+is dropped with a note. MO2 `lockedorder.txt` positions are applied after sorting, and a lock that puts a plugin
+before one of its masters (read from the TES4 header) fails the sort with exit 2. The original active markers and
+spelling in `plugins.txt` are preserved; implicit base plugins are omitted from that file.
 
 Exit 0 means the proposal matches the profile byte for byte; 1 means a proposal needs review; 2 means sorting
 failed. Exit 0 can still include LOOT findings: it describes file equality, not a clean bill of health.
 Review both proposed files and `issues.txt`. The printed apply command is for the user: close MO2 first;
-it checks `pgrep -f ModOrganizer` on macOS/Linux, checks SHA-256 hashes of the original `plugins.txt`,
-`loadorder.txt` and `lockedorder.txt` when present, backs up existing profile order files, then copies the proposal.
+it checks `pgrep -f ModOrganizer` on macOS/Linux, runs `loot_advisor.py --check-inputs inputs.json` (each of
+`modlist.txt`, `plugins.txt`, `loadorder.txt` and `lockedorder.txt` must be unchanged, and still absent if it was),
+backs up existing profile order files, then copies the proposal.
 A missing `loadorder.txt` is created by the apply command without attempting to back it up. The tool never runs that command
 or writes the live profile. Local app lists may be older than GitHub's lists, so their results can differ.
 

@@ -711,9 +711,9 @@ def test_propose_end_to_end(proposal_case, capsys, identical):
     assert captured.err == ''
     assert fake.extra[0].name == 'Enabled'
     assert {p: p.read_bytes() for p in profile.iterdir()} == before
-    expected = ''.join(f'{hashlib.sha256(before[profile / n]).hexdigest()}  {profile / n}\n'
-                       for n in ('plugins.txt', 'loadorder.txt', 'lockedorder.txt'))
-    assert (out / 'inputs.sha256').read_text() == expected
+    expected = {str(profile / n): hashlib.sha256(before[profile / n]).hexdigest()
+                for n in ('modlist.txt', 'plugins.txt', 'loadorder.txt', 'lockedorder.txt')}
+    assert json.loads((out / 'inputs.json').read_text()) == expected
     assert (out / 'plugins.txt').read_bytes().endswith(b'*A.esp\r\n' if not identical else b'*B.esp\r\n')
     if identical:
         assert 'Nothing to apply.' in captured.out
@@ -721,7 +721,7 @@ def test_propose_end_to_end(proposal_case, capsys, identical):
         command = next(l[2:] for l in captured.out.splitlines() if l.startswith('! '))
         assert command.startswith('if pgrep -f ModOrganizer >/dev/null; then')
         assert "echo 'Close MO2 before applying' >&2" in command
-        assert 'shasum -a 256 -c ' + shlex.quote(str(out / 'inputs.sha256')) in command
+        assert '--check-inputs ' + shlex.quote(str(out / 'inputs.json')) in command
         assert 'cp ' + shlex.quote(str(profile / 'plugins.txt')) + ' ' in command
         assert shlex.quote(str(out / 'plugins.txt')) in command
         assert subprocess.run(['bash', '-n', '-c', command], capture_output=True).returncode == 0
@@ -791,7 +791,8 @@ def test_propose_without_loadorder_has_no_missing_backup(proposal_case, tmp_path
     command = next(l for l in capsys.readouterr().out.splitlines() if l.startswith('! '))
     assert 'cp ' + shlex.quote(str(profile / 'loadorder.txt')) not in command
     assert 'loadorder.txt.bak-' not in command
-    assert (out / 'inputs.sha256').read_text().count('\n') == 1
+    sums = json.loads((out / 'inputs.json').read_text())
+    assert sums[str(profile / 'loadorder.txt')] is None and sums[str(profile / 'modlist.txt')]
 
 
 def test_propose_unexpected_exception_is_sort_failure(proposal_case, monkeypatch, capsys):
@@ -832,3 +833,68 @@ def test_real_libloot_tiny_sort(tmp_path):
     g.load_plugins(paths)
     g.database().load_masterlist_with_prelude(ml, pre)
     assert list(g.sort_plugins(['Skyrim.esm', 'B.esp', 'A.esp'])) == ['Skyrim.esm', 'A.esp', 'B.esp']
+
+
+def _tes4(*masters):
+    body = b''.join(b'MAST' + len(m.encode() + b'\0').to_bytes(2, 'little') + m.encode() + b'\0'
+                    + b'DATA' + (8).to_bytes(2, 'little') + bytes(8) for m in masters)
+    return b'TES4' + len(body).to_bytes(4, 'little') + bytes(16) + body
+
+
+@pytest.mark.parametrize('kind', ['not empty', 'link'])
+def test_propose_refuses_an_output_it_would_write_through(proposal_case, tmp_path, capsys, kind):
+    profile, app, out, _ = proposal_case
+    before = {p: p.read_bytes() for p in profile.iterdir()}
+    if kind == 'not empty':
+        out.mkdir()
+        (out / 'plugins.txt').symlink_to(profile / 'plugins.txt')
+    else:
+        out.symlink_to(profile, target_is_directory=True)
+    rc = loot_advisor.main(['--from-app', str(app), '--propose', str(out), '--plugins-txt', str(profile / 'plugins.txt')])
+    assert rc == 2
+    assert {p: p.read_bytes() for p in profile.iterdir()} == before
+
+
+def test_propose_keeps_installed_inactive_plugins(proposal_case, monkeypatch, capsys):
+    profile, app, out, _ = proposal_case
+    mods = profile.parent / 'mods' / 'Enabled'
+    (mods / 'C.esp').write_bytes(b'TES4')
+    lo, pl = loot_advisor.render(['A.esp', 'B.esp', 'C.esp'], ['*A.esp', '*B.esp', 'C.esp', 'Gone.esp'])
+    (profile / 'plugins.txt').write_bytes(pl.encode())
+    (profile / 'loadorder.txt').write_bytes(lo.encode())
+    fake = FakeLoot(['A.esp', 'B.esp', 'C.esp', 'Gone.esp'], {'A.esp', 'B.esp'}, ['C.esp', 'B.esp', 'A.esp'])
+    monkeypatch.setattr(libloot_loader, 'load', lambda: fake)
+    assert loot_advisor.main(['--from-app', str(app), '--propose', str(out),
+                              '--plugins-txt', str(profile / 'plugins.txt')]) == 1
+    err = capsys.readouterr().err
+    assert 'C.esp' in (out / 'loadorder.txt').read_text() and b'\r\nC.esp\r\n' in (out / 'plugins.txt').read_bytes()
+    assert 'Gone.esp' not in (out / 'plugins.txt').read_text()
+    assert 'dropped inactive plugins.txt entry with no plugin file: Gone.esp' in err
+    assert 'C.esp' not in err
+
+
+def test_propose_refuses_a_lock_that_puts_a_plugin_before_its_master(proposal_case, capsys):
+    profile, app, out, fake = proposal_case
+    mods = profile.parent / 'mods' / 'Enabled'
+    (mods / 'A.esp').write_bytes(_tes4())
+    (mods / 'B.esp').write_bytes(_tes4('A.esp'))
+    fake.Game.sort_plugins = lambda self, plugins: ['A.esp', 'B.esp']
+    (profile / 'lockedorder.txt').write_text('B.esp|0\n')
+    rc = loot_advisor.main(['--from-app', str(app), '--propose', str(out), '--plugins-txt', str(profile / 'plugins.txt')])
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert 'B.esp loads before its master A.esp (locked in lockedorder.txt: B.esp)' in err
+    assert not (out / 'plugins.txt').exists()
+
+
+def test_check_inputs_names_a_changed_and_an_appeared_file(tmp_path, capsys):
+    kept, appeared = tmp_path / 'modlist.txt', tmp_path / 'lockedorder.txt'
+    kept.write_text('+A\n')
+    manifest = tmp_path / 'inputs.json'
+    manifest.write_text(json.dumps({str(kept): hashlib.sha256(b'+A\n').hexdigest(), str(appeared): None}))
+    assert loot_advisor.main(['--check-inputs', str(manifest)]) == 0
+    kept.write_text('+A\n+B\n')
+    appeared.write_text('X.esp|0\n')
+    assert loot_advisor.main(['--check-inputs', str(manifest)]) == 1
+    err = capsys.readouterr().err
+    assert 'modlist.txt: changed' in err and 'lockedorder.txt: appeared' in err

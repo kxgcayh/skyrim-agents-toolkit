@@ -357,6 +357,51 @@ def apply_locks(order: list[str], locks: list[tuple[str, int]]) -> list[str]:
     return out
 
 
+def plugin_masters(path: Path) -> list[str]:
+    """Master names from a plugin's TES4 header; [] when the header cannot be read."""
+    import esp_records
+    try:
+        with open(path, 'rb') as fh:
+            head = fh.read(24)
+            if len(head) < 24 or head[:4] != b'TES4':
+                return []
+            size = int.from_bytes(head[4:8], 'little')
+            return esp_records.masters(fh.read(size))
+    except (OSError, ValueError):                            # esp_records.PluginError is a ValueError
+        return []
+
+
+def master_order_problems(order: list[str], paths: dict, locks: list[tuple[str, int]]) -> list[str]:
+    """Each plugin that loads before one of its own masters, naming the lock that put it there."""
+    pos = {p.lower(): i for i, p in enumerate(order)}
+    locked = {n.lower() for n, _ in locks}
+    out = []
+    for p in order:
+        path = paths.get(p.lower())
+        for m in plugin_masters(path) if path else []:
+            if m.lower() in pos and pos[m.lower()] > pos[p.lower()]:
+                why = [x for x in (p, m) if x.lower() in locked]
+                out.append(f'{p} loads before its master {m}' +
+                           (f' (locked in lockedorder.txt: {", ".join(why)})' if why else ''))
+    return out
+
+
+def check_inputs(manifest: Path) -> int:
+    """0 when every recorded profile file is as it was (present with the same bytes, or still absent)."""
+    rows = json.loads(manifest.read_text(encoding='utf-8'))
+    changed = []
+    for f, digest in rows.items():
+        path = Path(f)
+        now = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+        if now != digest:
+            changed.append(f'{path.name}: ' + ('appeared' if digest is None else 'gone' if now is None else 'changed'))
+    for c in changed:
+        print(f'input changed since the proposal: {c}', file=sys.stderr)
+    if changed:
+        print('Rerun loot_advisor --propose; nothing was applied.', file=sys.stderr)
+    return 1 if changed else 0
+
+
 def render(order: list[str], plugins_lines: list[str]) -> tuple[str, str]:
     """(loadorder.txt, plugins.txt) in MO2's format. plugins.txt keeps each original line (its '*' and spelling) and
     lists only the plugins it listed before (the implicit base-game and Creation Club plugins are not in it).
@@ -391,21 +436,25 @@ def sort_profile(profile: Path, loot_dir: Path, workdir: Path):
     g = loot.Game(getattr(loot.GameType, game_type(game)), game, workdir)
     g.set_additional_data_paths([Path(f) for f in folders])
     g.load_current_load_order_state()
-    current = [p for p in g.load_order() if g.is_plugin_active(p)]
+    listed = list(g.load_order())
+    current = [p for p in listed if g.is_plugin_active(p)]
     pc = _plugin_check()
-    paths, missing = [], []
-    for n in current:
-        f = pc.locate(n, data, folders)
-        (paths if f else missing).append(f or n)
+    located = {n: pc.locate(n, data, folders) for n in listed}
+    missing = [n for n in current if not located[n]]
     if missing:
         raise ValueError('active plugins not on disk: ' + ', '.join(map(str, missing[:5])))
+    # Installed inactive plugins are sorted and kept, as LOOT's app does; an inactive entry with no file is
+    # left out here and dropped (with a note) by render().
+    installed = [n for n in listed if located[n]]
+    paths = [located[n] for n in installed]
     g.load_plugins(paths)
     db = g.database()
     db.load_masterlist_with_prelude(ml, pre)
     if ul.is_file():
         db.load_userlist(ul)
-    proposed = list(g.sort_plugins(current))
+    proposed = list(g.sort_plugins(installed))
     info = {'libloot': loot.libloot_version(), 'masterlist': ml, 'userlist': ul if ul.is_file() else None,
+            'paths': {n.lower(): Path(located[n]) for n in installed},
             'folders': len(folders), 'issues': issues(loot, db, current, present_check(current, data, folders))}
     return current, proposed, moves, info
 
@@ -422,11 +471,21 @@ def propose(profile: Path, loot_dir: Path, out: Path | None = None) -> int:
         if workspace is None:
             raise ValueError('set SKYRIM_WORKSPACE_DIR or pass --propose DIR')
         out = workspace / 'scratch' / 'loot-sort' / f'{profile.name}-{stamp}'
+    if out.is_symlink():
+        raise ValueError(f'proposal output {out} is a link; give a new folder')
     out = out.resolve()
     if out == profile or profile in out.parents:
         raise ValueError('proposal output must be outside the profile')
+    if out.exists() and (not out.is_dir() or any(out.iterdir())):
+        raise ValueError(f'proposal output {out} already holds files; give a new or empty folder')
     out.mkdir(parents=True, exist_ok=True)
-    sums = {f: hashlib.sha256(f.read_bytes()).hexdigest() for f in (pl_txt, lo_txt, lock_txt) if f.is_file()}
+    # Every profile file the sort reads, present (its hash) or absent (null): the apply refuses if any differs.
+    sums = {str(f): hashlib.sha256(f.read_bytes()).hexdigest() if f.is_file() else None
+            for f in (profile / 'modlist.txt', pl_txt, lo_txt, lock_txt)}
+
+    def new_file(name, data: bytes):
+        with open(out / name, 'xb') as fh:                   # never through a file or link already there
+            fh.write(data)
     try:
         current, proposed, moves, info = sort_profile(profile, loot_dir, out / 'libloot-input')
     except Exception as exc:                                  # noqa: BLE001 (libloot raises its own types)
@@ -434,23 +493,31 @@ def propose(profile: Path, loot_dir: Path, out: Path | None = None) -> int:
         return 2
     locks = read_locks(lock_txt)
     final = apply_locks(proposed, locks)
+    bad = master_order_problems(final, info.get('paths', {}), locks)
+    if bad:
+        for b in bad[:20]:
+            print(f'COULD NOT SORT: {b}', file=sys.stderr)
+        print('A lock puts a plugin before its master: fix lockedorder.txt (or unlock it in MO2), then rerun.',
+              file=sys.stderr)
+        return 2
     current_full = read_lines(lo_txt) if lo_txt.is_file() else current
     try:
         lo, pl = render(final, read_lines(pl_txt))
     except ValueError as exc:
         raise ValueError(f'could not render proposal: {exc}') from exc
-    (out / 'loadorder.txt').write_bytes(lo.encode())
-    (out / 'plugins.txt').write_bytes(pl.encode())
+    new_file('loadorder.txt', lo.encode())
+    new_file('plugins.txt', pl.encode())
     mv = moves(current_full, final)
-    (out / 'moves.txt').write_text(''.join(f'{m["plugin"]}  ->  after {m["after"] or "(top)"}\n' for m in mv) or 'no moves\n')
+    new_file('moves.txt', (''.join(f'{m["plugin"]}  ->  after {m["after"] or "(top)"}\n' for m in mv)
+                           or 'no moves\n').encode())
     iss = info['issues']
-    (out / 'issues.txt').write_text(''.join(f'{i["kind"]:20} {i.get("plugin", "")}  '
-                                            f'{ {k: v for k, v in i.items() if k not in ("kind", "plugin")} }\n'
-                                            for i in iss) or 'none\n')
-    (out / 'inputs.sha256').write_text(''.join(f'{h}  {f}\n' for f, h in sums.items()))
+    new_file('issues.txt', (''.join(f'{i["kind"]:20} {i.get("plugin", "")}  '
+                                    f'{ {k: v for k, v in i.items() if k not in ("kind", "plugin")} }\n'
+                                    for i in iss) or 'none\n').encode())
+    new_file('inputs.json', (json.dumps(sums, indent=1) + '\n').encode())
     same = lo_txt.is_file() and lo.encode() == lo_txt.read_bytes() and pl.encode() == pl_txt.read_bytes()
     print(f'libloot {info["libloot"]}; masterlist {info["masterlist"]}; userlist {"yes" if info["userlist"] else "none"}; '
-          f'{info["folders"]} MO2 folders; {len(final)} active plugins; locks {len(locks)}')
+          f'{info["folders"]} MO2 folders; {len(final)} plugins; locks {len(locks)}')
     print(f'{len(mv)} plugin(s) move; {sum(1 for i in iss if str(i.get("type", "")).lower() not in ("say",))} LOOT '
           f'finding(s) (issues.txt); proposal in {out}')
     for m in mv[:30]:
@@ -462,7 +529,7 @@ def propose(profile: Path, loot_dir: Path, out: Path | None = None) -> int:
     backups = ' && '.join(f'cp {q(f)} {q(str(f) + ".bak-" + stamp)}' for f in (pl_txt, lo_txt) if f.is_file())
     print('\nApply (close MO2 first; it rewrites these files on exit). Backs up existing files, refuses if inputs changed:')
     print("! if pgrep -f ModOrganizer >/dev/null; then echo 'Close MO2 before applying' >&2; false; else "
-          f'shasum -a 256 -c {q(out / "inputs.sha256")} && {backups} && '
+          f'{q(sys.executable)} {q(Path(__file__).resolve())} --check-inputs {q(out / "inputs.json")} && {backups} && '
           f'cp {q(out / "plugins.txt")} {q(out / "loadorder.txt")} {q(profile)}/ && echo applied; fi')
     return 1
 
@@ -478,7 +545,10 @@ def main(argv=None):
                     help="read the LOOT app's local lists; default: LOOT_APP_DIR")
     ap.add_argument('--propose', nargs='?', const='', default=None, metavar='DIR',
                     help='write a proposal outside the profile; default: workspace/scratch/loot-sort/profile-stamp')
+    ap.add_argument('--check-inputs', metavar='FILE', help="verify a proposal's inputs.json against the profile (exit 0/1)")
     args = ap.parse_args(argv)
+    if args.check_inputs:
+        return check_inputs(Path(args.check_inputs))
     try:
         if args.offline and (args.from_app is not None or args.propose is not None):
             raise ValueError('--offline cannot be combined with --from-app or --propose; app lists are already local')
