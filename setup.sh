@@ -599,7 +599,7 @@ fi
 # UTF-8, set INSIDE the probe: piped, Windows PowerShell answers in the OEM code page (cp437 here), so a
 # "Dokumente – Müller" folder arrived as cp437 bytes, landed in skyrim-paths.env, and the guard's UTF-8 reader
 # refused every command (MEASURED, Plan 8 T7 review C1). This spelling emits UTF-8 with no BOM (MEASURED).
-DOCUMENTS_DIR=$(powershell -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; [Environment]::GetFolderPath('MyDocuments')" 2>/dev/null | tr -d '\r')
+DOCUMENTS_DIR=$(powershell -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; [Environment]::GetFolderPath('MyDocuments')" 2>/dev/null | LC_ALL=C tr -d '\r')
 if [ -z "$DOCUMENTS_DIR" ]; then
     case "$(uname -s 2>/dev/null)" in
         MINGW*|MSYS*|CYGWIN*) DOCUMENTS_DIR="C:/Users/$USERNAME/Documents" ;;
@@ -612,9 +612,10 @@ fi
 # path straight into sed's replacement text lets GNU sed interpret \U, \a, etc. as escapes,
 # corrupting the substituted path -- this bit LOCALAPPDATA_DIR specifically, but we normalize
 # DOCUMENTS_DIR here too for consistency.
-DOCUMENTS_DIR=$(printf '%s' "$DOCUMENTS_DIR" | tr '\134' '/')
+# LC_ALL=C: BSD tr (macOS) exits "Illegal byte sequence" on a non-UTF-8 answer, which must reach the read-back check below.
+DOCUMENTS_DIR=$(printf '%s' "$DOCUMENTS_DIR" | LC_ALL=C tr '\134' '/')
 LOCALAPPDATA_DIR="${LOCALAPPDATA:-C:/Users/$USERNAME/AppData/Local}"
-LOCALAPPDATA_DIR=$(printf '%s' "$LOCALAPPDATA_DIR" | tr '\134' '/')
+LOCALAPPDATA_DIR=$(printf '%s' "$LOCALAPPDATA_DIR" | LC_ALL=C tr '\134' '/')
 # Which Skyrim variant is this? The .exe sitting in the game folder is the ground truth --
 # My Games/<variant>/ only exists once the game has been launched at least once, so probing
 # Documents alone silently mis-detects a freshly-installed copy. Fall back to the config-folder

@@ -213,7 +213,7 @@ def test_codex_hooks_wire_doc_inject_and_preserve_guard_hooks():
     source_bytes = (ROOT / "agent" / "targets" / "codex" / "hooks.json").read_bytes()
     source_hooks = json.loads(source_bytes)["hooks"]
 
-    assert sorted(source_hooks) == ["PreToolUse", "SessionStart", "UserPromptSubmit"]
+    assert sorted(source_hooks) == ["PostToolUse", "PreToolUse", "SessionStart", "UserPromptSubmit"]
     assert len(source_hooks["SessionStart"][0]["hooks"]) == 1
     assert "skyguard-entry" in source_hooks["SessionStart"][0]["hooks"][0]["command"]
 
@@ -230,7 +230,16 @@ def test_codex_hooks_wire_doc_inject_and_preserve_guard_hooks():
         "statusMessage": "Skyrim toolkit: checking documentation",
     }
 
-    assert source_hooks["UserPromptSubmit"] == [{"hooks": [pre_hooks[1]]}]
+    (prompt_group,) = source_hooks["UserPromptSubmit"]
+    prompt_hooks = prompt_group["hooks"]
+    assert len(prompt_hooks) == 2
+    assert prompt_hooks[0] == pre_hooks[1]
+    assert "skyguard-entry" in prompt_hooks[1]["command"] and prompt_hooks[1]["command"].endswith(" prompt")
+
+    (post_group,) = source_hooks["PostToolUse"]
+    assert len(post_group["hooks"]) == 1
+    assert "skyguard-entry" in post_group["hooks"][0]["command"]
+    assert post_group["hooks"][0]["command"].endswith(" post-tool")
 
 
 def test_codex_definitions_render_wires_doc_inject():
@@ -245,7 +254,9 @@ def test_codex_definitions_render_wires_doc_inject():
     assert pre[1]["command"] == 'bash "/c/Games/Skyrim/tools/doc-inject.sh" codex'
     assert pre[1]["commandWindows"] == 'bash "C:/Games/Skyrim/tools/doc-inject.sh" codex'
     assert pre[1]["timeout"] == 10
-    assert hooks["UserPromptSubmit"] == [{"hooks": [pre[1]]}]
+    (prompt_group,) = hooks["UserPromptSubmit"]
+    assert prompt_group["hooks"][0] == pre[1]
+    assert len(prompt_group["hooks"]) == 2
 
 
 def test_codex_prompt_submit_passes_prompt_to_resolver(hook_root):

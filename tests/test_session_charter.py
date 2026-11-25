@@ -150,7 +150,9 @@ def test_no_usable_interpreter_is_silent(tmp_path, env_text):
 def test_the_hook_is_registered_for_every_prompt_and_not_as_a_guard():
     settings = json.loads((REPO / "agent" / "targets" / "claude" / "settings.json").read_text(encoding="utf-8"))
     (group,) = settings["hooks"]["UserPromptSubmit"]
-    (entry,) = group["hooks"]
+    charter = [h for h in group["hooks"] if "session-charter" in h["command"]]
+    assert len(charter) == 1, group["hooks"]
+    (entry,) = charter
     assert entry["command"] == 'bash "$CLAUDE_PROJECT_DIR/tools/session-charter.sh"'
     assert entry["timeout"] >= 30
     assert not (REPO / ".claude" / "hooks" / "session-charter.sh").exists()

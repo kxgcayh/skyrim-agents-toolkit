@@ -364,9 +364,9 @@ Generated into `AGENTS.md` only; everything above is shared. Other agents: this 
   vault keeps every version (`docs/save-vault.md`).
 - **Not checked:** commands the user types with `!` in the Codex TUI (they bypass hooks), and other MCP
   tools (only logged).
-- **Skills** are in `.agents/skills/<name>/SKILL.md`: read the relevant `SKILL.md` before writing code, compiling Papyrus, or editing assets when the task calls for a skill. Skill discovery and path matches only identify candidates. Follow the skill once read.
-- **Communication.** Keep answers brief, direct, and technical. Explain a concrete CTD or save-corruption risk when it affects the approach. During longer tool sequences, give a one-sentence status every few calls. After tools finish, lead with the result and any salient verification or blocker. Respect the user's requested reply format. Acknowledge mistakes promptly and focus on the correction.
-- **Edits.** Make short, straightforward edits in one pass. For a complex change, outline it, edit in sections, and verify as you go. Catch failures with tooling before live testing.
+- **Skills** are in `.agents/skills/<name>/SKILL.md`: read the relevant one before writing code, compiling Papyrus or editing assets, and follow it. A path match only names a candidate.
+- **Communication.** Brief, direct, technical. Name a concrete CTD or save-corruption risk when it changes the approach. Give a one-sentence status every few calls; after tools finish, lead with the result and its verification or blocker. Follow the requested reply format. Own and fix mistakes.
+- **Edits.** Short edits in one pass; for a complex change, outline, edit in sections, verify as you go. Catch failures in tooling before live tests.
 - `bash tools/hook-canary.sh` shows whether each hook ran, saw its input and finished, per surface.
 
 - Missing tool workdir: Codex shell mutations need absolute paths (Windows: drive/UNC).

@@ -248,10 +248,11 @@ def test_only_version_launches_happen_and_nothing_installs(tmp_path, monkeypatch
         stem = Path(argv[0]).stem.lower()
         tail = argv[1:]
         assert tail in (["--version"], ["-3", "--version"]), argv
-        assert not (tail and "install" in " ".join(argv).lower()), argv
+        # The executable's folder may say "install" (mise keeps runtimes in .../installs/...): judge the program and its arguments.
+        assert not (tail and "install" in " ".join([stem, *tail]).lower()), argv
         if stem == "winget":
             assert tail == ["--version"], argv
-    assert not any("install" in " ".join(a).lower() for a in recorded)
+    assert not any("install" in " ".join([Path(a[0]).stem, *a[1:]]).lower() for a in recorded)
 
 
 def _scan_source(source):
