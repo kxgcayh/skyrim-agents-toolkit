@@ -38,7 +38,9 @@ All under `tools/`:
 | **papyrus-triage** | `Papyrus.N.log` → bucketed, attributed counts | `python tools/papyrus-triage.py [logfile] [--top N] [--all]` |
 | **crash-triage** | CrashLogger dumps → ranked signatures | `python tools/crash-triage.py [dir\|file] [--frames N] [--all]` |
 | **mod-sizes** | MO2 mods by size; search by mod or plugin name (read-only) | `python tools/mod-sizes.py [search] [--enabled] [--top N]` |
+| **modlist-move** | Move mods between MO2 separators in a copy of modlist.txt; prints the apply command | `python tools/modlist-move.py --out DIR [--move "MOD=>ANCHOR"] [--plan F] [--disabled-to SEP]` |
 | **DevBench** | **LIVE in-game** inspect / console / Papyrus / scenario | `bash tools/devbench-cli.sh <command>`; skill `devbench` |
+| **loot-advisor** | LOOT advice or an SE/AE order proposal outside the profile | `python tools/loot_advisor.py [--from-app [DIR]] [--propose [DIR]]`; `docs/loot.md` |
 
 - **Caprica**: run from `Data/Scripts/Source` with bare filename and `-i` for base sources (skill `skyrim-context`).
 - **PyFFI / PyNifly**: LE NiTriShape vs SSE BSTriShape limits below; skill `skyrim-nif`.
@@ -107,11 +109,15 @@ For the page itself (comments, bugs, permissions), WebFetch gets a Cloudflare 40
 |---|---|---|
 | `KNOWLEDGEBASE.md` | the toolkit | **yes** — replaced on every update |
 | `KNOWLEDGEBASE.local.md` | **you**: your facts AND your instructions | **never** — the release refuses to contain it |
+| `kb.local/<topic>.md` (optional) | **you**: topic files of a split local KB | **never** — same as above |
 
 **Standing instruction**: after every debugging session, mod investigation, or web
 research, extract any new facts (engine quirks, VR vs SSE differences, API gotchas,
 tool limitations) and append them to **`KNOWLEDGEBASE.local.md`**, creating it if it
-does not exist; index each new section. Read both files; write only to the local one. If git does not
+does not exist; index each new section. If `kb.local/` exists, the parent keeps only the preferences, `## Index`
+(a table naming the topic file for each subject), `## Hook Candidates` and `## Doc index`: write a finding into the
+topic file the Index names (a new topic file needs a new Index row). Nothing moves a finding for you: the session-start
+guard notes drift (`python tools/kb-section.py --check`); fix it when it does. Read both files; write only to the local one. If git does not
 ignore it, commit it alone by explicit path (`git commit -m "KB" -- <file>`). Never push.
 
 ### Your preferences: `## My preferences`, read every session
@@ -120,7 +126,7 @@ ignore it, commit it alone by explicit path (`git commit -m "KB" -- <file>`). Ne
 `## My preferences` section is the user's instructions to you: **read it at the start of every
 session and follow it**. Never grant or imply an exception to it; no doc outranks it. On agents with session hooks the guards print it at session start; that is
 the same text. Read `## Preference details` too, then `## Index` and only the sections you need
-(`python tools/kb-section.py <words>`), never the whole file. When the user states a lasting
+(`python tools/kb-section.py <words>`, which also searches `kb.local/`), never the whole file. When the user states a lasting
 preference ("always…", "never…", "from now on…"), add it to that section. When you create the
 file, start it with an empty `## My preferences` section.
 
@@ -339,7 +345,7 @@ Generated into `AGENTS.md` only; everything above is shared. Other agents: this 
 - **The guards run only after the user approves them.** Codex skips unapproved project hooks silently.
   When they run, your session context starts with `SKYGUARD: Codex hooks live`. **If that line is
   missing, the guards are NOT running:** tell the user to run `/hooks` in Codex, approve the Skyrim
-  toolkit's two hooks, and check with `bash tools/hook-canary.sh`. Approval is needed again after a
+  toolkit's hooks, and check with `bash tools/hook-canary.sh`. Approval is needed again after a
   toolkit update whose CHANGELOG says "re-approve your Codex hooks", and (inferred, not measured) after the
   install folder moves: the approval covers the definition as rendered, install path included.
 - Start Codex in the game folder itself. Codex runs no hook started from a subfolder unless the install
@@ -348,7 +354,7 @@ Generated into `AGENTS.md` only; everything above is shared. Other agents: this 
   it may be PowerShell, so write commands that work there.
 - **A refusal is final.** The guards cannot ask on Codex, so anything that needs the user's confirmation
   is refused with `NEEDS YOUR CONFIRMATION`. Stop and explain what you wanted to run and why; if the user
-  agrees, they run it themselves. Never retry it in another form.
+  agrees, they run it themselves in the Codex TUI with the `!` prefix. Never retry it in another form.
 - **Checked:** every shell command and every `apply_patch`, including one run through the shell. Writing
   a plugin or archive (`.esp/.esm/.esl/.bsa/.ba2`) directly is refused; deleting in the game or config
   folders is refused; edits inside the game get advice. Files an `apply_patch` changes or deletes are
@@ -358,7 +364,9 @@ Generated into `AGENTS.md` only; everything above is shared. Other agents: this 
   vault keeps every version (`docs/save-vault.md`).
 - **Not checked:** commands the user types with `!` in the Codex TUI (they bypass hooks), and other MCP
   tools (only logged).
-- **Skills** are in `.agents/skills/<name>/SKILL.md`: read the file when `core.md` points at it by name.
+- **Skills** are in `.agents/skills/<name>/SKILL.md`: read the relevant `SKILL.md` before writing code, compiling Papyrus, or editing assets when the task calls for a skill. Skill discovery and path matches only identify candidates. Follow the skill once read.
+- **Communication.** Keep answers brief, direct, and technical. Explain a concrete CTD or save-corruption risk when it affects the approach. During longer tool sequences, give a one-sentence status every few calls. After tools finish, lead with the result and any salient verification or blocker. Respect the user's requested reply format. Acknowledge mistakes promptly and focus on the correction.
+- **Edits.** Make short, straightforward edits in one pass. For a complex change, outline it, edit in sections, and verify as you go. Catch failures with tooling before live testing.
 - `bash tools/hook-canary.sh` shows whether each hook ran, saw its input and finished, per surface.
 
 - Missing tool workdir: Codex shell mutations need absolute paths (Windows: drive/UNC).

@@ -4,7 +4,7 @@
 #
 #   bash "<root>/.codex/hooks/skyguard-entry.sh" <role>       (.codex/hooks.json `command`; payload on stdin)
 #
-# <role> is pre-tool or session-start. Windows uses skyguard-entry.ps1: under cmd.exe `bash` can resolve
+# <role> is pre-tool, session-start, prompt, or post-tool. Windows uses skyguard-entry.ps1: under cmd.exe `bash` can resolve
 # to the WSL stub, which fails and lets the command run (MEASURED). POSIX support is BEST EFFORT.
 #
 # Codex blocks a tool call on exactly ONE thing, a parsed JSON permissionDecision "deny" with exit 0
@@ -45,6 +45,10 @@ deny() {
     _fail "$1" "$safe"
     if [ "$ROLE" = "session-start" ]; then
         _emit "SKYGUARD: NOT LIVE -- the Codex session hook could not get a result from the toolkit engine ($safe). The toolkit guards may not be running: tell the user, and ask them to run: bash tools/hook-canary.sh"
+    elif [ "$ROLE" = "prompt" ]; then
+        _emit "SESSION CHARTER: NOT INJECTED -- the Codex prompt hook failed ($safe)."
+    elif [ "$ROLE" = "post-tool" ]; then
+        _emit '{"systemMessage":"SAVE SENTINEL: the Codex hook could not look for save changes ('"$safe"'). Run bash tools/hook-canary.sh."}'
     else
         _emit '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"GUARD INERT: the Codex hook could not get a verdict from the toolkit engine ('"$safe"'). NOTHING was checked: this is a refusal, not a decision. Tell the user to run: bash tools/hook-canary.sh"}}'
     fi
@@ -68,7 +72,7 @@ trap _finally EXIT
 
 INPUT=$(cat)
 
-case "$ROLE" in pre-tool|session-start) ;; *) deny role "unknown role" ;; esac
+case "$ROLE" in pre-tool|session-start|prompt|post-tool) ;; *) deny role "unknown role" ;; esac
 
 # Where the install is: two levels above this file (.codex/hooks/), however it was launched.
 _SELF="${BASH_SOURCE[0]//\\//}"
@@ -373,7 +377,7 @@ esac
 
 if [ "$ROLE" = "session-start" ]; then
     case "$BODY" in "SKYGUARD: "*) ;; *) deny emission "engine session text lacks the SKYGUARD banner" ;; esac
-elif [ -n "$BODY" ]; then
+elif [ "$ROLE" = "pre-tool" ] && [ -n "$BODY" ]; then
     case "$BODY" in *$'\n'*) deny emission "engine printed more than one body line" ;; esac
     # The same strict grammar as the PowerShell entry: one object, one key hookSpecificOutput, an inner
     # object of string pairs; known keys only, once each; permissionDecision only "deny". Codex parses

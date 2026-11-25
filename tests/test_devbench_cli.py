@@ -14,6 +14,7 @@ releases.
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import socket
 import subprocess
@@ -142,10 +143,15 @@ def run_cli(*args, port: int, mask_jq: bool = False):
                                capture_output=True, text=True)
         assert probe.returncode != 0, (
             f"jq still resolvable after masking: {probe.stdout.strip()!r}")
-    return subprocess.run(
-        [BASH, str(CLI), *args],
-        cwd=str(REPO), env=env, capture_output=True, text=True, timeout=120,
-    )
+    command = [BASH, str(CLI), *args]
+    script = None
+    if os.name == "nt":
+        # Let Bash parse JSON arguments. Python otherwise uses MSVC quoting to
+        # serialize argv for Git Bash, whose startup parser has different rules.
+        command = [BASH, "-s"]
+        script = 'exec "$BASH" ' + shlex.join([CLI.as_posix(), *args]) + " #\n"
+    return subprocess.run(command, input=script, cwd=str(REPO), env=env,
+                          capture_output=True, text=True, timeout=120)
 
 
 # ----------------------------------------------------------------- liveness

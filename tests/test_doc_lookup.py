@@ -299,16 +299,30 @@ def test_codex_wire_cap_includes_final_newline(lookup):
 
 
 @pytest.fixture
-def repo_lookup():
-    local = ROOT / "KNOWLEDGEBASE.local.md"
-    if not local.is_file() or "## Doc index" not in local.read_text(
-        encoding="utf-8"
-    ).splitlines():
-        pytest.skip("Local KB has no Doc index heading")
-    env = {
-        key: value for key, value in os.environ.items()
-        if key not in {"DOC_LOOKUP_ROOT", "DOC_LOOKUP_LOCAL", "DOC_LOOKUP_STATE_DIR"}
+def repo_local_index(tmp_path):
+    commands = {
+        "local-creating-a-mod": [r"\bgit\s+init\b", r"\bmkdir\b.*\bmods/"],
+        "local-releasing": [r"release\.py", r"\bgh\s+release\b"],
+        "local-patching-source": ["link-submodules", r"\bgit\s+clone\b", r"\bgit\s+submodule\b"],
+        "local-nexus": [r"nexus\.sh", "nexus-download", "nexusmods-surfer"],
     }
+    local = tmp_path / "KNOWLEDGEBASE.local.md"
+    entries = [
+        {"id": key, "file": local.name, "commands": patterns, "targets": ["Fixture guidance"]}
+        for key, patterns in commands.items()
+    ]
+    entries.append({"id": "local-slider", "file": local.name, "paths": ["LDD_CVEO.ini"],
+                    "targets": ["Fixture guidance"]})
+    index = json.dumps({"version": 1, "entries": entries})
+    local.write_text(f"## Fixture guidance\n\nSee LDD_CVEO.ini.\n\n## Doc index\n\n```json\n{index}\n```\n",
+                     encoding="utf-8")
+    return local
+
+
+@pytest.fixture
+def repo_lookup(repo_local_index, tmp_path):
+    env = {**os.environ, "DOC_LOOKUP_ROOT": str(ROOT), "DOC_LOOKUP_LOCAL": str(repo_local_index),
+           "DOC_LOOKUP_STATE_DIR": str(tmp_path / "state")}
 
     def run(*args, stdin=""):
         return run_lookup(env, *args, stdin=stdin)
@@ -318,8 +332,7 @@ def repo_lookup():
 
 def test_real_repo_slider_smoke(repo_lookup):
     context = repo_lookup("--terms", "LDD_CVEO.ini")
-    # the entry sits in the parent, or in a topic file once the local KB is split into kb.local/
-    assert "From KNOWLEDGEBASE.local.md:" in context or "From kb.local/" in context
+    assert "From KNOWLEDGEBASE.local.md:" in context
     assert "LDD_CVEO.ini" in context
 
 
@@ -402,14 +415,14 @@ def test_real_command_survives_embedded_text_filter(lookup, command):
     ("python3 tools/foo.py -c tools/nexusmods-surfer/x.json", "local-nexus"),
     ("python3 -m tools.foo -c tools/nexusmods-surfer/x.json", "local-nexus"),
 ])
-def test_repository_command_regexes_survive_filter(command, expected):
+def test_repository_command_regexes_survive_filter(command, expected, repo_local_index, monkeypatch):
     import importlib.util
+    monkeypatch.setenv("DOC_LOOKUP_ROOT", str(ROOT))
+    monkeypatch.setenv("DOC_LOOKUP_LOCAL", str(repo_local_index))
     spec = importlib.util.spec_from_file_location("doc_lookup", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     entries = {entry["id"]: entry for entry in module.load_entries()}
-    if expected not in entries:
-        pytest.skip("Local index entry unavailable")
     _, text, paths, cmd = module.event_from_payload(pre_tool("Bash", {"command": command}))
     assert module.score(entries[expected], text, paths, cmd, False, prompt=False) > 0
 

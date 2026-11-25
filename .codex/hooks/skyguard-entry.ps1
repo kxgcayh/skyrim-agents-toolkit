@@ -4,7 +4,7 @@
 #   pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "<root>/.codex/hooks/skyguard-entry.ps1" <role>
 #     || powershell <same>            (.codex/hooks.json commandWindows; the payload arrives on stdin)
 #
-# <role> is pre-tool or session-start. The rules live in tools/skyguard/ (Python); this file only
+# <role> is pre-tool, session-start, prompt, or post-tool. The rules live in tools/skyguard/ (Python); this file only
 # carries the payload to the engine and the engine's answer back -- and owns every failure.
 #
 # Why it exists (MEASURED, codex-cli 0.160.0): Codex blocks a tool call on exactly ONE thing, a parsed
@@ -30,7 +30,7 @@ $BASHEXE = '{{BASH_PATH}}'
 
 $script:Role = ''
 if ($args.Count -ge 1) { $script:Role = [string]$args[0] }
-$script:Known = ($script:Role -ceq 'pre-tool') -or ($script:Role -ceq 'session-start')
+$script:Known = @('pre-tool', 'session-start', 'prompt', 'post-tool') -ccontains $script:Role
 $script:Emitted = $false
 # The clock starts at this PROCESS's start, not this line: Codex's timeout runs from the spawn, and under load
 # Windows PowerShell 5.1 can spend seconds starting before the first line runs (T14b 2026-10-14: a call ended
@@ -80,6 +80,10 @@ function Send-Failure([string]$stage, [string]$cause) {
     Write-Record 'failed' ($stage + ' ' + $safe)
     if ($script:Role -ceq 'session-start') {
         Send-Text ('SKYGUARD: NOT LIVE -- the Codex session hook could not get a result from the toolkit engine (' + $safe + '). The toolkit guards may not be running: tell the user, and ask them to run: bash tools/hook-canary.sh')
+    } elseif ($script:Role -ceq 'prompt') {
+        Send-Text ('SESSION CHARTER: NOT INJECTED -- the Codex prompt hook failed (' + $safe + ').')
+    } elseif ($script:Role -ceq 'post-tool') {
+        Send-Text ('{"systemMessage":"SAVE SENTINEL: the Codex hook could not look for save changes (' + $safe + '). Run bash tools/hook-canary.sh."}')
     } else {
         Send-Text ('{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"GUARD INERT: the Codex hook could not get a verdict from the toolkit engine (' + $safe + '). NOTHING was checked: this is a refusal, not a decision. Tell the user to run: bash tools/hook-canary.sh"}}')
     }
@@ -410,7 +414,7 @@ function Invoke-Main {
         if (-not $body.StartsWith('SKYGUARD: ', [System.StringComparison]::Ordinal)) {
             Send-Failure 'emission' 'engine session text lacks the SKYGUARD banner'; return
         }
-    } elseif ($body.Length -gt 0) {
+    } elseif ($script:Role -ceq 'pre-tool' -and $body.Length -gt 0) {
         if ($body.Contains("`n")) { Send-Failure 'emission' 'engine printed more than one body line'; return }
         $bad = Test-Body $body
         if ($bad) { Send-Failure 'emission' $bad; return }

@@ -742,15 +742,15 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
     # kb-guard must snapshot AGENTS.md: it carries the install's filled-in paths, and an update replaces it.
     pytest.param(
         "tools/kb-guard.sh",
-        'WATCHED="KNOWLEDGEBASE.md KNOWLEDGEBASE.local.md CLAUDE.md AGENTS.md"',
-        'WATCHED="KNOWLEDGEBASE.md KNOWLEDGEBASE.local.md CLAUDE.md"',
+        'WATCHED=(KNOWLEDGEBASE.md KNOWLEDGEBASE.local.md CLAUDE.md AGENTS.md)',
+        'WATCHED=(KNOWLEDGEBASE.md KNOWLEDGEBASE.local.md CLAUDE.md)',
         "tests/test_kb_guard.py::test_every_watched_file_is_actually_snapshotted",
         id="kb-guard-watches-agents-md",
     ),
     # kb-guard must name UNCOMMITTED local notes: nothing else makes an agent commit what it appended.
     pytest.param(
         "tools/kb-guard.sh",
-        "status --porcelain -- KNOWLEDGEBASE.local.md 2>/dev/null)",
+        'status --porcelain -- "$path" 2>/dev/null)',
         "status --porcelain -- NO-SUCH-FILE 2>/dev/null)",
         "tests/test_kb_guard.py::test_uncommitted_local_notes_are_named_until_committed",
         id="kb-guard-uncommitted-notes-unchecked",
@@ -758,8 +758,8 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
     # ...and only uncommitted ones: a clean or ignored file must not nag every session.
     pytest.param(
         "tools/kb-guard.sh",
-        '    && [ -n "$dirty" ]; then',
-        "    ; then",
+        ' && [ -n "$dirty" ]; then',
+        '; then',
         "tests/test_kb_guard.py::test_no_commit_note_outside_git_or_for_an_ignored_file",
         id="kb-guard-commit-note-on-clean-file",
     ),
@@ -2259,8 +2259,8 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
     # Shrink WATCHED to the one file every other test happens to create.
     pytest.param(
         "tools/kb-guard.sh",
-        'WATCHED="KNOWLEDGEBASE.md KNOWLEDGEBASE.local.md CLAUDE.md AGENTS.md"',
-        'WATCHED="KNOWLEDGEBASE.md"',
+        'WATCHED=(KNOWLEDGEBASE.md KNOWLEDGEBASE.local.md CLAUDE.md AGENTS.md)',
+        'WATCHED=(KNOWLEDGEBASE.md)',
         "tests/test_kb_guard.py::test_every_watched_file_is_actually_snapshotted",
         id="every-watched-file-is-snapshotted",
     ),
@@ -2342,7 +2342,7 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
     # is the silence this whole class of bug hides in.
     pytest.param(
         "tools/kb-guard.sh",
-        '    echo "KB GUARD: NOT RUN -- none of the watched files exist under $ROOT ($WATCHED)" >&2',
+        '    echo "KB GUARD: NOT RUN -- none of the watched files exist under $ROOT (${WATCHED[*]})" >&2',
         "    :",
         "tests/test_kb_guard.py::test_an_install_with_nothing_to_watch_says_NOT_RUN_rather_than_nothing",
         id="kb-guard-says-not-run-out-loud",
@@ -3096,8 +3096,8 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
     # Change one definition field (E18): Codex silently stops running every approved copy of this hook.
     pytest.param(
         "agent/targets/codex/hooks.json",
-        '"timeout": 60,',
-        '"timeout": 61,',
+        '"timeout": 60,\n            "statusMessage": "Skyrim toolkit: checking"',
+        '"timeout": 61,\n            "statusMessage": "Skyrim toolkit: checking"',
         # Copies omit .git. The independent measured vectors pin every definition
         # field without inventing release history; the real freeze gate stays intact.
         "tests/test_codex_definitions.py::test_the_template_hashes_to_the_measured_vectors",
@@ -6633,7 +6633,7 @@ _RTB_CLAUSES = [
     ("codex-mcp-arguments-as-sent", _CX, "mcp_args=json.dumps({} if raw_ti is None else raw_ti, sort_keys=True)",
      "mcp_args=json.dumps(ti, sort_keys=True)", _cxr("mcp-list-input")),
     # --- Codex adapter shapes
-    ("codex-deep-nesting-named", _CX, "    except RecursionError:", "    except ZeroDivisionError:",
+    ("codex-deep-nesting-named", _CX, "    if too_deep(text):", "    if False:",
      _CXT + "test_deep_nesting_is_refused_by_name_not_by_a_crash"),
     ("codex-no-cwd-refused", _CX, '    if not isinstance(d.get("cwd"), str) or not d["cwd"].strip():', "    if False:",
      _CXT + "test_a_malformed_codex_payload_is_refused_with_its_reason"),
@@ -10405,9 +10405,9 @@ MUTATIONS += [pytest.param(*m[:4], id=m[4]) for m in [
      'tests/test_review_v4_sonnet_tools.py::test_nested_ids_are_scrubbed', 'scrub-nested-ids'),
     ('tools/vr-emu-driver/fetch.py', '        if stage.exists():\n            shutil.rmtree(str(stage), ignore_errors=True)\n', '        pass\n',
      'tests/test_review_v4_sonnet_tools.py::test_a_failed_fetch_install_leaves_no_staging_folder', 'fetch-removes-its-staging'),
-    ('tools/kb-guard.sh', '            if [ -f "$STORE/.gone-$name" ]; then\n', '            if false; then\n',
+    ('tools/kb-guard.sh', '            if [ -f "$gone" ]; then\n', '            if false; then\n',
      'tests/test_review_v4_sonnet_tools.py::test_a_gone_file_alarms_once_and_comes_back_clean', 'kb-gone-alarms-once'),
-    ('tools/kb-guard.sh', '    rm -f "$STORE/.gone-$name" 2>/dev/null\n', '',
+    ('tools/kb-guard.sh', '    rm -f "$gone" 2>/dev/null\n', '',
      'tests/test_review_v4_sonnet_tools.py::test_a_gone_file_alarms_once_and_comes_back_clean', 'kb-gone-clears-on-return'),
     ('scripts/generate-baseline.sh', '    OUTPUT=$(mktemp) || exit 1 ', '    : ',
      'tests/test_review_v4_sonnet_tools.py::test_baseline_stdout_prints_and_leaves_the_baseline_alone', 'baseline-stdout-leaves-it-alone'),

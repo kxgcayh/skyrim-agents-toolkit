@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import io
 import json
+from types import SimpleNamespace
 import zipfile
 
 import pytest
@@ -210,8 +211,8 @@ def test_repo_forms(text):
 
 
 def test_linux_downloads_dir_reads_xdg(monkeypatch, tmp_path):
-    monkeypatch.setattr(gmf.os, "name", "posix")
-    monkeypatch.setattr(gmf.sys, "platform", "linux")
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    monkeypatch.setattr(gmf, "os", SimpleNamespace(name="posix", environ=gmf.os.environ))
+    monkeypatch.setattr(gmf, "sys", SimpleNamespace(platform="linux"))
     (tmp_path / "user-dirs.dirs").write_text('XDG_DOWNLOAD_DIR="$HOME/Telechargements"\n')
     assert gmf.downloads_dir() == gmf.Path.home() / "Telechargements"

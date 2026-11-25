@@ -234,7 +234,9 @@ def test_a_malformed_codex_payload_is_refused_with_its_reason(inst, payload, why
 
 
 def test_deep_nesting_is_refused_by_name_not_by_a_crash(inst):
-    raw = '{"hook_event_name": "PreToolUse", "cwd": "C:/x", "tool_name": "Bash", "x": ' + "[" * 100000 + "]" * 100000 + "}"
+    from skyguard.request import MAX_DEPTH
+
+    raw = '{"hook_event_name": "PreToolUse", "cwd": "C:/x", "tool_name": "Bash", "x": ' + "[" * MAX_DEPTH + "]" * MAX_DEPTH + "}"
     assert codex.to_request(raw, "win32").failure == "payload nested too deeply"
 
 

@@ -260,8 +260,15 @@ def test_scratch_globs_are_validated_data():
 
 def test_roots_dirs_are_normalised_and_deduped(monkeypatch):
     monkeypatch.setattr(paths, "POSIX_HOST", False)
+    from ntpath import isabs
+    from types import SimpleNamespace
+
+    resolved = []
+    monkeypatch.setattr(paths, "os", SimpleNamespace(path=SimpleNamespace(
+        isabs=isabs, realpath=lambda value: resolved.append(value) or value)))
     r = paths.roots("/c/Synthetic Games/The Elder Scrolls V Skyrim VR", CWD_WIN, {"SKYRIM_GAME_ROOT": GAME + "/"})
     assert r.install_dirs == (GAMEN,)
+    assert resolved[0].lower() == GAME.lower()
 
 
 # ------------------------------------------------------------------------------------------------ fix round 1

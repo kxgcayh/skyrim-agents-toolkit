@@ -411,6 +411,11 @@ def _real(value: str) -> str:
     root from its logical $PWD (a symlinked parent), while the payload cwd may be the physical folder, or the
     reverse: both spellings must be protected (2026-11-17 parity check)."""
     try:
+        if not POSIX_HOST:
+            # Windows Python reads /c/foo as rooted on the current drive, unlike Git Bash.
+            msys = _MSYS_DRIVE.match(value)
+            if msys:
+                value = msys.group(1) + ":/" + value[msys.end():]
         if not value or not os.path.isabs(value):
             return ""
         r = os.path.realpath(value).replace("\\", "/")

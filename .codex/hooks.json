@@ -43,6 +43,27 @@
             "commandWindows": "bash \"{{CODEX_ROOT}}/tools/doc-inject.sh\" codex",
             "timeout": 10,
             "statusMessage": "Skyrim toolkit: checking documentation"
+          },
+          {
+            "type": "command",
+            "command": "bash \"{{CODEX_ROOT_POSIX}}/.codex/hooks/skyguard-entry.sh\" prompt",
+            "commandWindows": "pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{{CODEX_ROOT}}/.codex/hooks/skyguard-entry.ps1\" prompt || powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{{CODEX_ROOT}}/.codex/hooks/skyguard-entry.ps1\" prompt",
+            "timeout": 60,
+            "statusMessage": "Skyrim toolkit: session charter"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"{{CODEX_ROOT_POSIX}}/.codex/hooks/skyguard-entry.sh\" post-tool",
+            "commandWindows": "pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{{CODEX_ROOT}}/.codex/hooks/skyguard-entry.ps1\" post-tool || powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{{CODEX_ROOT}}/.codex/hooks/skyguard-entry.ps1\" post-tool",
+            "timeout": 60,
+            "statusMessage": "Skyrim toolkit: checking save changes"
           }
         ]
       }
