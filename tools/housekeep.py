@@ -130,7 +130,7 @@ DEFAULTS = {
     "temp_prefixes": ["skyrim-harness-", "python-free-path-", "toolkit-nojq-", "toolkit-plugins-",
                       "toolkit-localappdata-", "toolkit-loadorder-", "toolkit-precedence-", "t11-nohome-",
                       "p6t11-nohome-", "p6t12-nohome-", "p6fixA-nohome-", "p6fixA-i1-", "p6fixA-b1-",
-                      "hc-xedit-", "modinst_"],
+                      "hc-xedit-", "modinst_", "git-restore-base-nohome-"],
     "temp_after_hours": 24,           # nothing in the dir or its direct children newer than this
     "sweep_every_hours": 6,           # session start launches a sweep at most this often
     "codex_sessions_warn_gib": 5,     # session note when ~/.codex/sessions passes this

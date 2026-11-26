@@ -472,7 +472,7 @@ MUTATIONS = E2E_VERDICT_MUTATIONS + PROBE_RESULT_MUTATIONS + ANSI_C_MUTATIONS + 
     ),
     pytest.param(
         "setup.sh",
-        "LOCALAPPDATA_DIR=$(printf '%s' " + '"$LOCALAPPDATA_DIR"' + " | tr '" + BS + "134' '/')",
+        "LOCALAPPDATA_DIR=$(printf '%s' " + '"$LOCALAPPDATA_DIR"' + " | LC_ALL=C tr '" + BS + "134' '/')",
         "",
         "tests/test_setup_paths.py::test_paths_are_not_backslash_corrupted",
         id="localappdata-normalization",
