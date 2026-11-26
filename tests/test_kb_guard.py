@@ -23,6 +23,10 @@ from pathlib import Path
 
 from conftest import BASH, REPO, install_hooks
 
+
+def _slashes(s: str) -> str:  # Windows: the guard joins "D:\\root" and "/.claude/..."
+    return s.replace("\\", "/")
+
 TOOL = REPO / "tools" / "kb-guard.sh"
 KB = "KNOWLEDGEBASE.md"
 
@@ -104,7 +108,7 @@ def test_local_topic_is_snapshotted_and_shrinkage_alarms(tmp_path):
     write(root, topic, "short\n")
     shrunk = run_guard(root)
     assert shrunk.returncode == 1, shrunk.stdout + shrunk.stderr
-    assert topic in shrunk.stdout and str(copy) in shrunk.stdout
+    assert topic in shrunk.stdout and _slashes(str(copy)) in _slashes(shrunk.stdout)
 
 
 def test_deleted_local_topic_alarms_once_even_without_live_topic_directory(tmp_path):
@@ -119,7 +123,7 @@ def test_deleted_local_topic_alarms_once_even_without_live_topic_directory(tmp_p
     (root / "kb.local").rmdir()
     deleted = run_guard(root)
     assert deleted.returncode == 1, deleted.stdout + deleted.stderr
-    assert f"{topic} is GONE" in deleted.stdout and str(copy) in deleted.stdout
+    assert f"{topic} is GONE" in deleted.stdout and _slashes(str(copy)) in _slashes(deleted.stdout)
     again = run_guard(root)
     assert again.returncode == 0, again.stdout + again.stderr
     assert f"{topic} is still gone" in again.stdout and "is GONE" not in again.stdout

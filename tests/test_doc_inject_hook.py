@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import BASH
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +38,7 @@ def run_hook(root, agent="claude", stdin=PAYLOAD):
         "DOC_LOOKUP_STATE_DIR": str(root / "test-state"),
     }
     return subprocess.run(
-        ["bash", str(root / "tools" / "doc-inject.sh"), agent],
+        [BASH, str(root / "tools" / "doc-inject.sh"), agent],
         input=stdin,
         capture_output=True,
         cwd=root.parent,

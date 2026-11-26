@@ -6,7 +6,7 @@ import json
 import subprocess
 import sys
 
-from conftest import REPO
+from conftest import BASH, REPO
 
 TOOL = REPO / "tools" / "modlist-move.py"
 
@@ -163,11 +163,11 @@ def test_apply_command_refuses_a_modlist_changed_since_the_proposal(tmp_path):
     live = prof / "modlist.txt"
     live.write_bytes(live.read_bytes() + b"+Added By MO2\r\n")
     changed = live.read_bytes()
-    a = subprocess.run(["bash", "-c", apply], capture_output=True, text=True)
+    a = subprocess.run([BASH, "-c", apply], capture_output=True, text=True)
     assert a.returncode != 0 and "changed since this proposal" in a.stderr
     assert live.read_bytes() == changed
     live.write_bytes(changed.replace(b"+Added By MO2\r\n", b""))
-    assert subprocess.run(["bash", "-c", apply], capture_output=True).returncode == 0
+    assert subprocess.run([BASH, "-c", apply], capture_output=True).returncode == 0
     assert live.read_bytes() == (tmp_path / "out" / "modlist.P.t.txt").read_bytes()
 
 
@@ -194,7 +194,7 @@ def test_an_older_apply_command_refuses_a_replaced_proposal(tmp_path):
     assert run(tmp_path, prof, mods, "--move", "New Patch=>Base Mod").returncode == 0   # same label: replaced
     live = prof / "modlist.txt"
     before = live.read_bytes()
-    a = subprocess.run(["bash", "-c", first], capture_output=True, text=True)
+    a = subprocess.run([BASH, "-c", first], capture_output=True, text=True)
     assert a.returncode != 0 and "the proposal changed" in a.stderr
     assert live.read_bytes() == before
 
@@ -233,9 +233,9 @@ def test_apply_never_overwrites_an_existing_backup(tmp_path):
     live = prof / "modlist.txt"
     before = live.read_bytes()
     env = dict(os.environ, PATH=f"{shim}{os.pathsep}{os.environ['PATH']}")
-    a = subprocess.run(["bash", "-c", apply], capture_output=True, text=True, env=env)
+    a = subprocess.run([BASH, "-c", apply], capture_output=True, text=True, env=env)
     assert a.returncode != 0 and "already exists" in a.stderr
     assert backup.read_bytes() == b"the original rollback copy\n" and live.read_bytes() == before
     backup.unlink()
-    assert subprocess.run(["bash", "-c", apply], capture_output=True, env=env).returncode == 0
+    assert subprocess.run([BASH, "-c", apply], capture_output=True, env=env).returncode == 0
     assert backup.read_bytes() == before

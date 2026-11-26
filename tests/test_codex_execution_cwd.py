@@ -11,6 +11,7 @@ from skyguard.adapters import codex
 from skyguard.audit import Audit
 from modding_harness.transport import normalize
 
+DRIVE = "c:" if sys.platform == "win32" else ""  # /name is drive-relative on Windows
 ROOTS = paths.Roots("C:/Game", "C:/Config", install_dirs=("c:/game",), config_dirs=("c:/config",))
 
 
@@ -99,12 +100,13 @@ def _bash_without_workdir(command, tmp_path):
     req = codex.to_request(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash",
         "cwd": str(tmp_path), "tool_input": {"command": command}}))._replace(shell="bash")
     assert not req.execution_cwd_known
-    roots = paths.Roots("/game", "/config", install_dirs=("/game",), config_dirs=("/config",))
+    roots = paths.Roots(f"{DRIVE}/game", f"{DRIVE}/config", install_dirs=(f"{DRIVE}/game",), config_dirs=(f"{DRIVE}/config",))
     return engine.evaluate_shell(req, roots, Audit(str(tmp_path)))
 
 
 def test_exact_refused_heredoc_is_allowed(tmp_path):
     command = (REPO / "tests/fixtures/guard-heredoc-refused-command.txt").read_text(encoding="utf-8")
+    command = command.replace("report=/work/", f"report={DRIVE}/work/", 1)
     assert _bash_without_workdir(command, tmp_path).decision == "allow"
 
 
@@ -129,12 +131,12 @@ def test_exact_refused_heredoc_is_allowed(tmp_path):
     ("cat <<END\n$((VAR=1))\nEND\nprintf x > \"$VAR\"", True),
 ])
 def test_heredoc_assignment_scope(tmp_path, heredoc, refused):
-    result = _bash_without_workdir(f"VAR=/scratch/notes.txt\n{heredoc}", tmp_path)
+    result = _bash_without_workdir(f"VAR={DRIVE}/scratch/notes.txt\n{heredoc}", tmp_path)
     assert (result.decision == "deny") is refused, result
 
 
 def test_heredoc_keeps_protected_path_refusal(tmp_path):
-    command = "VAR=/game/file\ncat <<'END'\n. The prose\nEND\nrm \"$VAR\""
+    command = f"VAR={DRIVE}/game/file\ncat <<'END'\n. The prose\nEND\nrm \"$VAR\""
     result = _bash_without_workdir(command, tmp_path)
     assert result.decision == "deny"
     assert "execution workdir" not in result.reason

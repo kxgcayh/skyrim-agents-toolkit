@@ -11,6 +11,8 @@ import sys
 import types
 import zipfile
 import subprocess
+
+from conftest import BASH
 import struct
 
 import pytest
@@ -724,7 +726,7 @@ def test_propose_end_to_end(proposal_case, capsys, identical):
         assert '--check-inputs ' + shlex.quote(str(out / 'inputs.json')) in command
         assert 'cp ' + shlex.quote(str(profile / 'plugins.txt')) + ' ' in command
         assert shlex.quote(str(out / 'plugins.txt')) in command
-        assert subprocess.run(['bash', '-n', '-c', command], capture_output=True).returncode == 0
+        assert subprocess.run([BASH, '-n', '-c', command], capture_output=True).returncode == 0
 
 
 @pytest.mark.parametrize('flag', ['--data', '--userlist', '--json', '--offline'])
@@ -807,7 +809,7 @@ def test_propose_unexpected_exception_is_sort_failure(proposal_case, monkeypatch
 
 def test_real_libloot_tiny_sort(tmp_path):
     try:
-        loot = libloot_loader.load()
+        loot = libloot_loader.load(cache=tmp_path / 'libloot-cache')
     except libloot_loader.Unavailable as exc:
         pytest.skip(str(exc))
     game = tmp_path / 'game'
@@ -889,12 +891,12 @@ def test_propose_refuses_a_lock_that_puts_a_plugin_before_its_master(proposal_ca
 
 def test_check_inputs_names_a_changed_and_an_appeared_file(tmp_path, capsys):
     kept, appeared = tmp_path / 'modlist.txt', tmp_path / 'lockedorder.txt'
-    kept.write_text('+A\n')
+    kept.write_bytes(b'+A\n')
     manifest = tmp_path / 'inputs.json'
     manifest.write_text(json.dumps({str(kept): hashlib.sha256(b'+A\n').hexdigest(), str(appeared): None}))
     assert loot_advisor.main(['--check-inputs', str(manifest)]) == 0
-    kept.write_text('+A\n+B\n')
-    appeared.write_text('X.esp|0\n')
+    kept.write_bytes(b'+A\n+B\n')
+    appeared.write_bytes(b'X.esp|0\n')
     assert loot_advisor.main(['--check-inputs', str(manifest)]) == 1
     err = capsys.readouterr().err
     assert 'modlist.txt: changed' in err and 'lockedorder.txt: appeared' in err

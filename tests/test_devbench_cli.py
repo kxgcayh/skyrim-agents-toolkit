@@ -634,6 +634,7 @@ def test_cellcycle_rounds_zero_is_refused_before_touching_the_game(server):
     assert _sim_state(server.port)["god"] is False
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="needs a POSIX SIGINT; Windows sends only CTRL_C_EVENT to a process group")
 @pytest.mark.parametrize("server", ["sim"], indirect=True)
 def test_cellcycle_cancelled_mid_run_turns_god_mode_back_off(server):
     import signal

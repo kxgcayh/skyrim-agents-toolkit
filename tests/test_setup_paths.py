@@ -472,11 +472,14 @@ def test_setup_fills_the_codex_definitions_with_the_install_root(game_dir):
     raw = game_dir.joinpath(".codex", "hooks.json").read_text(encoding="utf-8")
     assert "{{" not in raw
     root, posix = game_root_win(game_dir), _posix_root(game_dir)
-    handlers = [h for groups in json.loads(raw)["hooks"].values() for g in groups for h in g["hooks"]]
-    assert len(handlers) == 2
-    for h in handlers:
-        assert f'"{root}/.codex/hooks/skyguard-entry.ps1"' in h["commandWindows"], h["commandWindows"]
-        assert f'"{posix}/.codex/hooks/skyguard-entry.sh"' in h["command"], h["command"]
+    def flat(d):
+        return [h for groups in d["hooks"].values() for g in groups for h in g["hooks"]]
+    handlers, template = flat(json.loads(raw)), flat(json.loads(TEMPLATE.read_text(encoding="utf-8")))
+    assert template and len(handlers) == len(template)
+    assert any("skyguard-entry" in h["command"] for h in handlers)
+    for h, t in zip(handlers, template):
+        assert h["command"] == t["command"].replace("{{CODEX_ROOT_POSIX}}", posix), h["command"]
+        assert h["commandWindows"] == t["commandWindows"].replace("{{CODEX_ROOT}}", root), h["commandWindows"]
     # Byte for byte what the frozen renderer gives for this root: a re-implementation that differs by a
     # slash or a space is a different hash in Codex, and every approval silently stops applying.
     out = game_dir.parent / "direct.json"
