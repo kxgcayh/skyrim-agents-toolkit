@@ -123,6 +123,9 @@ def main():
     scratch = Path(tempfile.mkdtemp(prefix="skyrim-harness-", dir=os.environ.get("RUNNER_TEMP") or None))
     for directory in ("home", "temp", "home/local", "home/roaming"):
         (work / directory).mkdir(parents=True, exist_ok=True)
+    if os.name == "nt":
+        # libloot looks up the Documents known folder even with an explicit local-data path.
+        (work / "home" / "Documents").mkdir(exist_ok=True)
     tripbin = binary.as_posix()
     if os.name == "nt":
         tripbin = "/" + tripbin[0].lower() + tripbin[2:]

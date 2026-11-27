@@ -105,6 +105,15 @@ jobs:
           docker pull busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
           docker tag busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e busybox:1.37
 
+      - name: Provision the Windows Documents known folder
+        if: runner.os == 'Windows' && matrix.part == 'suite'
+        shell: pwsh
+        run: |
+          $documents = [Environment]::GetFolderPath('MyDocuments', 'Create')
+          if (-not $documents -or -not (Test-Path -LiteralPath $documents -PathType Container)) {
+            throw 'The Windows Documents known folder could not be provisioned.'
+          }
+
       # SETUP ENDS HERE: every check below is gated on this marker, not on the checks before it (see the shell job).
       - name: Setup complete
         id: setup

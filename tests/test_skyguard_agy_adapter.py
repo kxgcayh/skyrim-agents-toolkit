@@ -174,9 +174,11 @@ def _call(**top):
     return {"hookEventName": "PreToolUse", "toolCall": {"name": "run_command", "args": {"CommandLine": "pwd"}}, **top}
 
 
-def test_the_payload_cwd_wins_over_the_first_workspace_folder(monkeypatch, capsys):
-    p = _call(cwd="/work/second", workspacePaths=["/work/first", "/work/second"])
-    assert _request_cwd(monkeypatch, capsys, p) == "/work/second"
+def test_the_payload_cwd_wins_over_the_first_workspace_folder(monkeypatch, capsys, tmp_path):
+    first = str(tmp_path / "first")
+    second = str(tmp_path / "second")
+    p = _call(cwd=second, workspacePaths=[first, second])
+    assert _request_cwd(monkeypatch, capsys, p) == second
 
 
 @pytest.mark.parametrize("cwd", [None, "", "relative/dir", 7])
